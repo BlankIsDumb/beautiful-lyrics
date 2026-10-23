@@ -1,9 +1,9 @@
 [
 	{
-		"name": "Beautiful Lyrics",
-		"description": "Adds Synced Lyrics, Dynamic Background, Fullscreen, Romanization, and more!",
+		"name": "Beautiful Lyrics Local",
+		"description": "Locally bundled Beautiful Lyrics with direct Musixmatch word timing and no author-hosted services.",
 		"preview": "./Marketing/Marketplace/Icon.gif",
-		"main": "./Extension/Builds/Release/beautiful-lyrics.mjs",
+		"main": "./dist/beautiful-lyrics-local.mjs",
 		"readme": "README.md",
 		"authors": [
 			{ "name": "SoCalifornian", "url": "https://github.com/surfbryce" }

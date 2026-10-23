@@ -5,10 +5,11 @@ import SimpleBar from "npm:simplebar"
 
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
-import { Timeout, Defer } from "@Universal/Modules/Scheduler.ts"
+import { Timeout, Defer, OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 // Imported Types
 import { BaseVocals, SyncedVocals } from "./Types.d.ts"
+import { overlapScrollTarget } from "./OverlapScroll.mjs"
 
 // Types
 type VocalGroup<V extends (BaseVocals | SyncedVocals)> = {
@@ -55,6 +56,8 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	private AutoScrolling: boolean = false
 	private LastActiveVocalIndex: number = 0
 	private LyricsEnded: boolean = false
+	private MoveQueued = false
+	private LayoutQueued = false
 
 	// Constructor
 	public constructor(
@@ -83,15 +86,23 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		const resizeObserver = this.Maid.Give(
 			new ResizeObserver(
 				() => {
-					this.UpdateLyricHeights()
-
-					if (lyricsAreSynced) {
-						this.MoveToActiveLyrics()
-					}
+					if (this.LayoutQueued) return
+					this.LayoutQueued = true
+					// Recalculation writes the container height. Defer it out of
+					// ResizeObserver delivery to avoid resize-loop notifications.
+					this.Maid.Give(OnPreRender(() => {
+						this.LayoutQueued = false
+						this.UpdateLyricHeights()
+						if (lyricsAreSynced) this.MoveToActiveLyrics()
+					}), 'MeasureLyrics')
 				}
 			)
 		)
 		resizeObserver.observe(this.ScrollContainer)
+		// Font size/wrapping and background-vocal layout can change while the
+		// viewport stays fixed. A single observer owns these bounded lyric nodes;
+		// transforms on animated spans do not trigger ResizeObserver.
+		for (const group of vocalGroups) resizeObserver.observe(group.GroupContainer)
 
 		// Immediately update our heights
 		this.UpdateLyricHeights()
@@ -150,10 +161,21 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		for(const vocalGroup of this.VocalGroups as VocalGroups<SyncedVocals>) {
 			for(const vocal of vocalGroup.Vocals) {
 				this.Maid.Give(
-					vocal.ActivityChanged.Connect(() => this.MoveToActiveLyrics(true))
+					vocal.ActivityChanged.Connect(() => this.QueueActiveMove())
 				)
 			}
 		}
+	}
+
+	private QueueActiveMove() {
+		if (this.MoveQueued) return
+		this.MoveQueued = true
+		// ActivityChanged fires during the animator's loop. Wait until every
+		// vocal has its new state before choosing the overlap viewport.
+		queueMicrotask(() => {
+			this.MoveQueued = false
+			if (!this.Maid.IsDestroyed()) this.MoveToActiveLyrics(true)
+		})
 	}
 
 	private UpdateLyricHeights() {
@@ -283,6 +305,25 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		}
 
 		// Now determine our center
+		const activeVocals = activeVocalGroups.flatMap(g => g.Group.Vocals.filter(v => v.IsActive()))
+		if (activeVocals.length > 1 && !this.AutoScrollBlocked) {
+			const viewportTop = this.ScrollerObject.getBoundingClientRect().top
+			const bounds = activeVocalGroups.flatMap(g => g.Group.Vocals.filter(v => v.IsActive()).map(v => {
+				const target = v.GetScrollTarget?.()
+				const rect = (target?.Element ?? g.Group.GroupContainer).getBoundingClientRect()
+				return { top: rect.top - viewportTop + currentScrollTop, bottom: rect.bottom - viewportTop + currentScrollTop,
+					start: target?.StartTime ?? g.Dimensions.Center }
+			}))
+			const target = overlapScrollTarget(bounds, this.ScrollerObject.clientHeight, currentScrollTop, maximumScrollTop)
+			// Stop an already-running smooth scroll when both lines now fit.
+			// Otherwise its old destination can scroll an active line out of view.
+			this.AutoScrolling = true
+			this.ScrollerObject.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior })
+			this.Maid.Give(Timeout(AutoScrollingStopsAfter, () => this.AutoScrolling = false), 'WaitForAutoScroll')
+			return
+		}
+
+		// Now determine our center
 		let center = 0, totalHalfHeight = 0
 		for(const activeVocalGroup of activeVocalGroups) {
 			totalHalfHeight += activeVocalGroup.Dimensions.Height
@@ -305,6 +346,10 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 				) {
 					this.ToggleAutoScrollBlock(false)
 					this.DetermineLyricBlur()
+					if (activeVocals.length > 1) {
+						this.QueueActiveMove()
+						return
+					}
 				}
 			}
 

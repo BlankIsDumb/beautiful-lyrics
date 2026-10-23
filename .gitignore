@@ -154,4 +154,5 @@ Extension/Builds/Release/bundle@*.*
 Cloudflare/
 Bot Server Keys/
 deno.lock
+local-backups/
 .DS_Store

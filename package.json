@@ -1,0 +1,27 @@
+{
+  "name": "beautiful-lyrics-local",
+  "private": true,
+  "version": "5.1.0-local.2",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests"
+  },
+  "dependencies": {
+    "@rwh/keystrokes": "1.5.6",
+    "@sglkc/kuroshiro": "1.0.1",
+    "cubic-spline": "3.0.3",
+    "curve-interpolator": "3.3.1",
+    "d3-ease": "3.0.1",
+    "franc": "6.2.0",
+    "kuromoji": "0.1.2",
+    "seedrandom": "3.0.5",
+    "simplebar": "6.2.7",
+    "three": "0.164.1"
+  },
+  "devDependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "esbuild": "0.20.2",
+    "sass": "1.75.0"
+  }
+}

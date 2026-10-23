@@ -45,7 +45,9 @@ const RightToLeftLanguages = [
 ]
 
 const RomajiConverter = new Kuroshiro()
-const RomajiPromise = RomajiConverter.init(KuromojiAnalyzer)
+// Decompress the bundled dictionary once, only when Japanese text is encountered.
+let RomajiPromise: Promise<void> | undefined
+const GetRomaji = () => (RomajiPromise ??= RomajiConverter.init(KuromojiAnalyzer))
 
 const KoreanTextTest = /[\uac00-\ud7af]|[\u1100-\u11ff]|[\u3130-\u318f]|[\ua960-\ua97f]|[\ud7b0-\ud7ff]/
 const ChineseTextText = /([\u4E00-\u9FFF])/
@@ -83,7 +85,7 @@ const GenerateJapaneseRomanization = <L extends TextMetadata>(
 ): Promise<RomanizedLanguage | void> => {
 	if ((primaryLanguage === "jpn") || JapaneseTextText.test(lyricMetadata.Text)) {
 		return (
-			RomajiPromise.then(
+			GetRomaji().then(
 				() => RomajiConverter.convert(
 					lyricMetadata.Text,
 					{
@@ -291,6 +293,12 @@ export const TransformProviderLyrics = (providerLyrics: ProviderLyrics): Promise
 							)
 						}
 					}
+				}
+
+				// Earlier sustained/background vocals may outlast intervening lines.
+				// Use the union's running end so we never add an interlude over vocals.
+				for (let i = 1; i < vocalTimes.length; i++) {
+					vocalTimes[i].EndTime = Math.max(vocalTimes[i].EndTime, vocalTimes[i - 1].EndTime)
 				}
 
 				// First check if our first vocal-group needs an interlude before it

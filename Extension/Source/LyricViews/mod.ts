@@ -29,7 +29,7 @@ import ContainedPageView from "./Page/Contained.ts"
 import FullscreenPageView from "./Page/Fullscreen.ts"
 
 // Our Modules
-import { CreateElement, ApplyDynamicBackground } from "./Shared.ts"
+import { CreateElement } from "./Shared.ts"
 import Icons from "./Icons.ts"
 
 // Create our maid
@@ -149,20 +149,7 @@ OnSpotifyReady
 				return
 			}
 
-			// Immediately add our class to the top container
-			const backgroundMaid = nowPlayingViewMaid.Give(new Maid())
-			let backgroundApplied = false
-			const CheckDynamicBackground = () => {
-				if (SpotifyHistory.location.pathname === "/BeautifulLyrics/Fullscreen") {
-					backgroundMaid.CleanUp()
-					backgroundApplied = false
-				} else if (backgroundApplied === false) {
-					backgroundApplied = true
-					ApplyDynamicBackground(contentsContainer!, backgroundMaid)
-				}
-			}
-			CheckDynamicBackground()
-			nowPlayingViewMaid.Give(SpotifyHistory.listen(CheckDynamicBackground))
+			// Keep Comfy (or another theme) in control of the surrounding sidebar.
 
 			// Now we can monitor for Spotifys lyrics card (and hide it)
 			const cardContainer = cardAnchor.parentElement!
@@ -268,7 +255,8 @@ OnSpotifyReady
 				ActivePageView.Closed.Connect(() => SetPlaybarPageIconActiveState(false))
 				ActivePageView.Closed.Connect(() => ActivePageView = undefined)
 			} else if (location.pathname === "/BeautifulLyrics/Fullscreen") {
-				ActivePageView = ViewMaid.Give(new FullscreenPageView(location.state.FromPlaybar), "PageView")
+				// History.push(string) has no state on current Spotify clients.
+				ActivePageView = ViewMaid.Give(new FullscreenPageView(location.state?.FromPlaybar), "PageView")
 				ActivePageView.Closed.Connect(() => ActivePageView = undefined)
 			}
 		}

@@ -10,6 +10,7 @@ import * as THREE from "jsr:@3d/three"
 // Web-Modules
 import { Signal } from "@Universal/Modules/Signal.ts"
 import type { Maid } from "@Universal/Modules/Maid.ts"
+import { GlobalMaid } from "@Spices/Spicetify/Services/Session.ts"
 import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 // Spices
@@ -97,7 +98,7 @@ export const GetCoverArtForSong = (): [string, (number | undefined)] => {
 	)
 	if (coverArt === undefined) {
 		return [
-			"https://images.socalifornian.live/SongPlaceholderFull.png",
+			"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Crect width='128' height='128' fill='%23776b9e'/%3E%3C/svg%3E",
 			(75 + ((360 - 75) * seedrandom(Song?.Uri)()))
 		]
 	} else {
@@ -153,9 +154,12 @@ const GenerateBlurredCoverArt = async () => {
 		CoverArtBlurred.Fire()
 	}
 }
-GenerateBlurredCoverArt()
-SongChanged.Connect(GenerateBlurredCoverArt)
-SongContextChanged.Connect(GenerateBlurredCoverArt) // We might use Playlist cover instead
+// Artwork decoding can fail for unavailable/local images. Keep lyric rendering
+// alive, and detach these singleton listeners when a local build is disposed.
+const RefreshCoverArt = () => GenerateBlurredCoverArt().catch(() => {});
+RefreshCoverArt()
+GlobalMaid.Give(SongChanged.Connect(RefreshCoverArt))
+GlobalMaid.Give(SongContextChanged.Connect(RefreshCoverArt))
 
 // Setup Referential Renderer Objects
 const RenderCamera = new THREE.OrthographicCamera(
@@ -196,6 +200,8 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	rendererElement.classList.add(`${BackgroundClassName}-Container`)
 	maid.Give(
 		() => {
+			materialUniforms.BlurredCoverArt.value?.dispose()
+			meshMaterial.dispose()
 			renderer.dispose()
 			renderer.forceContextLoss()
 		}
@@ -203,6 +209,9 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	maid.Give(rendererElement)
 
 	const UpdateBackgroundImages = () => {
+		if (!Blurred_CovertArt) return;
+		// Replacing cover art otherwise leaves the old GPU texture allocated.
+		materialUniforms.BlurredCoverArt.value?.dispose()
 		const texture = new THREE.CanvasTexture(Blurred_CovertArt)
 		texture.minFilter = THREE.NearestFilter
 		texture.magFilter = THREE.NearestFilter
@@ -250,7 +259,8 @@ export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
 	const RenderUpdate = () => {
 		materialUniforms.Time.value = (performance.now() / 3500)
 		renderer.render(renderScene, RenderCamera)
-		maid.Give(OnPreRender(RenderUpdate))
+		// Replace the completed frame instead of retaining one cleanup entry per frame.
+		maid.Give(OnPreRender(RenderUpdate), "BackgroundFrame")
 	}
 	RenderUpdate()
 

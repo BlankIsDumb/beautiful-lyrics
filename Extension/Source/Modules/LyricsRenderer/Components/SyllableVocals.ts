@@ -1,3 +1,4 @@
+import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // NPM
 import { easeSinOut } from 'npm:d3-ease';
 
@@ -158,9 +159,9 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 		)
 
 		// Define our start/end times
-		this.StartTime = syllablesMetadata[0].StartTime
+		this.StartTime = Math.min(...syllablesMetadata.map(s => s.StartTime))
 		this.Duration = (
-			syllablesMetadata[syllablesMetadata.length - 1].EndTime
+			Math.max(...syllablesMetadata.map(s => s.EndTime))
 			- this.StartTime
 		)
 
@@ -281,8 +282,8 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 				const relativeStart = (syllableMetadata.StartTime - this.StartTime)
 				const relativeEnd = (syllableMetadata.EndTime - this.StartTime)
 
-				const relativeStartScale = (relativeStart / this.Duration)
-				const relativeEndScale = (relativeEnd / this.Duration)
+				const relativeStartScale = this.Duration > 0 ? relativeStart / this.Duration : 0
+				const relativeEndScale = this.Duration > 0 ? relativeEnd / this.Duration : 0
 
 				const duration = (relativeEnd - relativeStart)
 				const durationScale = (relativeEndScale - relativeStartScale)
@@ -440,7 +441,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
 		// Determine our relative time elements
 		const relativeTime = (songTimestamp - this.StartTime)
-		const timeScale = Clamp((relativeTime / this.Duration), 0, 1)
+		const timeScale = timingProgress(relativeTime, 0, this.Duration)
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)
@@ -482,10 +483,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 			for (const syllable of this.Syllables) {
 				// Determine our time-scale for the syllable
-				const syllableTimeScale = Clamp(
-					((timeScale - syllable.StartScale) / syllable.DurationScale),
-					0, 1
-				)
+				const syllableTimeScale = timingProgress(relativeTime, syllable.Start, syllable.Duration)
 
 				// Handle our letters if we are emphasized
 				if (syllable.Type == "Letters") {
@@ -567,6 +565,9 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 	public IsActive() {
 		return (this.State === "Active")
 	}
+
+	// The scroller measures the vocal container (not animated character spans).
+	public GetScrollTarget() { return { Element: this.Container, StartTime: this.StartTime } }
 
 	public SetBlur(blurDistance: number) {
 		this.Container.style.setProperty('--text-blur', `${blurDistance}px`)

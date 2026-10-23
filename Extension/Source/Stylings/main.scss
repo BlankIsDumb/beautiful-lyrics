@@ -2,77 +2,8 @@ body:has(.SliderBar.Active) {
 	cursor: pointer;
 }
 
-.Root__right-sidebar:has(.main-nowPlayingView-section, canvas) {
-	--background-tint: color-mix(
-		in srgb,
-		rgb(var(--spice-rgb-selected-row)) 7%,
-		transparent
-	);
-	--spice-card: var(--background-tint);
-	--background-tinted-base: var(--background-tint);
-
-	.main-nowPlayingView-content {
-		background: transparent;
-	}
-
-	.main-nowPlayingView-contextItemInfo::before {
-		display: none;
-	}
-
-	.BeautifulLyricsBackground {
-		div[data-overlayscrollbars-viewport], div[data-overlayscrollbars-viewport] > div {
-			background: transparent !important;
-		}
-	}
-
-	.BeautifulLyricsBackground div:has(> video) {
-		mask: linear-gradient(
-			180deg,
-			transparent 0,
-			transparent 0px, black 0px,
-			black 70%, transparent 100%,
-			transparent
-		);
-
-		video {
-			filter: opacity(0.75) brightness(0.5);
-		}
-	}
-
-	.BeautifulLyricsBackground .main-nowPlayingView-coverArtContainer div:has(video) {
-		&::after, &::before {
-			display: none;
-		}
-	}
-
-	.BeautifulLyricsBackground .main-trackInfo-artists {
-		opacity: 0.75;
-		filter: brightness(1.15);
-	}
-
-	.main-nowPlayingView-coverArt {
-		opacity: 0.95;
-		box-shadow: #00000045 0 9px 20px 0px;
-	}
-
-	.main-nowPlayingView-section {
-		background-color: var(--background-tinted-base) !important;
-
-		button div div:has(a) {
-			background-color: transparent !important;
-		}
-	}
-
-	button[type="button"] {
-		background-color: transparent !important;
-		color: rgba(255, 255, 255, 0.8);
-
-		.Button-sm-buttonSecondary-useBrowserDefaultFocusStyle,
-		.Button-sm-buttonSecondary-isUsingKeyboard-useBrowserDefaultFocusStyle {
-			border: 1px solid rgba(255, 255, 255, 0.5);
-		}
-	}
-}
+// The surrounding Now Playing sidebar belongs to the active theme.
+// Extension styles must not recolor its cards, buttons, or artwork.
 
 // Improves scroll-bar
 .os-host:has(.BeautifulLyricsBackground),

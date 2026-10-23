@@ -1016,7 +1016,9 @@ export default class PageView implements Giveable {
 						const notFullscreen = (document.fullscreenElement === null)
 						if (shouldBeFullscreen === notFullscreen) {
 							if (shouldBeFullscreen) {
-								delete SpotifyHistory.location.state.FromPlaybar // Consume this flag (prevents non-user input fullscreen)
+								// String navigation has no state on current Spotify. Only consume
+								// the flag when present; the fullscreen button works in either case.
+								if (SpotifyHistory.location.state) delete SpotifyHistory.location.state.FromPlaybar
 								document.documentElement.requestFullscreen()
 							} else {
 								document.exitFullscreen()

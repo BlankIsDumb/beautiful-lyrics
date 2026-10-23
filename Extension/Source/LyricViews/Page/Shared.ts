@@ -5,7 +5,7 @@ import { Maid } from "@Universal/Modules/Maid.ts"
 import { Spotify } from "@Spices/Spicetify/Services/Session.ts"
 import {
 	SongChanged,
-	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded
+	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded, SongLyricsError
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Modules
@@ -35,6 +35,12 @@ export const CreateLyricsRenderer = (
 			}
 
 			container.appendChild(maid.Give(CreateElement<HTMLElement>(Icons.LoadingLyrics), "LyricsRenderer"))
+		} else if (SongLyrics === undefined && SongLyricsError) {
+			// Provider errors are text, never HTML. Keep them distinct from missing lyrics.
+			const message = document.createElement("span");
+			message.className = "NoLyrics";
+			message.textContent = SongLyricsError;
+			container.appendChild(maid.Give(message, "LyricsRenderer"));
 		} else if (SongLyrics === undefined) {
 			if (noLyricsTemplate === undefined) {
 				container.classList.add("NoLyrics")

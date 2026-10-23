@@ -14,65 +14,23 @@ import {
 	SpotifyInternalFetch,
 	ShowNotification
 } from "@Spices/Spicetify/Services/Session.ts"
-import { GetInstantStore } from "@Spices/Spicetify/Services/Cache.ts"
+
 
 // Web-Modules
-import { Timeout } from '@Universal/Modules/Scheduler.ts'
+
 
 // Singletons
-import "./DiscordVerification/mod.ts"
+// Discord verification belongs to the retired hosted backend.
 import "./LyricViews/mod.ts"
 
 // Shared Methods
 import { CreateElement } from "./LyricViews/Shared.ts"
 
 // Modules
-import OpenUpdatePopup from "./UpdatePopup/mod.ts"
+
 
 const Load = async () => {
-	{
-		const fontPromises: Promise<FontFaceSet>[] = []
-		const fonts = [
-			new FontFace(
-				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsRegular.woff2)",
-				{
-					weight: "400",
-					style: "normal"
-				}
-			),
-			new FontFace(
-				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsMedium.woff2)",
-				{
-					weight: "500",
-					style: "normal"
-				}
-			),
-			new FontFace(
-				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsSemibold.woff2)",
-				{
-					weight: "600",
-					style: "normal"
-				}
-			),
-			new FontFace(
-				"BeautifulLyrics",
-				"url(https://fonts.socalifornian.live/LyricsBold.woff2)",
-				{
-					weight: "700",
-					style: "normal"
-				}
-			)
-		]
-		for (const font of fonts) {
-			fontPromises.push(
-				font.load().then(font => document.fonts.add(font))
-			)
-		}
-		await Promise.all(fontPromises)
-	}
+	// Use Spotify/local system fonts; remote font availability must not gate startup.
 
 	await OnSpotifyReady
 
@@ -107,7 +65,7 @@ const Load = async () => {
 		context.closePath()
 
 		const text = "Hello World!"
-		
+
 		const bound = context.measureText(text)
 		const gradient = context.createLinearGradient(100, 0, 100 + (bound.actualBoundingBoxLeft + bound.actualBoundingBoxRight), 0)
 		gradient.addColorStop(0, "rgba(255, 255, 255, 1)")
@@ -268,11 +226,11 @@ const Load = async () => {
 					}
 				}
 			)
-			
+
 		}
 		bindKeyCombo("shift+b+l>i", OnGetSpotifyAndSpicetifyInformation)
 		GlobalMaid.Give(() => unbindKeyCombo("shift+b+l>i", OnGetSpotifyAndSpicetifyInformation))
-	
+
 		// Create our reusable link element (for saving)
 		const linkElement = CreateElement<HTMLLinkElement & { download: string }>(`<a></a>`)
 		const SaveContentToFile = (downloadName: string, content: string, contentType: string) => {
@@ -300,75 +258,10 @@ const Load = async () => {
 		)
 	}
 
-	{
-		/*
-			For anybody coming across this - I will always be clear and incredibly transparent about what I do
-			with this information.
+	// Local builds have no analytics, remote changelog, or hosted updater.
 
-			First off - in the release this comes out in I am flat out stating that I implemented this feature.
-			I'm not going to hide anything.
-			
-			Additionally, I am using CloudFlare - which has an analytics services that doesn't do any
-			fingerprinting, cookie tracking, or anything nasty. It is purely based off the request made
-			to their analytics-api.
-
-			I am purely using this to determine how many people are actually using my extension. My reasoning
-			for this is because when I first published the 2.5.0 stepping-stone release with the lyrics backend
-			I thought I had about maybe 100 people using the extension (since I had 44 stars). However, I was
-			gravely mistaken. I was recieving almost 2-3 requests a second - which is fine, I can handle that -
-			but I had no idea I had that many users. So, it's important to know how many people are actively
-			using my extension (as in actively, I mean general figure).
-
-			I apologize to anyone who may think this is invasive - but I am not doing anything with this data
-			and never plan to. I can't even store it. If you have an issue please contact me through the
-			Spicetify discord - my username is @socalifornian.
-		*/
-		const AnalyticsStore = GetInstantStore<
-			{
-				LastVisitedAt?: number;
-			}
-		>(
-			"BeautifulLyrics/Analytics", 1,
-			{}
-		)
-
-		const UpdateAnalytics = () => {
-			// Remove our existing analytics (always called after we register ourselves analytically)
-			GlobalMaid.Clean("Analytics")
-
-			// Grab our current-date and when we last visited
-			const lastVisitedAt = AnalyticsStore.Items.LastVisitedAt
-			const lastVisitedAtDate = ((lastVisitedAt !== undefined) ? new Date(lastVisitedAt) : undefined)
-			const currentDate = new Date()
-
-			// Set our date to the beginning of the day
-			currentDate.setHours(0, 0, 0, 0)
-
-			// Check if we're on a different day or not
-			const dateStartTime = currentDate.getTime()
-			if (lastVisitedAtDate?.getTime() !== dateStartTime) {
-				// Update our cache
-				AnalyticsStore.Items.LastVisitedAt = dateStartTime
-				AnalyticsStore.SaveChanges()
-
-				// Now insert our analytics
-				const tracker = GlobalMaid.Give(document.createElement('iframe'), "Analytics")
-				tracker.src = "https://track.beautiful-lyrics.socalifornian.live/"
-				tracker.style.display = 'none'
-				document.body.appendChild(tracker)
-			}
-
-			// Now check again soon
-			GlobalMaid.Give(Timeout(60, UpdateAnalytics))
-		}
-
-		UpdateAnalytics()
-	}
-
-	// Only opens the Update Popup IF we haven't seen it yet
-	OpenUpdatePopup()
 }
-Load()
+Load().catch(error => console.error("Beautiful Lyrics failed to initialize", error))
 
 // Finally, return our maid and also return our UpdateNotificationDetailer
 export const UpdateNotice: UpdateNoticeConfiguration = {

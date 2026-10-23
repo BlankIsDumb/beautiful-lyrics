@@ -69,4 +69,10 @@ export type SyllableSyncedLyrics = (
 	}
 )
 
-export type Lyrics = (StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics)
+export type Lyrics = (StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics) & {
+	Source?: {
+		Provider: string; TrackId: string; UniqueTimings: number; CacheKey: string;
+		Candidates: { Provider: string; TrackId: string; UniqueTimings: number }[];
+		Warnings: string[];
+	};
+}

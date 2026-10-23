@@ -67,7 +67,7 @@ export const OnSpotifyReady = SpotifyReadyPromise
 			|| (SpotifyInternalFetch === undefined)
 			|| (SpotifyURI === undefined)
 		) {
-			GlobalMaid.Give(Defer(CheckForServices))
+			GlobalMaid.Give(Timeout(0.1, CheckForServices), "SpotifyReadyCheck")
 			return
 		}
 
@@ -122,12 +122,13 @@ export const OnSpotifyReady = SpotifyReadyPromise
 			// Failed to find the SpotifyRequestBuilder
 			if (SpotifyRequestBuilder === undefined) {
 				console.warn("Failed to find SpotifyRequestBuilder")
-				GlobalMaid.Give(Defer(CheckForServices))
+				GlobalMaid.Give(Timeout(0.1, CheckForServices), "SpotifyReadyCheck")
 				return
 			}
 		}
 
-		GlobalMaid.Give(Defer(MakeSpotifyReady))
+		// Service readiness is not a paint operation: hidden windows suspend animation frames.
+		MakeSpotifyReady()
 	}
 	CheckForServices()
 }

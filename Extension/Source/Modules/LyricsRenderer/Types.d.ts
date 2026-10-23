@@ -30,6 +30,7 @@ interface SyncedVocals extends BaseVocals {
 	Animate(songTimestamp: number, deltaTime: number, isImmediate?: true): void
 	SetBlur(blurDistance: number): void
 	IsActive(): boolean
+	GetScrollTarget?(): { Element: HTMLElement; StartTime: number }
 }
 
 // Exports

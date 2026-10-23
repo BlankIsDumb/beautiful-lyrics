@@ -12,7 +12,7 @@ import {
 	GlobalMaid,
 	OnSpotifyReady,
 	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder,
-	GetSpotifyAccessToken
+	ShowNotification
 } from "../Session.ts"
 import { GetExpireStore } from '../Cache.ts'
 
@@ -22,11 +22,16 @@ import {
 	type ProviderLyrics, type TransformedLyrics, type RomanizedLanguage
 } from "./LyricUtilities.ts"
 
+import { FetchLyrics } from "./LyricsProviders.ts"
+import { createLyricRequestGate } from "./LyricRequestGate.mjs"
+
 // Re-export some useful types
 export type { RomanizedLanguage, TransformedLyrics }
 
 // Create our maid for the Player
 const PlayerMaid = GlobalMaid.Give(new Maid())
+const lyricRequestGate = createLyricRequestGate()
+PlayerMaid.Give(() => lyricRequestGate.dispose())
 
 // Create our signals/expose events
 type TimeStepped = (deltaTime: number, skipped?: true) => void
@@ -235,30 +240,25 @@ const LoadSongDetails = () => {
 
 	// Otherwise, fetch our details
 	{
-		TrackInformationStore.GetItem(songAtUpdate.Id)
+		return TrackInformationStore.GetItem(songAtUpdate.Id)
 		.then(
 			trackInformation => {
 				if (trackInformation === undefined) {
 					// Create our base-build
 					const requestBuilder = (
 						SpotifyRequestBuilder.build()
-						.withHost("https://spclient.wg.spotify.com/metadata/4")
-						.withPath(`/track/${songAtUpdate.InternalId}`)
-						.withEndpointIdentifier(`/track/${songAtUpdate.InternalId}`)
+						// A fresh JSON request avoids Spotify's cached protobuf representation.
+						.fromURL(`https://spclient.wg.spotify.com/metadata/4/track/${songAtUpdate.InternalId}?market=from_token&salt=${Date.now()}`)
+						.withMethod("GET")
 					)
 
-					// Mark our request-builder to default to existing promise
-					requestBuilder.UseExistingPromise = true
 
 					// Now send our request
 					return (
-						// SpotifyFetch(`https://api.spotify.com/v1/tracks/${songAtUpdate.Id}`)
 						(requestBuilder.send() as Promise<TrackInformationResponse>)
-						// Uncaught on purpose - it should rarely ever fail
-						.catch(error => {console.warn(error); throw error})
 						.then(
 							response => {
-								if (response.ok === false) {
+								if (response.ok === false || !response.body) {
 									throw `Failed to load Track (${songAtUpdate.Id}) Information`
 								}
 								return response.body
@@ -293,7 +293,7 @@ const LoadSongDetails = () => {
 				SongDetails = {
 					IsLocal: false,
 
-					ISRC: trackInformation.external_id.find(entry => entry.type === "isrc")!.id,
+					ISRC: trackInformation.external_id?.find(entry => entry.type === "isrc")?.id ?? "",
 					Name: transformedName,
 					Artists: trackInformation.artist.map(
 						artist => (
@@ -323,21 +323,18 @@ const LoadSongDetails = () => {
 				}, HaveSongDetailsLoaded = true
 				SongDetailsLoadedSignal.Fire()
 			}
-		)
+		).catch(() => {
+			if (Song !== songAtUpdate) return;
+			HaveSongDetailsLoaded = true;
+			SongDetailsLoadedSignal.Fire();
+			console.warn("Beautiful Lyrics: track details unavailable");
+		})
 	}
 }
 
 // Handle our Lyrics
-const ProviderLyricsStore = GetExpireStore<ProviderLyrics | false>(
-	"Player_ProviderLyrics", 3,
-	{
-		Duration: 1,
-		Unit: "Months"
-	},
-	true
-)
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"Player_TransformedLyrics", 3,
+	"BeautifulLyricsLocal_Transformed", 2,
 	{
 		Duration: 1,
 		Unit: "Months"
@@ -346,13 +343,18 @@ const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
 )
 
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
+export let SongLyricsError: string | undefined
 export let HaveSongLyricsLoaded: boolean = false
-const LoadSongLyrics = () => {
+const LoadSongLyrics = (detailsReady: Promise<void> | void) => {
+	// Register at song-change time, before metadata IO can reorder the burst.
+	// Local/DJ transitions also cancel any older pending provider dispatch.
+	const dispatchReady = lyricRequestGate.change()
 	// Remove our prior lyric state
-	HaveSongLyricsLoaded = false, SongLyrics = undefined
+	HaveSongLyricsLoaded = false, SongLyrics = undefined, SongLyricsError = undefined
 
 	// Check if we can even possibly have lyrics
 	const songAtUpdate = Song
+	const trackAtUpdate = SpotifyPlayer.data?.item
 	if ((songAtUpdate === undefined) || (songAtUpdate.Type !== "Streamed")) {
 		HaveSongLyricsLoaded = true
 		SongLyricsLoadedSignal.Fire()
@@ -361,92 +363,25 @@ const LoadSongLyrics = () => {
 
 	// Now go through the process of loading our lyrics
 	{
-		// First determine if we have our lyrics stored already
-		ProviderLyricsStore.GetItem(songAtUpdate.Id)
-		.then(
-			providerLyrics => {
-				if (providerLyrics === undefined) { // Otherwise, get our lyrics
-					return (
-						(
-							GetSpotifyAccessToken()
-							.then(
-								accessToken => fetch(
-									`https://beautiful-lyrics.socalifornian.live/lyrics/${encodeURIComponent(songAtUpdate.Id)}`,
-									// `http://localhost:8787/lyrics/${encodeURIComponent(songAtUpdate.Id)}`,
-									{
-										method: "GET",
-										headers: {
-											Authorization: `Bearer ${accessToken}`
-										}
-									}
-								)
-							)
-							.then(
-								(response) => {
-									if (response.ok === false) {
-										throw `Failed to load Lyrics for Track (${
-											songAtUpdate.Id
-										}), Error: ${response.status} ${response.statusText}`
-									}
-				
-									return response.text()
-								}
-							)
-							.then(
-								text => {
-									if (text.length === 0) {
-										return undefined
-									} else {
-										return JSON.parse(text)
-									}
-								}
-							)
-						)
-						.then(
-							(providerLyrics) => {
-								const lyrics = (providerLyrics ?? false)
-								ProviderLyricsStore.SetItem(songAtUpdate.Id, lyrics)
-								return lyrics
-							}
-						)
-					)
-				} else {
-					return providerLyrics
-				}
-			}
-		)
-		.then(
-			(storedProviderLyrics): Promise<[(ProviderLyrics | false), (TransformedLyrics | false | undefined)]> => {
-				return (
-					TransformedLyricsStore.GetItem(songAtUpdate.Id)
-					.then(storedTransformedLyrics => [storedProviderLyrics, storedTransformedLyrics])
-				)
-			}
-		)
-		.then(
-			([storedProviderLyrics, storedTransformedLyrics]): Promise<TransformedLyrics | undefined> => {
-				// If we do not have anything stored for our transformed-lyrics then we need to generate it
-				if (storedTransformedLyrics === undefined) {
-					return (
-						(
-							(storedProviderLyrics === false) ? Promise.resolve<false>(false)
-							: TransformProviderLyrics(storedProviderLyrics)
-						)
-						.then(
-							transformedLyrics => {
-								// Save our information
-								TransformedLyricsStore.SetItem(songAtUpdate.Id, transformedLyrics)
-
-								// Now return our information
-								return (transformedLyrics || undefined)
-							}
-						)
-					)
-				} else {
-					return Promise.resolve(storedTransformedLyrics || undefined)
-				}
-			}
-		)
+		// Provider caches are independent: a failed source can recover on the next
+		// lookup without being hidden for a month by a cached fallback selection.
+		Promise.all([dispatchReady, detailsReady])
+		.then(([ready]) => {
+			if (!ready || Song !== songAtUpdate || PlayerMaid.IsDestroyed()) throw new Error("Track changed before lyric lookup");
+		})
+		.then(() => FetchLyrics(trackAtUpdate, songAtUpdate.Duration,
+			() => Song === songAtUpdate && !PlayerMaid.IsDestroyed(),
+			SongDetails && !SongDetails.IsLocal ? SongDetails.ISRC : "",
+			SongDetails && !SongDetails.IsLocal ? (SongDetails.Raw as any).canonical_uri : undefined))
+		.then(async lyrics => {
+			if (!lyrics) return undefined;
+			const key = lyrics.Source!.CacheKey;
+			const cached = await TransformedLyricsStore.GetItem(key);
+			if (cached) return { ...cached, Source: lyrics.Source };
+			const transformed = await TransformProviderLyrics(lyrics);
+			await TransformedLyricsStore.SetItem(key, transformed);
+			return transformed;
+		})
 		.then(
 			transformedLyrics => {
 				// Make sure we still have the same song active
@@ -458,73 +393,21 @@ const LoadSongLyrics = () => {
 				SongLyrics = transformedLyrics, HaveSongLyricsLoaded = true
 				SongLyricsLoadedSignal.Fire()
 			}
-		)
+		).catch(error => {
+			if (Song !== songAtUpdate || PlayerMaid.IsDestroyed()) return;
+			// A provider outage is not a permanent "no lyrics" cache entry.
+			SongLyricsError = error instanceof Error ? error.message : "Lyrics unavailable";
+			HaveSongLyricsLoaded = true;
+			SongLyricsLoadedSignal.Fire();
+			ShowNotification("Beautiful Lyrics: lyric provider unavailable. Open the lyrics page for details.", "warning", 5);
+		})
 	}
 }
 
 // Wait for Spotify to be ready
 OnSpotifyReady.then(
 	() => {
-		/*
-			We override the RequestBuilder so we can store
-			Send promises for track information requests.
-
-			This is so we don't pollute the console with faulty errors/warnings
-			about duplicate requests being sent around the same time.
-		*/
-		{
-			// Reset any pending requests
-			SpotifyRequestBuilder.resetPendingRequests()
-
-			// Create our override
-			const originalBuildMethod = SpotifyRequestBuilder.build
-
-			const trackPromises = new Map<string, Promise<unknown>>()
-			SpotifyRequestBuilder.build = (...buildArguments: unknown[]) => {
-				const builder = originalBuildMethod.call(SpotifyRequestBuilder, ...buildArguments)
-				
-				const originalOnAfterSendMethod = builder.onAfterSend
-				let removeTrackPromiseId: (string | undefined)
-				builder.onAfterSend = (...onAfterSendArguments: unknown[]) => {
-					if (removeTrackPromiseId !== undefined) {
-						trackPromises.delete(removeTrackPromiseId)
-					}
-					return originalOnAfterSendMethod.call(builder, ...onAfterSendArguments)
-				}
-
-				const originalSendMethod = builder.send
-				builder.send = (...sendArguments: unknown[]) => {
-					const isTrackInformationRequest = (
-						(builder.host === "https://spclient.wg.spotify.com/metadata/4")
-						&& builder.path.startsWith("/track/")
-						&& builder.endpointIdentifier?.startsWith("/track/")
-					)
-
-					if (isTrackInformationRequest) {
-						const existingPromise = trackPromises.get(`${builder.host}${builder.path}`)
-						if (existingPromise !== undefined) {
-							return existingPromise
-						}
-					}
-
-					const sendPromise = originalSendMethod.call(builder, ...sendArguments)
-					if (isTrackInformationRequest) {
-						const trackPromiseId = `${builder.host}${builder.path}`
-						trackPromises.set(trackPromiseId, sendPromise)
-						removeTrackPromiseId = trackPromiseId
-					}
-
-					return sendPromise
-				}
-
-				return builder
-			}
-
-			PlayerMaid.Give(
-				() => SpotifyRequestBuilder.build = originalBuildMethod,
-				"RequestBuilderOverride"
-			)
-		}
+		// Do not patch the shared RequestBuilder: other extensions own their requests.
 
 		// Handle song updates
 		{
@@ -548,8 +431,8 @@ OnSpotifyReady.then(
 
 				// Make sure that this is a Song and not any other type of track
 				const track = SpotifyPlayer.data.item
-				const isASong = (track.type === "track")
-				const isDJ = ((track.type === "unknown") && (track.provider.startsWith("narration")))
+				const isASong = (track?.type === "track")
+				const isDJ = ((track?.type === "unknown") && (track.provider.startsWith("narration")))
 				if ((track === undefined) || ((isASong === false) && (isDJ === false))) {
 					Song = undefined
 				} else {
@@ -598,8 +481,8 @@ OnSpotifyReady.then(
 
 				// Load our song details AND lyrics
 				HasIsLikedLoaded = false
-				LoadSongDetails()
-				LoadSongLyrics()
+				const detailsReady = LoadSongDetails()
+				LoadSongLyrics(detailsReady)
 
 				// Fire our events
 				SongChangedSignal.Fire()

@@ -1,4 +1,9 @@
 # Beautiful Lyrics
+This fork builds a self-contained local extension with direct Musixmatch lyric
+requests. It does not use the original author's updater, backend, fonts, analytics,
+or dictionary hosting. See [LOCAL.md](LOCAL.md) for installation, limitations, and
+verification. The original project description below is retained for context;
+its hosted-service promises do not describe this local build.
 🌟 Starring the project helps this extension get seen by more people - which means more Beautiful Lyrics! 
 
 [![Github Version](https://img.shields.io/github/v/release/surfbryce/beautiful-lyrics)](https://github.com/surfbryce/beautiful-lyrics/) [![Github Stars badge](https://img.shields.io/github/stars/surfbryce/beautiful-lyrics?style=social)](https://github.com/surfbryce/beautiful-lyrics/) [![Discord Badge](https://dcbadge.limes.pink/api/server/884XC8Fsfa?style=flat)](https://discord.com/invite/884XC8Fsfa)
@@ -28,8 +33,8 @@ A new Dynamic Background that beautifully blends the Cover-Art colors for the Si
 ### Lyric Romanization
 If you're a fan of **Chinese, Japanese, or Korean songs** but want to see the lyrics phonetically spelled than just toggle the **Romanization** feature! The toggle is *per supported language* so you can **pick and choose which ones are romanized**!
 
-### Auto-Updates
-Never worry about Updating ever! **Beautiful Lyrics is ALWAYS Up-to-Date because it Auto-Updates as _SOON_ as an update is available!** This means that if you make an issue/suggestion - it could be added and working for you (and everyone else) minutes later!
+### Local updates
+Rebuild this checkout and run the local installer to update. No executable code is downloaded at runtime.
 
 ## Need help? Check the Wiki!
 [![GitHub Wiki Link](https://img.shields.io/badge/wiki-documentation-forestgreen)](https://github.com/surfbryce/beautiful-lyrics/wiki)

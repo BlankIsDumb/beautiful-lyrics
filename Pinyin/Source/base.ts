@@ -1,15 +1,15 @@
-const PinyinURL = "https://pinyin.socalifornian.live"
+// Bundle the checked-in dictionaries; romanization must not import remote code.
 const GetZIDictionary = (): Promise<Record<number, string>> => (
-	import(`${PinyinURL}/dict-zi.mjs`).then(module => module.default)
+	import("./Data/dict-zi.mjs").then(module => module.default)
 ) // 单个汉字拼音数据。
 const GetPhrasesDictionary = (): Promise<Record<string, string[][]>> => (
-	import(`${PinyinURL}/phrases-dict.mjs`).then(module => module.default)
+	import("./Data/phrases-dict.mjs").then(module => module.default)
 ) // 词组拼音数据。
 const GetSurnamePinyinData = (): Promise<Record<string, string[][]>> => (
-	import(`${PinyinURL}/surname.mjs`).then(module => module.default)
+	import("./Data/surname.mjs").then(module => module.default)
 )
 const GetCompoundSurnamePinyinData = (): Promise<Record<string, string[][]>> => (
-	import(`${PinyinURL}/compound_surname.mjs`).then(module => module.default)
+	import("./Data/compound_surname.mjs").then(module => module.default)
 )
 
 import { segment } from "./segment.ts";

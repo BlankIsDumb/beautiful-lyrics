@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 const spotifyOrigin = 'https://xpui.app.spotify.com';
 const upstream = 'https://api.spicylyrics.org';
 
-export function createSpicyRelay(fetchUpstream = fetch) {
+export function createSpicyRelay(fetchUpstream = fetch, control) {
   return http.createServer(async (req, res) => {
     const reply = (status, body) => {
       res.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'});
@@ -14,7 +14,15 @@ export function createSpicyRelay(fetchUpstream = fetch) {
     // is deliberately not a general URL proxy and never persists credentials.
     const port = res.socket.localPort;
     if (req.headers.host !== `127.0.0.1:${port}`) return reply(403,{error:'Invalid host'});
-    if (req.url === '/health' && req.method === 'GET' && !req.headers.origin) return reply(200,{service:'beautiful-lyrics-spicy-relay',version:1});
+    if (req.url === '/health' && req.method === 'GET' && !req.headers.origin) return reply(200,{service:'beautiful-lyrics-spicy-relay',version:1,...(control ? {pid:process.pid,instance:control.instance} : {})});
+    // CLI control is separate from API credentials and never enabled for browser
+    // origins. No PID-based kill: only the process holding this secret can stop.
+    if (req.url === '/control/stop' && req.method === 'POST') {
+      if (!control || req.headers.origin || req.headers['x-relay-control'] !== control.secret) return reply(403,{error:'Control denied'});
+      reply(200,{stopping:true});
+      setImmediate(control.stop);
+      return;
+    }
     if (req.headers.origin !== spotifyOrigin) return reply(403,{error:'Origin not allowed'});
     res.setHeader('Access-Control-Allow-Origin',spotifyOrigin);
     res.setHeader('Vary','Origin');

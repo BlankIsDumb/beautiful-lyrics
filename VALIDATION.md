@@ -215,3 +215,25 @@ Musixmatch 401/cooldown does not suppress these results. Settled DOM has 45 voca
  groups including interludes and no loading placeholder. 42 tests and build pass.
 New bundle/applied SHA256: 3B25F26ED783DDDC205D9A7636152D193B3BCF843D44837CE4B083A80FB7B7C3.
 Origin of prior artifact corruption remains unknown. Audit findings left separate.
+
+## Cross-platform proxy CLI and provider investigation — 2026-10-24
+- Pre-change checkpoint: 6e39fa3. No push.
+- Added root spicy-proxy.mjs: start, stop, status, foreground run; Node 20+.
+  Detached hidden Windows launch; shared implementation for macOS/Linux.
+  Local instance secret gates shutdown; no PID killing from stale files.
+  Prior launchers now compatibility wrappers. No startup registration installed.
+- 43 tests passed, including real CLI lifecycle on an isolated port, duplicate
+  start, stale ownership refusal, browser-origin shutdown refusal and repeat stop.
+  Windows runtime verified; actual macOS/Linux execution not available here.
+  macOS wrapper passes bash syntax validation.
+- Built/applied extension; updated settings/toast instructions. No behavior changes
+  to romanization, caching, provider priorities or fetch scheduling.
+- Spotify investigation and deeper language-view audit in INVESTIGATION-2026-10-24.md.
+- Default port was occupied by a legacy unmanaged relay (PID 8624). Windows did
+  not expose command line/path, so it was not killed. New CLI reports this clearly;
+  user must stop original launcher/task once to migrate default-port ownership.
+- Migration completed after user stopped the legacy process: actual port 8967
+  start -> status -> stop -> stopped status -> start passed. Left the managed
+  relay running. Spotify browser health endpoint confirmed HTTP 200.
+- Final bundle/applied SHA256: BB425805E951D1B29B804B3853366376E3154AE8248570F1946B5214CE215B8D.
+  Comfy applied CSS/theme hashes unchanged. Extension reloaded to activate changes.

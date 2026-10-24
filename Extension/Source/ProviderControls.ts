@@ -86,7 +86,7 @@ export function OpenProviderSettings() {
   input.value = GetSpicyToken();
   const description = document.createElement("p");
   description.textContent =
-    "Use your client key (sl_pk_…) with requests without an Origin header allowed in Spicy’s API settings. Run scripts/start-spicy-relay.ps1 (Windows) or scripts/start-spicy-relay.command (macOS) on this device. The local relay sends requests directly to Spicy, without Origin. Leave empty to disable. The key is stored only on this device.";
+    "Use your client key (sl_pk_…) with requests without an Origin header allowed in Spicy’s API settings. Run node spicy-proxy.mjs start on this device. Use stop or status to manage it. The local relay sends requests directly to Spicy, without Origin. Leave empty to disable. The key is stored only on this device.";
   const status = document.createElement("p");
   status.setAttribute("role", "status");
   const save = document.createElement("button");
@@ -135,7 +135,7 @@ OnSpotifyReady.then(() => {
       }
     }).catch(() => {
       if (!GlobalMaid.IsDestroyed() && GetSpicyToken()) {
-        ShowNotification('Beautiful Lyrics: Spicy relay is unavailable. Start the local relay to use Spicy.', 'warning', 8);
+        ShowNotification('Beautiful Lyrics: Spicy relay is unavailable. Run node spicy-proxy.mjs start to use Spicy.', 'warning', 8);
       }
     }).finally(() => clearTimeout(timeout));
   }

@@ -59,10 +59,10 @@ Origin allowed** in the Spicy dashboard. The dashboard currently refuses the
 Spotify browser origin. Start the included local relay with Node.js 20+:
 
 ```powershell
-./scripts/start-spicy-relay.ps1
+node spicy-proxy.mjs start
 ```
 
-It runs hidden on `127.0.0.1:8967`; run the script again after reboot/login. No
+It runs in the background on `127.0.0.1:8967`; run start again after reboot/login. No
 startup task or service is installed. Spotify sends the key to this loopback
 helper, which forwards directly to the official API without an Origin header.
 It does not persist/log keys or lyrics, forward Spotify credentials, or accept
@@ -99,7 +99,7 @@ midnight, advances the month, then selects day zero (the preceding month end).
 For example, October 23 entries expire October 31 at midnight. AMLL and Spotify
 metadata use two weeks, rounded to midnight (AMLL includes missing ID files).
 LRCLIB also uses two weeks, including missing results. Spicy uses an in-memory
-24-hour cache of at most 32 tracks, cleared on token change and reload; its raw or
+24-hour cache of at most 32 tracks, cleared on any provider-settings change and reload; its raw or
 transformed responses are never written to the persistent lyrics cache.
 Expired/version-mismatched records are ignored on lookup, not actively deleted.
 There is no scheduled purge, storage size cap or manual cache-clear UI. Service/parser failures are not
@@ -171,26 +171,42 @@ an application warning; Chromium may log the HTTP 404 itself. No catalog index
 or global console suppression is used. Fetch demand is driven by navigation,
 settings and song-change events, with no additional polling loop.
 
-### macOS relay launcher and startup notification
+### Cross-platform proxy CLI
 
-The same `scripts/spicy-relay.mjs` runs on Windows and macOS with Node.js 20+.
-On macOS, from the repository directory, enable double-click launching once:
+Requires Node.js 20+ on Windows, macOS or Linux. From this repository:
 
 ```sh
-chmod +x scripts/start-spicy-relay.command
-./scripts/start-spicy-relay.command
+node spicy-proxy.mjs start
+node spicy-proxy.mjs status
+node spicy-proxy.mjs stop
 ```
 
-The launcher recognizes Homebrew Node locations on Apple Silicon and Intel Macs.
-For another installation, set `NODE_BINARY` to its absolute path. It detaches the
-relay with `nohup`; closing Terminal will not stop it. Repeated launches check the
-existing service first. Logs contain lifecycle/errors only, not tokens or lyrics.
-Register your own login item/task if desired; neither launcher installs one.
-A `.command` login item may open Terminal briefly. For silent macOS startup,
-launchd can run Node with the absolute path to `scripts/spicy-relay.mjs` directly.
+`start` detaches a background process (hidden on Windows). Duplicate starts report
+already running. `status` reports endpoint, PID and whether this CLI owns its
+control state; exit code 0 means a relay is reachable, 1 means stopped/unreachable,
+2 means an incompatible service in status (or invalid options); other command failures return 1. `stop` sends an authenticated
+local shutdown request: it never kills a PID from an old state file.
+
+For foreground output or your own service manager, use `node spicy-proxy.mjs run`;
+Ctrl+C stops it. Use absolute paths to Node and this file in Task Scheduler or
+launchd; the working directory does not matter. No startup registration is made.
+`--port` and `--state-dir` are available for isolated testing; the extension itself
+expects port 8967. Use the same state directory for start/status/stop.
+
+State and lifecycle logs live under `local-backups/spicy-proxy/`, excluded from
+Git. The state file contains a local shutdown secret, not a Spicy API key; Unix
+permissions are restricted to the owner. Do not share it. Spicy keys and lyrics
+are not logged or stored by the proxy. A lost/corrupt state file or old standalone
+relay is reported as unmanaged; stop that original process manually instead of
+assuming a PID is safe to terminate.
+
+Existing `scripts/start-spicy-relay.ps1` and `.command` remain compatibility
+shortcuts to `start`. For macOS double-click use, first run
+`chmod +x scripts/start-spicy-relay.command`. Its PATH includes both Homebrew
+locations; `NODE_BINARY` can specify a custom Node path. All lifecycle logic is
+in the shared CLI, not duplicated between operating systems.
 
 At extension startup, a saved Spicy key triggers one credential-free local health
-check (3-second timeout). If unavailable, a warning toast asks you to start the
-relay. No periodic polling or upstream API request is added. The check also runs
-when Spicy is disabled but a key remains saved. A relay started later than Spotify
-may produce this startup warning; subsequent lyric fetches can still use it.
+check (3-second timeout). If unavailable, a toast gives the CLI start command.
+No polling or upstream request is added. Starting the relay after Spotify may
+produce this warning; later lyric requests can still use it.

@@ -53,3 +53,12 @@ New integrity guard verifies every emitted/persisted payload; all-failed provide
 preparation now exposes reasons. 42 tests pass. See AUDIT-2026-10-24.md for the
 remaining concrete issues and suggested order. No commit/push. Current bundle
 SHA256 3B25F26ED783DDDC205D9A7636152D193B3BCF843D44837CE4B083A80FB7B7C3.
+
+Proxy CLI pass: pre-change checkpoint 6e39fa3. Root spicy-proxy.mjs provides
+start/stop/status/run across Node-supported systems. 43 tests pass. Build applied.
+Spotify and annotation audit recorded in INVESTIGATION-2026-10-24.md; no provider,
+romanization or caching redesign implemented. Old relay occupies default port and
+is reported unmanaged; user was asked to stop/change original scheduled task.
+Migration resolved: user stopped the legacy process; default-port CLI lifecycle
+verified end to end and managed relay left running. Browser health succeeded.
+Current bundle BB425805E951D1B29B804B3853366376E3154AE8248570F1946B5214CE215B8D.

@@ -23,6 +23,8 @@ import {
 	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
+import { GetBehaviorSettings, OnProviderSettingsChanged } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts"
+
 // Components
 import CardView from "./Card/mod.ts"
 import ContainedPageView from "./Page/Contained.ts"
@@ -133,110 +135,125 @@ OnSpotifyReady
 )
 .then( // Right Side-bar/Card View
 	() => {
-		// Store our state
-		let sidebar: HTMLDivElement, contentsContainer: (HTMLDivElement | undefined)
-		const contentsContainerMaid = ViewMaid.Give(new Maid())
-		const nowPlayingViewMaid = ViewMaid.Give(new Maid())
+        const SidebarMaid = ViewMaid.Give(new Maid())
+        let sidebarEnabled: boolean | undefined
+        const ConfigureSidebar = () => {
+            const enabled = GetBehaviorSettings().sidebarEnabled
+            if (enabled === sidebarEnabled) return
+            sidebarEnabled = enabled
+            // Disabled means no sidebar observers, deferred scans or rendering.
+            SidebarMaid.CleanUp()
+            if (!enabled) return
+			// Store our state
+			let sidebar: HTMLDivElement, contentsContainer: (HTMLDivElement | undefined)
+			const contentsContainerMaid = SidebarMaid.Give(new Maid())
+			const nowPlayingViewMaid = SidebarMaid.Give(new Maid())
 
-		// Each check method
-		const CheckForNowPlaying = () => {
-			// Clean-up when we are called
-			nowPlayingViewMaid.CleanUp()
+			// Each check method
+			const CheckForNowPlaying = () => {
+				// Clean-up when we are called
+				nowPlayingViewMaid.CleanUp()
 
-			// Now check to see if we have our card anchor
-			const cardAnchor = contentsContainer!.querySelector<HTMLDivElement>(CardInsertAnchor)
-			if (cardAnchor === null) {
-				return
-			}
-
-			// Keep Comfy (or another theme) in control of the surrounding sidebar.
-
-			// Now we can monitor for Spotifys lyrics card (and hide it)
-			const cardContainer = cardAnchor.parentElement!
-			const CheckForLyricsCard = () => {
-				const cardView = cardContainer.querySelector<HTMLDivElement>(SpotifyCardViewQuery)
-				if (cardView !== null) {
-					cardView.style.display = "none"
-				}
-			}
-			CheckForLyricsCard()
-			const containerObserver = nowPlayingViewMaid.Give(new MutationObserver(CheckForLyricsCard))
-			containerObserver.observe(cardContainer, { childList: true })
-
-			// Also handle our own card
-			const ShouldCreateCard = () => {
-				if (
-					// We shouldn't be rendering the card-view when we have another of our views open
-					SpotifyHistory.location.pathname.startsWith("/BeautifulLyrics")
-					|| (Song === undefined)
-					|| (HaveSongLyricsLoaded && (SongLyrics === undefined))
-				) {
-					nowPlayingViewMaid.Clean("Card")
-					return
-				} else if (HaveSongLyricsLoaded === false) { // Render a template if we're still loading our lyrics
-					const card = nowPlayingViewMaid.Give(CreateElement<HTMLDivElement>(LoadingLyricsCard), "Card")
-					cardAnchor.after(card)
-
+				// Now check to see if we have our card anchor
+				const cardAnchor = contentsContainer!.querySelector<HTMLDivElement>(CardInsertAnchor)
+				if (cardAnchor === null) {
 					return
 				}
 
-				nowPlayingViewMaid.Give(new CardView(cardAnchor), "Card")
+				// Keep Comfy (or another theme) in control of the surrounding sidebar.
+
+				// Now we can monitor for Spotifys lyrics card (and hide it)
+				const cardContainer = cardAnchor.parentElement!
+				const CheckForLyricsCard = () => {
+					const cardView = cardContainer.querySelector<HTMLDivElement>(SpotifyCardViewQuery)
+					if (cardView !== null && cardView.style.display !== 'none') {
+						const oldDisplay = cardView.style.display
+						cardView.style.display = "none"
+						nowPlayingViewMaid.Give(() => { cardView.style.display = oldDisplay })
+					}
+				}
+				CheckForLyricsCard()
+				const containerObserver = nowPlayingViewMaid.Give(new MutationObserver(CheckForLyricsCard))
+				containerObserver.observe(cardContainer, { childList: true })
+
+				// Also handle our own card
+				const ShouldCreateCard = () => {
+					if (
+						// We shouldn't be rendering the card-view when we have another of our views open
+						SpotifyHistory.location.pathname.startsWith("/BeautifulLyrics")
+						|| (Song === undefined)
+						|| (HaveSongLyricsLoaded && (SongLyrics === undefined))
+					) {
+						nowPlayingViewMaid.Clean("Card")
+						return
+					} else if (HaveSongLyricsLoaded === false) { // Render a template if we're still loading our lyrics
+						const card = nowPlayingViewMaid.Give(CreateElement<HTMLDivElement>(LoadingLyricsCard), "Card")
+						cardAnchor.after(card)
+
+						return
+					}
+
+					nowPlayingViewMaid.Give(new CardView(cardAnchor), "Card")
+				}
+				ShouldCreateCard()
+				nowPlayingViewMaid.GiveItems(
+					SongLyricsLoaded.Connect(ShouldCreateCard),
+					SpotifyHistory.listen(ShouldCreateCard)
+				)
 			}
-			ShouldCreateCard()
-			nowPlayingViewMaid.GiveItems(
-				SongLyricsLoaded.Connect(ShouldCreateCard),
-				SpotifyHistory.listen(ShouldCreateCard)
-			)
-		}
-		const DeferCheckForNowPlaying = () => ViewMaid.Give(Defer(CheckForNowPlaying), "CheckForNowPlaying")
+			const DeferCheckForNowPlaying = () => SidebarMaid.Give(Defer(CheckForNowPlaying), "CheckForNowPlaying")
 
-		const CheckForContentsContainer = () => {
-			// Clean-up when we are called
-			contentsContainerMaid.CleanUp()
-			nowPlayingViewMaid.CleanUp()
+			const CheckForContentsContainer = () => {
+				// Clean-up when we are called
+				contentsContainerMaid.CleanUp()
+				nowPlayingViewMaid.CleanUp()
 
-			// Determine if our contents-container even exists
-			contentsContainer = (sidebar.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined)
-			if (contentsContainer === undefined) {
-				return
+				// Determine if our contents-container even exists
+				contentsContainer = (sidebar.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined)
+				if (contentsContainer === undefined) {
+					return
+				}
+
+				// Check if there's anything we can do immediately
+				CheckForNowPlaying()
+
+				// Handle when we should check
+				contentsContainerMaid.Give(SongChanged.Connect(DeferCheckForNowPlaying))
+
 			}
+			const DeferCheckForContentsContainer = () => SidebarMaid.Give(Defer(CheckForContentsContainer), "CheckForContentsContainer")
 
-			// Check if there's anything we can do immediately
-			CheckForNowPlaying()
+			const CheckForSidebar = () => {
+				// Check for our sidebar existing
+				const newSidebar = document.querySelector<HTMLDivElement>(RightSidebar)
+				if (newSidebar === null) {
+					SidebarMaid.Give(Defer(CheckForSidebar), "CheckForSidebar")
+					return
+				}
+				sidebar = newSidebar
 
-			// Handle when we should check
-			contentsContainerMaid.Give(SongChanged.Connect(DeferCheckForNowPlaying))
+				// Create our observer
+				const sidebarChildObserver = SidebarMaid.Give(new MutationObserver(DeferCheckForContentsContainer))
 
-		}
-		const DeferCheckForContentsContainer = () => ViewMaid.Give(Defer(CheckForContentsContainer), "CheckForContentsContainer")
+				// Check if there's anything we can do immediately
+				CheckForContentsContainer()
 
-		const CheckForSidebar = () => {
-			// Check for our sidebar existing
-			const newSidebar = document.querySelector<HTMLDivElement>(RightSidebar)
-			if (newSidebar === null) {
-				ViewMaid.Give(Defer(CheckForSidebar), "CheckForSidebar")
-				return
-			}
-			sidebar = newSidebar
-
-			// Create our observer
-			const sidebarChildObserver = ViewMaid.Give(new MutationObserver(DeferCheckForContentsContainer))
-
-			// Check if there's anything we can do immediately
-			CheckForContentsContainer()
-
-			// Observe our elements
-			sidebarChildObserver.observe(sidebar, { childList: true })
-			for (const element of sidebar.children) {
-				if (
-					(element instanceof HTMLDivElement)
-					&& ((element.children.length === 0) || (element.querySelector(ContentsContainer) !== null))
-				) {
-					sidebarChildObserver.observe(element, { childList: true })
+				// Observe our elements
+				sidebarChildObserver.observe(sidebar, { childList: true })
+				for (const element of sidebar.children) {
+					if (
+						(element instanceof HTMLDivElement)
+						&& ((element.children.length === 0) || (element.querySelector(ContentsContainer) !== null))
+					) {
+						sidebarChildObserver.observe(element, { childList: true })
+					}
 				}
 			}
-		}
-		CheckForSidebar()
+			CheckForSidebar()
+        }
+        ConfigureSidebar()
+        ViewMaid.Give(OnProviderSettingsChanged(ConfigureSidebar))
+
 	}
 )
 .then( // Location Handler

@@ -1,0 +1,106 @@
+.BL-Settings,
+.BL-ProviderMenu {
+  color: var(--spice-text, #eee);
+  font-family: inherit;
+  h3 {
+    font-size: 18px;
+    margin: 0 0 18px;
+  }
+  label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    font-size: 14px;
+  }
+  input,
+  select {
+    color: var(--spice-text, #eee);
+    background: var(--spice-card, #333);
+    border: 1px solid var(--spice-button, #777);
+    border-radius: 5px;
+    padding: 8px 10px;
+    font: inherit;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--spice-button-active, #fff);
+    outline-offset: 2px;
+  }
+}
+.BL-Settings {
+  max-height: 65vh;
+  overflow-y: auto;
+  label {
+    margin: 12px 0;
+  }
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--spice-button);
+  }
+  h3:not(:first-child) {
+    margin-top: 24px;
+  }
+  padding: 12px 4px;
+  input {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+  }
+  p {
+    font-size: 13px;
+    color: var(--spice-subtext, #bbb);
+    margin: 12px 0;
+  }
+  button {
+    border: 0;
+    border-radius: 5px;
+    padding: 8px 24px;
+    background: var(--spice-button, #777);
+    color: var(--spice-text, #fff);
+    cursor: pointer;
+  }
+}
+.BL-ProviderMenu {
+  padding: 16px;
+  min-width: 320px;
+  max-width: calc(100vw - 32px);
+  background: var(--spice-main, #181818);
+  border: 1px solid var(--spice-button, #777);
+  border-radius: 6px;
+  select {
+    max-width: 240px;
+  }
+}
+.BL-Attribution {
+  position: absolute;
+  bottom: 8px;
+  right: 16px;
+  max-width: calc(100% - 32px);
+  z-index: 5;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--spice-main, #181818);
+  color: var(--spice-subtext, #ccc);
+  font: 12px/1.4 sans-serif;
+  a {
+    color: inherit;
+    text-decoration: underline;
+  }
+}
+// Keep the anchor measurable when fullscreen's existing inactivity fade runs.
+// Otherwise an open popup jumps to the viewport origin as its button disappears.
+.ViewControls.BL-ProviderOpen {
+  display: flex !important;
+  opacity: 1 !important;
+}
+
+// Spotify's native title-bar drag surface overlaps the injected right-side
+// buttons. Mark each wrapper and descendant explicitly, independent of load order.
+.main-actionButtons .spicetify-topbar-button,
+.main-actionButtons .spicetify-topbar-button * {
+  -webkit-app-region: no-drag !important;
+}

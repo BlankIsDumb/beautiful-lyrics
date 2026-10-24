@@ -22,6 +22,7 @@ import {
 // Singletons
 // Discord verification belongs to the retired hosted backend.
 import "./LyricViews/mod.ts"
+import "./ProviderControls.ts"
 
 // Shared Methods
 import { CreateElement } from "./LyricViews/Shared.ts"

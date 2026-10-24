@@ -11,7 +11,7 @@ import { Defer, Timeout } from "@Universal/Modules/Scheduler.ts"
 import {
 	GlobalMaid,
 	OnSpotifyReady,
-	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder,
+	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder, SpotifyHistory,
 	ShowNotification
 } from "../Session.ts"
 import { GetExpireStore } from '../Cache.ts'
@@ -22,7 +22,9 @@ import {
 	type ProviderLyrics, type TransformedLyrics, type RomanizedLanguage
 } from "./LyricUtilities.ts"
 
-import { FetchLyrics } from "./LyricsProviders.ts"
+import { FetchLyricCandidates } from "./LyricsProviders.ts"
+import { OnProviderSettingsChanged, GetBehaviorSettings } from "./ProviderSettings.ts"
+import { lyricsRequired } from "./LyricDemand.mjs"
 import { createLyricRequestGate } from "./LyricRequestGate.mjs"
 
 // Re-export some useful types
@@ -344,8 +346,28 @@ const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
 
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let SongLyricsError: string | undefined
+export let SongLyricChoices: TransformedLyrics[] = []
+let lyricLoadGeneration = 0
+let lyricsDeferred = false
+let lyricsPending = false
+let latestDetailsReady: Promise<void> | void
+const IsLyricsRequired = () => lyricsRequired(GetBehaviorSettings(), SpotifyHistory?.location.pathname || '')
+export function SelectLyricsProvider(provider: string) {
+  const choice = SongLyricChoices.find(l=>l.Source?.Provider===provider);
+  if (!choice) return;
+  SongLyrics = choice;
+  SongLyricsError = undefined;
+  SongLyricsLoadedSignal.Fire();
+}
+export function ReloadLyrics() { LoadSongLyrics(latestDetailsReady); }
+PlayerMaid.Give(OnProviderSettingsChanged(ReloadLyrics))
 export let HaveSongLyricsLoaded: boolean = false
-const LoadSongLyrics = (detailsReady: Promise<void> | void) => {
+const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
+	latestDetailsReady = detailsReady;
+	const generation = ++lyricLoadGeneration;
+	lyricsPending = false;
+	lyricsDeferred = false;
+	SongLyricChoices = [];
 	// Register at song-change time, before metadata IO can reorder the burst.
 	// Local/DJ transitions also cancel any older pending provider dispatch.
 	const dispatchReady = lyricRequestGate.change()
@@ -355,11 +377,16 @@ const LoadSongLyrics = (detailsReady: Promise<void> | void) => {
 	// Check if we can even possibly have lyrics
 	const songAtUpdate = Song
 	const trackAtUpdate = SpotifyPlayer.data?.item
-	if ((songAtUpdate === undefined) || (songAtUpdate.Type !== "Streamed")) {
+	if ((songAtUpdate === undefined) || (songAtUpdate.Type === "DJ")) {
 		HaveSongLyricsLoaded = true
 		SongLyricsLoadedSignal.Fire()
 		return
 	}
+	if (!IsLyricsRequired()) {
+		lyricsDeferred = true;
+		return;
+	}
+	lyricsPending = true;
 
 	// Now go through the process of loading our lyrics
 	{
@@ -367,37 +394,61 @@ const LoadSongLyrics = (detailsReady: Promise<void> | void) => {
 		// lookup without being hidden for a month by a cached fallback selection.
 		Promise.all([dispatchReady, detailsReady])
 		.then(([ready]) => {
-			if (!ready || Song !== songAtUpdate || PlayerMaid.IsDestroyed()) throw new Error("Track changed before lyric lookup");
+			if (!ready || Song !== songAtUpdate || generation !== lyricLoadGeneration || PlayerMaid.IsDestroyed()) throw new Error("Track changed before lyric lookup");
 		})
-		.then(() => FetchLyrics(trackAtUpdate, songAtUpdate.Duration,
-			() => Song === songAtUpdate && !PlayerMaid.IsDestroyed(),
+		.then(() => FetchLyricCandidates(trackAtUpdate, songAtUpdate.Duration,
+			() => Song === songAtUpdate && generation === lyricLoadGeneration && !PlayerMaid.IsDestroyed(),
 			SongDetails && !SongDetails.IsLocal ? SongDetails.ISRC : "",
 			SongDetails && !SongDetails.IsLocal ? (SongDetails.Raw as any).canonical_uri : undefined))
-		.then(async lyrics => {
-			if (!lyrics) return undefined;
-			const key = lyrics.Source!.CacheKey;
-			const cached = await TransformedLyricsStore.GetItem(key);
-			if (cached) return { ...cached, Source: lyrics.Source };
-			const transformed = await TransformProviderLyrics(lyrics);
-			await TransformedLyricsStore.SetItem(key, transformed);
-			return transformed;
-		})
+		.then(async candidates => {
+      const usable: TransformedLyrics[] = [];
+      const preparationWarnings: string[] = [];
+      // Convert independently: one malformed/unsupported source must not discard
+      // valid fallback lyrics, including when another provider is rate-limited.
+      for (const lyrics of candidates) {
+        if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
+        try {
+          const key = lyrics.Source!.CacheKey;
+          const ephemeral = lyrics.Source!.Provider === 'Spicy';
+          const cached = ephemeral ? undefined : await TransformedLyricsStore.GetItem(key);
+          const transformed = cached ? {...cached,Source:lyrics.Source,Attribution:(lyrics as any).Attribution} : await TransformProviderLyrics(structuredClone(lyrics));
+          if (!cached && !ephemeral) await TransformedLyricsStore.SetItem(key,transformed);
+          usable.push(transformed);
+        } catch (error) {
+          // Keep the fallback, but don't silently conceal a preparation failure.
+          // This is local conversion (never the credential-bearing transport).
+          const detail = error instanceof Error ? error.message.slice(0,160) : 'unknown error';
+          preparationWarnings.push(`${lyrics.Source!.Provider}: lyric preparation failed (${detail})`);
+        }
+      }
+      if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
+        if (candidates.length && !usable.length) throw new Error(`No provider returned renderable lyrics: ${preparationWarnings.join('; ')}`);
+      const summaries = usable.map(l=>({Provider:l.Source!.Provider,TrackId:l.Source!.TrackId,UniqueTimings:l.Source!.UniqueTimings,Type:l.Type}));
+      for (const lyrics of usable) {
+        lyrics.Source!.Candidates = summaries;
+        lyrics.Source!.Warnings = [...lyrics.Source!.Warnings,...preparationWarnings];
+      }
+      SongLyricChoices = usable;
+      return usable[0];
+    })
 		.then(
 			transformedLyrics => {
 				// Make sure we still have the same song active
-				if (Song !== songAtUpdate) {
+				if (Song !== songAtUpdate || generation !== lyricLoadGeneration || PlayerMaid.IsDestroyed()) {
 					return
 				}
 
 				// Update our lyrics
 				SongLyrics = transformedLyrics, HaveSongLyricsLoaded = true
+				lyricsPending = false
 				SongLyricsLoadedSignal.Fire()
 			}
 		).catch(error => {
-			if (Song !== songAtUpdate || PlayerMaid.IsDestroyed()) return;
+			if (Song !== songAtUpdate || generation !== lyricLoadGeneration || PlayerMaid.IsDestroyed()) return;
 			// A provider outage is not a permanent "no lyrics" cache entry.
 			SongLyricsError = error instanceof Error ? error.message : "Lyrics unavailable";
 			HaveSongLyricsLoaded = true;
+			lyricsPending = false;
 			SongLyricsLoadedSignal.Fire();
 			ShowNotification("Beautiful Lyrics: lyric provider unavailable. Open the lyrics page for details.", "warning", 5);
 		})
@@ -407,6 +458,17 @@ const LoadSongLyrics = (detailsReady: Promise<void> | void) => {
 // Wait for Spotify to be ready
 OnSpotifyReady.then(
 	() => {
+		PlayerMaid.Give(SpotifyHistory.listen(() => {
+			if (IsLyricsRequired()) {
+				if (lyricsDeferred) ReloadLyrics();
+			} else if (lyricsPending) {
+				// Invalidate queued work when the last consumer closes. Completed
+				// choices remain usable when reopening the same song.
+				++lyricLoadGeneration;
+				lyricsPending = false;
+				lyricsDeferred = true;
+			}
+		}));
 		// Do not patch the shared RequestBuilder: other extensions own their requests.
 
 		// Handle song updates

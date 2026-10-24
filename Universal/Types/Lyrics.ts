@@ -70,9 +70,10 @@ export type SyllableSyncedLyrics = (
 )
 
 export type Lyrics = (StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics) & {
+	Attribution?: { Source: string; People: { Name: string; URL?: string }[] };
 	Source?: {
-		Provider: string; TrackId: string; UniqueTimings: number; CacheKey: string;
-		Candidates: { Provider: string; TrackId: string; UniqueTimings: number }[];
+		Provider: string; TrackId: string; UniqueTimings: number; CacheKey: string; HasWordSync?: boolean;
+		Candidates: { Provider: string; TrackId: string; UniqueTimings: number; Type?: "Syllable" | "Line" | "Static" }[];
 		Warnings: string[];
 	};
 }

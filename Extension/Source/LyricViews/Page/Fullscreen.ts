@@ -1,3 +1,4 @@
+import { SetupProviderControls } from '../../ProviderControls.ts'
 // Styles
 import "./style.scss"
 
@@ -232,6 +233,7 @@ export default class PageView implements Giveable {
 			const coverArt = mediaSpace.querySelector<HTMLImageElement>(".CoverArt")!
 			const addToPlaylistCover = mediaSpace.querySelector<HTMLDivElement>(".AddToPlaylistCover")!
 			const viewControls = mediaSpace.querySelector<HTMLDivElement>(".ViewControls")!
+		SetupProviderControls(viewControls, this.Maid)
 			const likeStateContainer = mediaSpace.querySelector<HTMLDivElement>(".LikeState .Hitbox")!
 			const playbackControls = mediaSpace.querySelector<HTMLDivElement>(".PlaybackControls")!
 

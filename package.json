@@ -1,11 +1,11 @@
 {
   "name": "beautiful-lyrics-local",
   "private": true,
-  "version": "5.1.0-local.2",
+  "version": "5.1.0-local.4",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests"
+    "test": "node scripts/test.mjs"
   },
   "dependencies": {
     "@rwh/keystrokes": "1.5.6",
@@ -17,7 +17,8 @@
     "kuromoji": "0.1.2",
     "seedrandom": "3.0.5",
     "simplebar": "6.2.7",
-    "three": "0.164.1"
+    "three": "0.164.1",
+    "yaml": "2.8.2"
   },
   "devDependencies": {
     "@xmldom/xmldom": "0.9.12",

@@ -33,6 +33,19 @@ export default class LyricsRenderer implements Giveable {
 		parentContainer: HTMLDivElement,
 		transformedLyrics: TransformedLyrics, isRomanized: boolean
 	) {
+    // Attribution belongs to every rendering surface, including the sidebar.
+    if (transformedLyrics.Attribution) {
+      const credit=this.Maid.Give(document.createElement('div'));
+      credit.className='BL-Attribution';
+      const source=transformedLyrics.Attribution.Source;
+      credit.textContent=`${({apple_music:'Apple Music',spotify:'Spotify',spicy_lyrics:'Spicy Lyrics'} as Record<string,string>)[source]||source} via Spicy Lyrics`;
+      for(const person of transformedLyrics.Attribution.People){
+        credit.append(' · ');
+        if(person.URL){const link=document.createElement('a');link.href=person.URL;link.textContent=person.Name;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
+        else credit.append(person.Name);
+      }
+      parentContainer.append(credit);
+    }
 		// Create our containers
 		const scrollContainer = this.Maid.Give(document.createElement("div"))
 		scrollContainer.classList.add("LyricsScrollContainer")

@@ -42,19 +42,65 @@ the direct richsync flow also present in
 
 AMLL is also queried directly from its GitHub TTML database using the playing
 Spotify ID and, when different, Spotify metadata's canonical ID. This is an ID
-lookup, not a title search; romanized/translated names do not affect it. Both
-sources are compared by the number of distinct nonblank vocal start timestamps,
-rounded to milliseconds. Duplicated simultaneous timestamps count once; ties
-prefer AMLL. This is a simple granularity heuristic, not proof of audible accuracy.
+lookup, not a title search; romanized/translated names do not affect it. Word-synced
+sources are compared by distinct nonblank vocal start timestamps, rounded to
+milliseconds. Duplicated simultaneous timestamps count once; ties prefer AMLL.
+This is a granularity heuristic, not proof of audible accuracy.
 AMLL timestamps are bounded against track duration and retain background vocals,
-singer alignment and overlaps. Lyrics Plus, LRCLIB and Spotify lyric providers
-are not part of this extension's provider chain.
+singer alignment and overlaps. LRCLIB is queried with title, artist, album and
+duration; this also works for local files. Its LRC and word-timed Lyricsfile YAML
+formats are supported. No title translation or fuzzy search is performed.
+
+Spicy is optional: open Beautiful Lyrics Settings beside the notification/Comfy
+button, enter your own API token and save. Empty/whitespace disables it, including
+cached responses. Tokens stay in this installation's localStorage, never the
+bundle or diagnostic status. Use your own publishable key with **requests without
+Origin allowed** in the Spicy dashboard. The dashboard currently refuses the
+Spotify browser origin. Start the included local relay with Node.js 20+:
+
+```powershell
+./scripts/start-spicy-relay.ps1
+```
+
+It runs hidden on `127.0.0.1:8967`; run the script again after reboot/login. No
+startup task or service is installed. Spotify sends the key to this loopback
+helper, which forwards directly to the official API without an Origin header.
+It does not persist/log keys or lyrics, forward Spotify credentials, or accept
+arbitrary destination URLs. No public CORS proxy is involved. See the
+[key documentation](https://developers.spicylyrics.org/docs/keys). No shared key
+ships with this fork. Spicy is queried by Spotify track ID and displays source
+and contributor attribution. Direct Spotify lyrics remain outside this chain.
+
+All four providers share the same song-change gate. Provider failures are isolated
+through parsing and transformation; any usable response can render. The page only
+shows an error if there are failures and no usable result. An unsuccessful provider
+is excluded from Additional Options > Lyrics Provider. Successful alternatives are
+kept for the current song; selecting one renders immediately without a new request.
+Manual selection resets on track change or a token change.
+
+The Behavior section controls fetching and enabled sources. "On song change"
+preserves the existing behavior. "When required" defers lookup until a Beautiful
+Lyrics page/fullscreen opens; enabling Now Playing sidebar lyrics overrides this
+gate and fetches on song changes. To minimize background fetching, choose "When
+required" and switch the sidebar off. Defaults preserve song-change fetching and
+the existing sidebar-enabled behavior. Sidebar visibility still depends on client
+DOM compatibility; this pass gates its existing lifecycle rather than redesigning
+the sidebar. Disabling it removes its card/observers and restores any native card
+it hid. Disabled providers do not fetch or contribute cached choices.
+
+Word timing beats line timing, which beats plain text. Whole-line wrappers inside
+a Syllable response do not qualify for the word-sync flag. When only line timing
+is available, preference is Musixmatch, Spicy, AMLL, LRCLIB. Extra credit lines do
+not improve rank. This preference can be overridden in the picker.
 
 Each provider has an independent cache. Musixmatch and transformed lyrics use
 the inherited calendar-month expiry; this is NOT a rolling 30 days. It rounds to
 midnight, advances the month, then selects day zero (the preceding month end).
 For example, October 23 entries expire October 31 at midnight. AMLL and Spotify
 metadata use two weeks, rounded to midnight (AMLL includes missing ID files).
+LRCLIB also uses two weeks, including missing results. Spicy uses an in-memory
+24-hour cache of at most 32 tracks, cleared on token change and reload; its raw or
+transformed responses are never written to the persistent lyrics cache.
 Expired/version-mismatched records are ignored on lookup, not actively deleted.
 There is no scheduled purge, storage size cap or manual cache-clear UI. Service/parser failures are not
 negative-cached. A valid provider can still be selected while another fails;
@@ -122,4 +168,29 @@ loaded state, sync type, and a sanitized provider error; it never exposes tokens
 
 AMLL still queries track files directly. Normal 404s are cached as missing without
 an application warning; Chromium may log the HTTP 404 itself. No catalog index
-or global console suppression is used. Visibility-gated fetching remains deferred.
+or global console suppression is used. Fetch demand is driven by navigation,
+settings and song-change events, with no additional polling loop.
+
+### macOS relay launcher and startup notification
+
+The same `scripts/spicy-relay.mjs` runs on Windows and macOS with Node.js 20+.
+On macOS, from the repository directory, enable double-click launching once:
+
+```sh
+chmod +x scripts/start-spicy-relay.command
+./scripts/start-spicy-relay.command
+```
+
+The launcher recognizes Homebrew Node locations on Apple Silicon and Intel Macs.
+For another installation, set `NODE_BINARY` to its absolute path. It detaches the
+relay with `nohup`; closing Terminal will not stop it. Repeated launches check the
+existing service first. Logs contain lifecycle/errors only, not tokens or lyrics.
+Register your own login item/task if desired; neither launcher installs one.
+A `.command` login item may open Terminal briefly. For silent macOS startup,
+launchd can run Node with the absolute path to `scripts/spicy-relay.mjs` directly.
+
+At extension startup, a saved Spicy key triggers one credential-free local health
+check (3-second timeout). If unavailable, a warning toast asks you to start the
+relay. No periodic polling or upstream API request is added. The check also runs
+when Spicy is disabled but a key remains saved. A relay started later than Spotify
+may produce this startup warning; subsequent lyric fetches can still use it.

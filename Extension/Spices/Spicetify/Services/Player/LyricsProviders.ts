@@ -1,5 +1,8 @@
 import { GetExpireStore } from '../Cache.ts';
 import { FetchMusixmatchLyrics } from './Musixmatch.ts';
+import { FetchLrclib, FetchSpicy } from './AdditionalProviders.ts';
+import { IsProviderEnabled } from './ProviderSettings.ts';
+import { validateLyrics, compareCandidates, hasWordTiming } from './ProviderFormats.mjs';
 import { convertAmll } from './AmllLyrics.mjs';
 import { uniqueTimingCount, lyricFingerprint } from './LyricTiming.mjs';
 import type { ProviderLyrics } from './LyricUtilities.ts';
@@ -33,12 +36,14 @@ async function fetchAmll(id: string, duration: number, isCurrent: () => boolean)
   return lyrics;
 }
 
-export async function FetchLyrics(track: Parameters<typeof FetchMusixmatchLyrics>[0], duration: number, isCurrent: () => boolean, isrc = '', canonical?: string): Promise<ProviderLyrics | undefined> {
+export async function FetchLyricCandidates(track: Parameters<typeof FetchMusixmatchLyrics>[0], duration: number, isCurrent: () => boolean, isrc = '', canonical?: string): Promise<ProviderLyrics[]> {
   if (!isCurrent()) throw new Error('Track changed before lyric lookup');
   const candidates: { provider: string; trackId: string; lyrics: ProviderLyrics; timings: number }[] = [];
   const warnings: string[] = [];
   const jobs = [
     (async () => {
+      if (!IsProviderEnabled('Musixmatch')) return;
+      if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(track.uri)) return;
       const id = track.uri.split(':')[2];
       let lyrics = await musixmatch.GetItem(id);
       if (lyrics === undefined) {
@@ -48,6 +53,7 @@ export async function FetchLyrics(track: Parameters<typeof FetchMusixmatchLyrics
       if (lyrics) candidates.push({ provider: 'Musixmatch', trackId: id, lyrics, timings: uniqueTimingCount(lyrics) });
     })().catch(error => warnings.push(`Musixmatch: ${error.message}`)),
     (async () => {
+      if (!IsProviderEnabled('AMLL')) return;
       for (const id of amllTrackIds(track.uri, canonical)) {
         if (!isCurrent()) break;
         // One failed alias must not prevent checking the other edition.
@@ -57,20 +63,39 @@ export async function FetchLyrics(track: Parameters<typeof FetchMusixmatchLyrics
         } catch (error) { warnings.push(`AMLL: ${(error as Error).message}`); }
       }
     })(),
+    (async () => {
+      if (!IsProviderEnabled('LRCLIB')) return;
+      const lyrics = await FetchLrclib(track, duration, isCurrent);
+      if (lyrics) candidates.push({provider:'LRCLIB',trackId:track.uri,lyrics,timings:uniqueTimingCount(lyrics)});
+    })().catch(error=>warnings.push(`LRCLIB: ${error.message}`)),
+    (async () => {
+      if (!IsProviderEnabled('Spicy')) return;
+      const id = amllTrackIds(track.uri)[0];
+      if (!id) return;
+      const lyrics = await FetchSpicy(id, duration, isCurrent);
+      if (lyrics) candidates.push({provider:'Spicy',trackId:id,lyrics,timings:uniqueTimingCount(lyrics)});
+    })().catch(error=>warnings.push(`Spicy: ${error.message}`)),
   ];
   await Promise.all(jobs);
   if (!isCurrent()) throw new Error('Track changed during lyric lookup');
-  // Count distinct visible start times, not text fragments or duplicate backing
-  // timestamps. Equal scores prefer AMLL deterministically, independent of IO.
-  candidates.sort((a, b) => b.timings - a.timings || a.provider.localeCompare(b.provider) || a.trackId.localeCompare(b.trackId));
-  const chosen = candidates[0];
-  if (!chosen) {
-    if (warnings.length) throw new Error(warnings.join('; '));
-    return undefined;
-  }
-  return { ...chosen.lyrics, Source: {
-    Provider: chosen.provider, TrackId: chosen.trackId, UniqueTimings: chosen.timings,
-    CacheKey: `${chosen.provider}-${chosen.trackId}-${lyricFingerprint(chosen.lyrics)}`,
-    Candidates: candidates.map(c => ({ Provider: c.provider, TrackId: c.trackId, UniqueTimings: c.timings })), Warnings: warnings,
-  } };
+  const valid = candidates.filter(candidate => {
+    try {
+      const checked = validateLyrics(candidate.lyrics,duration);
+      if (!checked) return false;
+      candidate.lyrics = {...checked,...((candidate.lyrics as any).Attribution ? {Attribution:(candidate.lyrics as any).Attribution} : {})};
+      return true;
+    } catch { warnings.push(`${candidate.provider}: invalid lyric data`); return false; }
+  }).sort(compareCandidates);
+  // Multiple AMLL edition IDs are candidates internally; the picker exposes the
+  // best usable result from each provider rather than duplicate provider names.
+  const chosen = valid.filter((c,i)=>valid.findIndex(v=>v.provider===c.provider)===i);
+  if (!chosen.length && warnings.length) throw new Error(warnings.join('; '));
+  const summaries = chosen.map(c=>({Provider:c.provider,TrackId:c.trackId,UniqueTimings:c.timings,Type:c.lyrics.Type}));
+  return chosen.map(c=>({...c.lyrics,Source:{Provider:c.provider,TrackId:c.trackId,UniqueTimings:c.timings,HasWordSync:hasWordTiming(c.lyrics),
+    CacheKey:`${c.provider}-${c.trackId}-${lyricFingerprint(c.lyrics)}`,Candidates:summaries,Warnings:warnings}}));
+}
+
+// Compatibility for callers which only need the automatically selected result.
+export async function FetchLyrics(...args: Parameters<typeof FetchLyricCandidates>) {
+  return (await FetchLyricCandidates(...args))[0];
 }

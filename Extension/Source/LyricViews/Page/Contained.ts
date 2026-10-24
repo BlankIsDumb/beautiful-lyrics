@@ -1,3 +1,4 @@
+import { SetupProviderControls } from '../../ProviderControls.ts'
 // Styles
 import "./style.scss"
 
@@ -64,6 +65,7 @@ export default class PageView implements Giveable {
 		// Create our container/header
 		const container = this.Maid.Give(CreateElement<HTMLDivElement>(Container))
 		const header = this.Maid.Give(CreateElement<HTMLDivElement>(Header))
+		SetupProviderControls(header, this.Maid)
 
 		// Apply our dynamic background
 		ApplyDynamicBackground(container, this.Maid)

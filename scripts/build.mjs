@@ -3,9 +3,11 @@ import * as sass from 'sass';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyDictionary } from './verify-dictionary.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const styles = new Map();
+const dictionary = {};
 const aliases = { '@Spices/': 'Extension/Spices/', '@Universal/': 'Universal/', '@Pinyin/': 'Pinyin/' };
 const result = await build({
   absWorkingDir: root,
@@ -26,7 +28,6 @@ const result = await build({
       build.onResolve({ filter: /^local-dictionary$/ }, () => ({ path: 'dictionary', namespace: 'embedded' }));
       build.onLoad({ filter: /.*/, namespace: 'embedded' }, async () => {
         const directory = path.join(root, 'node_modules/kuromoji/dict');
-        const dictionary = {};
         for (const name of (await readdir(directory)).sort()) {
           if (name.endsWith('.gz')) dictionary[name] = (await readFile(path.join(directory, name))).toString('base64');
         }
@@ -51,7 +52,10 @@ const result = await build({
 const css = [...styles].sort(([a], [b]) => a.localeCompare(b)).map(([, css]) => css).join('\n');
 const styleCode = `const style=document.createElement('style');style.id='beautiful-lyrics-local';style.textContent=${JSON.stringify(css)};document.head.append(style);\n`;
 const code = styleCode + result.outputFiles[0].text;
+verifyDictionary(code, dictionary);
 if (/socalifornian\.live/.test(code)) throw new Error('Local bundle still contains an author-hosted dependency');
 await mkdir(path.join(root, 'dist'), { recursive: true });
 await writeFile(path.join(root, 'dist/beautiful-lyrics-local.mjs'), code);
+// Check the persisted artifact too, before it can be installed.
+verifyDictionary(await readFile(path.join(root, 'dist/beautiful-lyrics-local.mjs'), 'utf8'), dictionary);
 console.log(`Built self-contained extension: ${(Buffer.byteLength(code) / 1024 / 1024).toFixed(1)} MiB, ${styles.size} stylesheets`);

@@ -1,7 +1,7 @@
 // Credentials belong to this installation, never the bundle or diagnostics.
 const key = "BeautifulLyricsLocal/SpicyToken";
 const listeners = new Set<() => void>();
-export const Providers = ["Musixmatch", "AMLL", "LRCLIB", "Spicy"] as const;
+export const Providers = ["Musixmatch", "AMLL", "LRCLIB", "Spotify", "Spicy"] as const;
 export type BehaviorSettings = {
   fetchMode: "change" | "required";
   sidebarEnabled: boolean;

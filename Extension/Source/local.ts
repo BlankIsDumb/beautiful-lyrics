@@ -8,7 +8,7 @@ const player = await import('@Spices/Spicetify/Services/Player/mod.ts');
 // A small lifecycle/status surface is useful for local installs and diagnostics.
 // Never expose provider credentials here.
 (globalThis as any).BeautifulLyricsLocal = {
-  version: '5.1.0-local.4',
+  version: '5.1.0-local.5',
   status: () => ({
     track: player.Song?.Uri,
     lyricsLoaded: player.HaveSongLyricsLoaded,

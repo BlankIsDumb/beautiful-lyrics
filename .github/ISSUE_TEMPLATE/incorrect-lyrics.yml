@@ -2,7 +2,6 @@ name: "Incorrect Lyrics"
 description: "Lyrics are incorrect."
 title: "First Songs' Name/Artists"
 labels: ["Incorrect Lyrics"]
-assignees: surfbryce
 
 body:
   - type: checkboxes

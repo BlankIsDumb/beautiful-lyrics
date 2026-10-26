@@ -1,7 +1,7 @@
 {
   "name": "beautiful-lyrics-local",
   "private": true,
-  "version": "5.1.0-local.4",
+  "version": "5.1.0-local.5",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",

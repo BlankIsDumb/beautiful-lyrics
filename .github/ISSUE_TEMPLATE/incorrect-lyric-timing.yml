@@ -2,7 +2,6 @@ name: "Incorrect Lyrics Timing"
 description: "Lyrics that are significantly delayed (early or late) from their respective Songs."
 title: "First Songs' Name // Artists"
 labels: ["Incorrect Lyrics Timing"]
-assignees: surfbryce
 
 body:
   - type: checkboxes

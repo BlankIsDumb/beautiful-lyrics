@@ -1,7 +1,7 @@
 {
 	"tasks": {
-		"test": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/Test.ts",
-		"release": "deno run --allow-read --allow-run --allow-net --allow-env --allow-write ./Tasks/Release.ts"
+		"test": "npm --prefix .. test",
+		"build": "npm --prefix .. run build"
 	},
 
 	"compilerOptions": {

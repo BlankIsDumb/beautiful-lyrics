@@ -1,6 +1,7 @@
 import { GetExpireStore } from '../Cache.ts';
 import { FetchMusixmatchLyrics } from './Musixmatch.ts';
 import { FetchLrclib, FetchSpicy } from './AdditionalProviders.ts';
+import { FetchSpotify } from './SpotifyProvider.ts';
 import { IsProviderEnabled } from './ProviderSettings.ts';
 import { validateLyrics, compareCandidates, hasWordTiming } from './ProviderFormats.mjs';
 import { convertAmll } from './AmllLyrics.mjs';
@@ -41,6 +42,15 @@ export async function FetchLyricCandidates(track: Parameters<typeof FetchMusixma
   const candidates: { provider: string; trackId: string; lyrics: ProviderLyrics; timings: number }[] = [];
   const warnings: string[] = [];
   const jobs = [
+    (async () => {
+      if (!IsProviderEnabled('Spotify')) return;
+      // Try the current release first. Only an absent result tries its canonical
+      // recording; access failures must not multiply requests across aliases.
+      for (const id of amllTrackIds(track.uri, canonical)) {
+        const lyrics = await FetchSpotify(id,duration,isCurrent);
+        if (lyrics) { candidates.push({provider:'Spotify',trackId:id,lyrics,timings:uniqueTimingCount(lyrics)}); break; }
+      }
+    })().catch(error=>warnings.push(`Spotify: ${error.message}`)),
     (async () => {
       if (!IsProviderEnabled('Musixmatch')) return;
       if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(track.uri)) return;

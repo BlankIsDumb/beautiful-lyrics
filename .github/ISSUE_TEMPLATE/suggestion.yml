@@ -2,7 +2,6 @@ name: "Suggestion"
 description: "Use this to Suggest New Features, Improvements, and etc."
 title: "Summarize your Suggestion Here"
 labels: ["Suggestion"]
-assignees: surfbryce
 
 body:
   - type: dropdown

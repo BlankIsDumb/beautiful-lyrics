@@ -1,18 +1,31 @@
 [
-	{
-		"name": "Beautiful Lyrics Local",
-		"description": "Locally bundled Beautiful Lyrics with direct Musixmatch word timing and no author-hosted services.",
-		"preview": "./Marketing/Marketplace/Icon.gif",
-		"main": "./dist/beautiful-lyrics-local.mjs",
-		"readme": "README.md",
-		"authors": [
-			{ "name": "SoCalifornian", "url": "https://github.com/surfbryce" }
-		],
-		"tags": [
-			"lyrics",
-			"fullscreen", "background",
-			"romanization", "romaji", "romaja", "pinyin",
-			"japanese", "korean", "chinese"
-		]
-	}
+  {
+    "name": "Beautiful Lyrics Local",
+    "description": "Personal Beautiful Lyrics fork with local builds, multiple lyric sources and configurable behavior.",
+    "preview": "./Marketing/Marketplace/Icon.gif",
+    "main": "./dist/beautiful-lyrics-local.mjs",
+    "readme": "README.md",
+    "authors": [
+      {
+        "name": "SoCalifornian",
+        "url": "https://github.com/surfbryce"
+      },
+      {
+        "url": "https://github.com/BlankIsDumb",
+        "name": "BlankIsDumb"
+      }
+    ],
+    "tags": [
+      "lyrics",
+      "fullscreen",
+      "background",
+      "romanization",
+      "romaji",
+      "romaja",
+      "pinyin",
+      "japanese",
+      "korean",
+      "chinese"
+    ]
+  }
 ]

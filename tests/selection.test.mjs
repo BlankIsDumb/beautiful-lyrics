@@ -3,16 +3,17 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { DOMParser } from '@xmldom/xmldom';
 const code=await build({entryPoints:['Extension/Spices/Spicetify/Services/Player/LyricsProviders.ts'],bundle:true,write:false,format:'esm',platform:'browser',plugins:[{name:'mock-providers',setup(b){
+  b.onResolve({filter:/SpotifyProvider\.ts$/},()=>({path:'spotify',namespace:'fake'}));
   b.onResolve({filter:/Cache\.ts$/},()=>({path:'cache',namespace:'fake'}));
   b.onResolve({filter:/AdditionalProviders\.ts$/},()=>({path:'additional',namespace:'fake'}));
   b.onResolve({filter:/Musixmatch\.ts$/},()=>({path:'mxm',namespace:'fake'}));
-  b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='additional'?'export const FetchLrclib=(...a)=>globalThis.extraLrc(...a); export const FetchSpicy=(...a)=>globalThis.extraSpicy(...a);':a.path==='cache'?'export const GetExpireStore=(name)=>({GetItem:async key=>globalThis.stores.get(name+key),SetItem:async(key,value)=>globalThis.stores.set(name+key,value)});':'export const FetchMusixmatchLyrics=(...args)=>globalThis.mxm(...args);'}));
+  b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='spotify'?'export const FetchSpotify=(...a)=>globalThis.extraSpotify(...a);':a.path==='additional'?'export const FetchLrclib=(...a)=>globalThis.extraLrc(...a); export const FetchSpicy=(...a)=>globalThis.extraSpicy(...a);':a.path==='cache'?'export const GetExpireStore=(name)=>({GetItem:async key=>globalThis.stores.get(name+key),SetItem:async(key,value)=>globalThis.stores.set(name+key,value)});':'export const FetchMusixmatchLyrics=(...args)=>globalThis.mxm(...args);'}));
 }}]});
 let serial=0;
 const id='0123456789012345678901',alias='1123456789012345678901';
 const track={uri:'spotify:track:'+id};
 const xml='<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="0s" end="2s"><span begin="0s" end="1s">one </span><span begin="1s" end="2s">two</span></p></div></body></tt>';
-async function setup(){globalThis.localStorage={getItem:()=>null};globalThis.stores=new Map();globalThis.extraLrc=async()=>undefined;globalThis.extraSpicy=async()=>undefined;globalThis.DOMParser=DOMParser;return import('data:text/javascript;base64,'+Buffer.from(code.outputFiles[0].text+`\n//${serial++}`).toString('base64'));}
+async function setup(){globalThis.localStorage={getItem:()=>null};globalThis.stores=new Map();globalThis.extraSpotify=async()=>undefined;globalThis.extraLrc=async()=>undefined;globalThis.extraSpicy=async()=>undefined;globalThis.DOMParser=DOMParser;return import('data:text/javascript;base64,'+Buffer.from(code.outputFiles[0].text+`\n//${serial++}`).toString('base64'));}
 test('canonical mapping is deduplicated and finer AMLL wins; cached providers avoid repeat requests',async()=>{
   const p=await setup();let requests=0,mxmRequests=0;
   globalThis.fetch=async url=>{requests++;return url.includes(alias)?new Response(xml):new Response('',{status:404});};
@@ -76,10 +77,19 @@ test('local tracks only use metadata-capable LRCLIB, never Spotify-ID providers'
 
 test('disabled sources are neither requested nor returned from their caches',async()=>{
   const p=await setup();
-  globalThis.localStorage={getItem:()=>JSON.stringify({providers:{Musixmatch:false,AMLL:false,LRCLIB:false,Spicy:false}})};
+  globalThis.localStorage={getItem:()=>JSON.stringify({providers:{Musixmatch:false,AMLL:false,LRCLIB:false,Spotify:false,Spicy:false}})};
   let requests=0;
   globalThis.fetch=globalThis.mxm=globalThis.extraLrc=globalThis.extraSpicy=async()=>{requests++;throw new Error('disabled provider requested')};
   globalThis.stores.set('BeautifulLyricsLocal_Musixmatch'+id,{Type:'Static',Lines:[{Text:'cached'}]});
   assert.deepEqual(await p.FetchLyricCandidates(track,3,()=>true),[]);
   assert.equal(requests,0);
+});
+
+test('Spotify fallback uses canonical only for absence, stays below word timing and skips local IDs',async()=>{
+ const p=await setup();globalThis.fetch=async()=>new Response('',{status:404});globalThis.mxm=async()=>undefined;
+ const ids=[];globalThis.extraSpotify=async id=>{ids.push(id);return id===alias?{Type:'Line',Content:[{Type:'Vocal',Text:'ok',StartTime:0,EndTime:2}]}:undefined};
+ const choices=await p.FetchLyricCandidates(track,3,()=>true,'','spotify:track:'+alias);
+ assert.deepEqual(ids,[id,alias]);assert.equal(choices[0].Source.Provider,'Spotify');
+ ids.length=0;globalThis.extraSpotify=async id=>{ids.push(id);throw new Error('429')};
+ await assert.rejects(p.FetchLyricCandidates(track,3,()=>true,'','spotify:track:'+alias),/429/);assert.deepEqual(ids,[id]);
 });

@@ -12,7 +12,7 @@ const lrcCache = GetExpireStore<ProviderLyrics | false>(
   true,
 );
 const client =
-  "BeautifulLyricsLocal/5.1.0-local.4 (https://github.com/BlankIsDumb/beautiful-lyrics)";
+  "BeautifulLyricsLocal/5.1.0-local.5 (https://github.com/BlankIsDumb/beautiful-lyrics)";
 let lrcQueue: Promise<unknown> = Promise.resolve();
 let nextLrcAt = 0;
 // Spicy responses stay in memory only: no disk copy can outlive its 30-day cap.
@@ -20,7 +20,13 @@ const spicyCache = new Map<
   string,
   { expires: number; lyrics: ProviderLyrics | false }
 >();
-OnProviderSettingsChanged(() => spicyCache.clear());
+let cachedToken = GetSpicyToken();
+OnProviderSettingsChanged(() => {
+  const token = GetSpicyToken();
+  // Display/demand/provider switches do not change the credential owning these
+  // results. Keep them when toggling sources; invalidate on rotation/removal.
+  if (token !== cachedToken) { spicyCache.clear(); cachedToken = token; }
+});
 const cooldownKey = (name: string) => `BeautifulLyricsLocal/${name}Cooldown`;
 async function jsonRequest(
   name: string,

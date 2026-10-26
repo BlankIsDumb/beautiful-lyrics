@@ -2,9 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 const bundle = await build({
-  entryPoints: [
-    "Extension/Spices/Spicetify/Services/Player/AdditionalProviders.ts",
-  ],
+  stdin: {contents: "export * from './Extension/Spices/Spicetify/Services/Player/AdditionalProviders.ts'; export * from './Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts';",resolveDir:process.cwd()},
   bundle: true,
   write: false,
   format: "esm",
@@ -114,4 +112,19 @@ test("LRCLIB queries local metadata, identifies this extension, and caches parse
   assert.equal((await p.FetchLrclib(track, 3, () => true)).Content.length, 2);
   await p.FetchLrclib(track, 3, () => true);
   assert.equal(calls, 1);
+});
+
+test('settings preserve response cache until token changes or is removed',async()=>{
+  const p=await setup();p.SetSpicyToken('one');let calls=0;
+  globalThis.fetch=async()=>{calls++;return Response.json({Status:200,Body:{Type:'Static',Lines:[{Text:'test'}]}})};
+  await p.FetchSpicy('id',3,()=>true);
+  const settings=p.GetBehaviorSettings();settings.fetchMode='required';settings.sidebarEnabled=false;settings.providers.Spotify=false;
+  p.SaveProviderSettings('one',settings);
+  await p.FetchSpicy('id',3,()=>true);assert.equal(calls,1);
+  settings.providers.Spicy=false;p.SaveProviderSettings('one',settings);
+  settings.providers.Spicy=true;p.SaveProviderSettings('one',settings);
+  await p.FetchSpicy('id',3,()=>true);assert.equal(calls,1);
+  p.SaveProviderSettings('two',settings);await p.FetchSpicy('id',3,()=>true);assert.equal(calls,2);
+  p.SetSpicyToken('');assert.equal(await p.FetchSpicy('id',3,()=>true),undefined);
+  p.SetSpicyToken('two');await p.FetchSpicy('id',3,()=>true);assert.equal(calls,3);
 });

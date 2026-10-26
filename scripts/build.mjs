@@ -54,8 +54,14 @@ const styleCode = `const style=document.createElement('style');style.id='beautif
 const code = styleCode + result.outputFiles[0].text;
 verifyDictionary(code, dictionary);
 if (/socalifornian\.live/.test(code)) throw new Error('Local bundle still contains an author-hosted dependency');
-await mkdir(path.join(root, 'dist'), { recursive: true });
-await writeFile(path.join(root, 'dist/beautiful-lyrics-local.mjs'), code);
-// Check the persisted artifact too, before it can be installed.
-verifyDictionary(await readFile(path.join(root, 'dist/beautiful-lyrics-local.mjs'), 'utf8'), dictionary);
+// Keep the established release URL usable too. It must contain the complete
+// local extension, not the upstream loader that downloads an author-hosted bundle.
+const outputs = ['dist/beautiful-lyrics-local.mjs', 'Extension/Builds/Release/beautiful-lyrics.mjs'];
+for (const output of outputs) {
+  const destination = path.join(root, output);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await writeFile(destination, code);
+  // Verify each persisted copy before it can be installed or published.
+  verifyDictionary(await readFile(destination, 'utf8'), dictionary);
+}
 console.log(`Built self-contained extension: ${(Buffer.byteLength(code) / 1024 / 1024).toFixed(1)} MiB, ${styles.size} stylesheets`);

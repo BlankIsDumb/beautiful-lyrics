@@ -164,7 +164,7 @@ export function convertLrclib(record, duration) {
   );
 }
 
-const priority = { Musixmatch: 0, Spicy: 1, AMLL: 2, LRCLIB: 3 };
+const priority = { Musixmatch: 0, Spicy: 1, AMLL: 2, Spotify: 3, LRCLIB: 4 };
 export function hasWordTiming(lyrics) {
   // Some catalogs wrap entire lines in a Syllable object. That is still line
   // precision; keep its rendering shape without advertising invented word sync.

@@ -17,7 +17,7 @@ here rather than sending the original author bugs from this build.
 - Overlapping lead/backing vocals, with scrolling based on measured line bounds.
 - Lyrics page and fullscreen/cinema views, animated cover-art backgrounds.
 - Settings for sources, fetching on track change versus when needed, and sidebar
-  enable/disable. Sidebar compatibility still needs work; see [LOCAL.md](LOCAL.md).
+  enable/disable under **Now Playing → Enabled**. See [LOCAL.md](LOCAL.md).
 - Shared skip debounce: first change starts immediately; rapid skips settle for
   800 ms before another lookup. Provider-specific cooldowns still apply.
 - Existing Japanese/Korean/Chinese romanization, with dictionaries bundled locally.

@@ -26,7 +26,7 @@ Checks completed:
 - Source picker and settings remained usable. Restored on-demand fetching, all
   enabled sources, and the user's disabled-sidebar preference afterward.
 
-## Sidebar investigation (not fixed in this pass)
+## Initial sidebar investigation
 
 With valid lyrics loaded, the current Now Playing anchor existed but the custom
 card was absent. Disabling/re-enabling the integration after the DOM had mounted
@@ -42,3 +42,18 @@ coalesced checks and explicit cleanup, rather than scan the application continuo
 
 Native macOS/Linux runtime behavior is not certified by Windows test results.
 No long-term performance benchmark or exhaustive console-error audit was performed.
+
+## Settings and sidebar follow-up — 2026-10-26
+
+- Matched Comfy's measured 550 px modal, 24 px section headings, 16 px labels,
+  tiled controls and 16 px host content margins; removed the nested scrollbar.
+- Moved the sidebar switch to Now Playing / Enabled. It controls both the
+  existing fetch-demand gate and the sidebar watcher/card lifecycle.
+- Replaced shallow mount observation with filtered, coalesced sidebar child-list
+  observation. Animation attributes/text are not observed, and mutations inside
+  the lyric card are ignored before any selector scan.
+- Live controlled removal of Now Playing's aside cleaned its detached card;
+  reattaching produced exactly one card. Unrelated widget mutations preserved
+  card identity. Expansion rendered lyrics; disabling prevented recreation.
+- All 47 regression tests passed. Both generated artifacts rebuilt and had
+  identical SHA-256 hashes. Applied to Spotify; restored the user's preferences.

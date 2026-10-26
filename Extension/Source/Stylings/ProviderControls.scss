@@ -29,39 +29,85 @@
     outline-offset: 2px;
   }
 }
+// Independent of Comfy's modal-open class: the same layout works with other themes.
 .BL-Settings {
-  max-height: 65vh;
-  overflow-y: auto;
+  padding: 0;
+  font-size: 16px;
+  h3, h4 {
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+    margin: 24px 0 12px;
+    padding: 5px 0;
+  }
+  h3:first-child { margin-top: 4px; }
   label {
-    margin: 12px 0;
+    margin: 8px 0;
+    padding: 20px 16px;
+    min-height: 64px;
+    background: var(--background-tinted-base, rgba(255,255,255,.07));
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
   }
+  select { max-width: 60%; min-width: 0; }
+  // Keep a real checkbox for keyboard/form semantics; only its presentation changes.
   input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    appearance: none;
+    position: relative;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 20px;
+    padding: 0;
     margin: 0;
-    accent-color: var(--spice-button);
+    border: 0;
+    border-radius: 12px;
+    background: var(--spice-button-disabled, #727272);
+    cursor: pointer;
+    transition: background-color .15s;
+    &::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform .15s;
+    }
+    &:checked {
+      background: var(--spice-button, #1db954);
+      &::after { transform: translateX(16px); }
+    }
   }
-  h3:not(:first-child) {
-    margin-top: 24px;
-  }
-  padding: 12px 4px;
-  input {
-    display: block;
-    width: 100%;
-    margin: 10px 0;
-  }
-  p {
-    font-size: 13px;
-    color: var(--spice-subtext, #bbb);
-    margin: 12px 0;
-  }
+  .BL-TokenTile { flex-direction: column; align-items: stretch; gap: 12px; }
+  input[type="password"] { width: 100%; box-sizing: border-box; font-weight: 400; }
+  p { font-size: .9rem; line-height: 1.5; color: var(--spice-subtext, #bbb); margin: 12px 4px; }
   button {
     border: 0;
-    border-radius: 5px;
-    padding: 8px 24px;
+    border-radius: 8px;
+    padding: 10px 24px;
+    font: inherit;
+    font-weight: 600;
     background: var(--spice-button, #777);
     color: var(--spice-text, #fff);
     cursor: pointer;
+  }
+}
+.spicetify-popup-container:has(.BL-Settings) {
+  width: min(550px, calc(100vw - 32px)) !important;
+  padding: 0;
+  .main-trackCreditsModal-header { padding: 12px 12px 12px 16px; }
+  .main-type-alto { font-size: 25px; }
+  // One scrollbar, at the host content boundary, like Comfy. A second scroll
+  // container inside the form consumed width and doubled the side padding.
+  .spicetify-popup-content {
+    padding: 0 16px 16px;
+    max-height: 65vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
   }
 }
 .BL-ProviderMenu {

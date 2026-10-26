@@ -25,9 +25,10 @@ or per-track clear button yet. Those changes remain planned.
 Settings are event-driven. Disabling the sidebar cleans up its observers/card.
 The sidebar card also has a separate collapsed/expanded state and is hidden while
 our main lyric view is open. Its integration still depends on Spotify's DOM.
-Current investigation reproduced a missing card that recovered when the sidebar
-option was toggled off/on after Now Playing mounted. Shallow mount observation is
-the likely cause; Comfy can display the card once it exists. See VALIDATION.md.
+Now Playing mount/remount detection watches relevant child-list changes within
+the sidebar, coalescing checks and retaining the renderer when its anchor is
+unchanged. Disabling Now Playing removes the card and disconnects its watchers.
+The settings modal uses centered headings, tiles and keyboard-accessible switches.
 Existing romanization is eager on fresh lyrics even when its display toggle is off;
 new annotation modes and failure-tolerant language processing are future work.
 

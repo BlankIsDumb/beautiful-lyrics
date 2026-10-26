@@ -146,16 +146,17 @@ OnSpotifyReady
             if (!enabled) return
 			// Store our state
 			let sidebar: HTMLDivElement, contentsContainer: (HTMLDivElement | undefined)
-			const contentsContainerMaid = SidebarMaid.Give(new Maid())
+			let mountedAnchor: HTMLDivElement | null = null
 			const nowPlayingViewMaid = SidebarMaid.Give(new Maid())
 
 			// Each check method
-			const CheckForNowPlaying = () => {
-				// Clean-up when we are called
-				nowPlayingViewMaid.CleanUp()
-
-				// Now check to see if we have our card anchor
-				const cardAnchor = contentsContainer!.querySelector<HTMLDivElement>(CardInsertAnchor)
+			const CheckForNowPlaying = (force = false) => {
+                const cardAnchor = contentsContainer?.querySelector<HTMLDivElement>(CardInsertAnchor) ?? null
+                // Nested mount events can repeat. Keep the renderer/listeners intact
+                // unless the anchor changed, or a new song needs a fresh card.
+                if (!force && cardAnchor === mountedAnchor) return
+                mountedAnchor = cardAnchor
+                nowPlayingViewMaid.CleanUp()
 				if (cardAnchor === null) {
 					return
 				}
@@ -201,27 +202,17 @@ OnSpotifyReady
 					SpotifyHistory.listen(ShouldCreateCard)
 				)
 			}
-			const DeferCheckForNowPlaying = () => SidebarMaid.Give(Defer(CheckForNowPlaying), "CheckForNowPlaying")
-
-			const CheckForContentsContainer = () => {
-				// Clean-up when we are called
-				contentsContainerMaid.CleanUp()
-				nowPlayingViewMaid.CleanUp()
-
-				// Determine if our contents-container even exists
-				contentsContainer = (sidebar.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined)
-				if (contentsContainer === undefined) {
-					return
-				}
-
-				// Check if there's anything we can do immediately
-				CheckForNowPlaying()
-
-				// Handle when we should check
-				contentsContainerMaid.Give(SongChanged.Connect(DeferCheckForNowPlaying))
-
-			}
-			const DeferCheckForContentsContainer = () => SidebarMaid.Give(Defer(CheckForContentsContainer), "CheckForContentsContainer")
+            const CheckForContentsContainer = () => {
+                contentsContainer = sidebar.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined
+                CheckForNowPlaying()
+            }
+            const DeferCheckForContentsContainer = () => SidebarMaid.Give(Defer(CheckForContentsContainer), "CheckForContentsContainer")
+            SidebarMaid.Give(SongChanged.Connect(() => {
+                SidebarMaid.Give(Defer(() => {
+                    contentsContainer = sidebar?.querySelector<HTMLDivElement>(ContentsContainer) ?? undefined
+                    CheckForNowPlaying(true)
+                }), "CheckForNowPlaying")
+            }))
 
 			const CheckForSidebar = () => {
 				// Check for our sidebar existing
@@ -232,22 +223,24 @@ OnSpotifyReady
 				}
 				sidebar = newSidebar
 
-				// Create our observer
-				const sidebarChildObserver = SidebarMaid.Give(new MutationObserver(DeferCheckForContentsContainer))
-
-				// Check if there's anything we can do immediately
-				CheckForContentsContainer()
-
-				// Observe our elements
-				sidebarChildObserver.observe(sidebar, { childList: true })
-				for (const element of sidebar.children) {
-					if (
-						(element instanceof HTMLDivElement)
-						&& ((element.children.length === 0) || (element.querySelector(ContentsContainer) !== null))
-					) {
-						sidebarChildObserver.observe(element, { childList: true })
-					}
-				}
+                // Spotify mounts/replaces Now Playing several wrappers below this
+                // stable sidebar root. Watch child-list changes only, never style or
+                // text animation. Filter changed branches before scheduling a scan.
+                const mountSelector = `${ContentsContainer}, ${CardInsertAnchor}`
+                const affectsMount = (node: Node) => node instanceof Element
+                    && node.id !== "BeautifulLyrics-CardView"
+                    && (node.matches(mountSelector) || node.querySelector(mountSelector) !== null)
+                const sidebarChildObserver = SidebarMaid.Give(new MutationObserver(records => {
+                    for (const record of records) {
+                        if (record.target instanceof Element && record.target.closest("#BeautifulLyrics-CardView")) continue
+                        if ([...record.addedNodes, ...record.removedNodes].some(affectsMount)) {
+                            DeferCheckForContentsContainer()
+                            break
+                        }
+                    }
+                }))
+                sidebarChildObserver.observe(sidebar, { childList: true, subtree: true })
+                CheckForContentsContainer()
 			}
 			CheckForSidebar()
         }

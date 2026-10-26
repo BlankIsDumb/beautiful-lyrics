@@ -47,6 +47,7 @@ export function OpenProviderSettings() {
     label.textContent = text;
     const input = document.createElement("input");
     input.type = "checkbox";
+    input.setAttribute("role", "switch");
     input.checked = checked;
     input.id = id;
     label.append(input);
@@ -54,14 +55,9 @@ export function OpenProviderSettings() {
     return input;
   };
   content.append(behaviorTitle, fetchLabel);
-  const sidebar = toggle(
-    "Now Playing sidebar lyrics",
-    behavior.sidebarEnabled,
-    "BL-SidebarEnabled",
-  );
   const note = document.createElement("p");
   note.textContent =
-    "When required fetches when the Beautiful Lyrics page is open. Lyrics still fetch on song change if Now Playing sidebar lyrics is enabled. Sidebar display depends on client/theme compatibility.";
+    "When required fetches when the Beautiful Lyrics page is open. Lyrics still fetch on song change if Now Playing sidebar lyrics is enabled.";
   content.append(note);
   const sourcesTitle = document.createElement("h4");
   sourcesTitle.textContent = "Enabled providers";
@@ -72,6 +68,11 @@ export function OpenProviderSettings() {
       toggle(name, behavior.providers[name], "BL-Provider-" + name),
     ]),
   );
+  const nowPlayingTitle = document.createElement("h3");
+  nowPlayingTitle.textContent = "Now Playing";
+  content.append(nowPlayingTitle);
+  const sidebar = toggle("Enabled", behavior.sidebarEnabled, "BL-SidebarEnabled");
+  sidebar.setAttribute("aria-label", "Now Playing enabled");
   const title = document.createElement("h3");
   title.textContent = "Spicy";
   const label = document.createElement("label");
@@ -92,7 +93,9 @@ export function OpenProviderSettings() {
   const save = document.createElement("button");
   save.type = "submit";
   save.textContent = "Save";
-  content.append(title, label, input, description, save, status);
+  label.className = "BL-TokenTile";
+  label.append(input);
+  content.append(title, label, description, save, status);
   content.onsubmit = (event) => {
     event.preventDefault();
     try {
@@ -104,10 +107,7 @@ export function OpenProviderSettings() {
         ) as typeof behavior.providers,
       });
       input.value = GetSpicyToken();
-      status.textContent =
-        input.value && sourceInputs.Spicy.checked
-          ? "Saved. Spicy is enabled."
-          : "Saved. Spicy is disabled.";
+      status.textContent = "Settings saved.";
     } catch {
       status.textContent = "Could not save settings on this device.";
     }
@@ -115,8 +115,13 @@ export function OpenProviderSettings() {
   (Spotify as any).PopupModal.display({
     title: "Beautiful Lyrics Settings",
     content,
-    isLarge: false,
+    isLarge: true,
   });
+  // The host otherwise focuses the password field and scrolls past the first
+  // sections. Start at Behavior while keeping keyboard navigation available.
+  fetchMode.focus({ preventScroll: true });
+  const scrollContainer = content.closest(".spicetify-popup-content");
+  if (scrollContainer) scrollContainer.scrollTop = 0;
 }
 
 OnSpotifyReady.then(() => {

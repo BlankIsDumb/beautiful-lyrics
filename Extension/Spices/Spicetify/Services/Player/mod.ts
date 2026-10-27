@@ -23,7 +23,7 @@ import {
 } from "./LyricUtilities.ts"
 
 import { FetchLyricCandidates } from "./LyricsProviders.ts"
-import { OnProviderSettingsChanged, GetBehaviorSettings } from "./ProviderSettings.ts"
+import { OnProviderSettingsChanged, OnBehaviorSettingsChanged, GetBehaviorSettings } from "./ProviderSettings.ts"
 import { lyricsRequired } from "./LyricDemand.mjs"
 import { createLyricRequestGate } from "./LyricRequestGate.mjs"
 
@@ -329,14 +329,15 @@ const LoadSongDetails = () => {
 			if (Song !== songAtUpdate) return;
 			HaveSongDetailsLoaded = true;
 			SongDetailsLoadedSignal.Fire();
-			console.warn("Beautiful Lyrics: track details unavailable");
+			console.warn("Just Enough Lyrics: track details unavailable");
 		})
 	}
 }
 
 // Handle our Lyrics
 const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	"BeautifulLyricsLocal_Transformed", 2,
+	// v4 stores source preparation only: no cues/romanization. Provider caches unchanged.
+	"BeautifulLyricsLocal_Transformed", 4,
 	{
 		Duration: 1,
 		Unit: "Months"
@@ -411,7 +412,7 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
           const key = lyrics.Source!.CacheKey;
           const ephemeral = lyrics.Source!.Provider === 'Spicy';
           const cached = ephemeral ? undefined : await TransformedLyricsStore.GetItem(key);
-          const transformed = cached ? {...cached,Source:lyrics.Source,Attribution:(lyrics as any).Attribution} : await TransformProviderLyrics(structuredClone(lyrics));
+          const transformed = cached ? {...cached,Source:lyrics.Source,Attribution:(lyrics as any).Attribution} : await TransformProviderLyrics(lyrics);
           if (!cached && !ephemeral) await TransformedLyricsStore.SetItem(key,transformed);
           usable.push(transformed);
         } catch (error) {
@@ -450,15 +451,15 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
 			HaveSongLyricsLoaded = true;
 			lyricsPending = false;
 			SongLyricsLoadedSignal.Fire();
-			ShowNotification("Beautiful Lyrics: lyric provider unavailable. Open the lyrics page for details.", "warning", 5);
+			ShowNotification("Just Enough Lyrics: lyric provider unavailable. Open the lyrics page for details.", "warning", 5);
 		})
 	}
 }
 
 // Wait for Spotify to be ready
-OnSpotifyReady.then(
+export const PlayerReady = OnSpotifyReady.then(
 	() => {
-		PlayerMaid.Give(SpotifyHistory.listen(() => {
+		const UpdateLyricDemand = () => {
 			if (IsLyricsRequired()) {
 				if (lyricsDeferred) ReloadLyrics();
 			} else if (lyricsPending) {
@@ -468,7 +469,9 @@ OnSpotifyReady.then(
 				lyricsPending = false;
 				lyricsDeferred = true;
 			}
-		}));
+		};
+		PlayerMaid.Give(SpotifyHistory.listen(UpdateLyricDemand));
+		PlayerMaid.Give(OnBehaviorSettingsChanged(UpdateLyricDemand));
 		// Do not patch the shared RequestBuilder: other extensions own their requests.
 
 		// Handle song updates

@@ -15,9 +15,9 @@ import { SongLyrics } from "@Spices/Spicetify/Services/Player/mod.ts"
 import LyricsRenderer from "../../Modules/LyricsRenderer.ts"
 import {
 	CreateElement,
-	ToggleLanguageRomanization, IsLanguageRomanized, LanguageRomanizationChanged,
 	Store
 } from "../Shared.ts"
+import { PresentationSettings } from "../../PresentationSettings.ts"
 
 // Templates
 const CardContainer = `
@@ -147,7 +147,10 @@ export default class CardView implements Giveable {
 		// Handle romanization updates
 		if (SongLyrics!.RomanizedLanguage !== undefined) {
 			const SetContent = (isRomanized: boolean) => {
-				this.RomanizeTooltip.setContent(isRomanized ? "Disable Romanization" : "Enable Romanization")
+				this.ExpandedControls.RomanizeButton.disabled = PresentationSettings.isReadOnly()
+				this.RomanizeTooltip.setContent(PresentationSettings.isReadOnly()
+					? "Update the extension to edit presentation settings"
+					: isRomanized ? "Show original text" : "Show alternate text")
 				this.ExpandedControls.RomanizeButton.innerHTML = (
 					isRomanized
 					? RomanizationIcons.Enabled
@@ -156,20 +159,17 @@ export default class CardView implements Giveable {
 			}
 
 			this.Maid.Give(
-				LanguageRomanizationChanged.Connect(
-					(language, isRomanized) => {
-						if (language === SongLyrics!.RomanizedLanguage) {
-							SetContent(isRomanized)
+				PresentationSettings.subscribe(
+					(view, languages) => {
+						if (view === "NowPlaying" && languages.includes(SongLyrics!.RomanizedLanguage!)) {
+							SetContent(PresentationSettings.isRomanized("NowPlaying", SongLyrics!.RomanizedLanguage!))
 
-							if (this.Maid.Has("LyricsRenderer")) {
-								this.CreateLyricsRenderer()
-							}
 						}
 					}
 				)
 			)
 
-			SetContent(IsLanguageRomanized(SongLyrics!.RomanizedLanguage))
+			SetContent(PresentationSettings.isRomanized("NowPlaying", SongLyrics!.RomanizedLanguage))
 		}
 
 		// Handle our button-presses
@@ -197,7 +197,10 @@ export default class CardView implements Giveable {
 				const romanizedLanguage = SongLyrics!.RomanizedLanguage
 				this.ExpandedControls.RomanizeButton.addEventListener(
 					"click",
-					() => ToggleLanguageRomanization(romanizedLanguage, !IsLanguageRomanized(romanizedLanguage))
+					() => {
+						if (PresentationSettings.isReadOnly()) return
+						PresentationSettings.setRomanized("NowPlaying", romanizedLanguage, !PresentationSettings.isRomanized("NowPlaying", romanizedLanguage))
+					}
 				)
 			}
 		}
@@ -223,8 +226,9 @@ export default class CardView implements Giveable {
 				(
 					(SongLyrics!.RomanizedLanguage === undefined)
 					? false
-					: IsLanguageRomanized(SongLyrics!.RomanizedLanguage)
-				)
+					: PresentationSettings.isRomanized("NowPlaying", SongLyrics!.RomanizedLanguage)
+				),
+                "NowPlaying"
 			),
 			"LyricsRenderer"
 		)

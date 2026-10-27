@@ -41,6 +41,7 @@
     padding: 5px 0;
   }
   h3:first-child { margin-top: 4px; }
+  .BL-ViewSettings { margin-top: 24px; }
   label {
     margin: 8px 0;
     padding: 20px 16px;
@@ -52,6 +53,77 @@
     cursor: pointer;
   }
   select { max-width: 60%; min-width: 0; }
+  input[type="number"] { width: 100px; min-width: 0; }
+  .BL-HelpRow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 16px;
+    min-height: 64px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    background: var(--background-tinted-base, rgba(255,255,255,.07));
+    label { flex: 0 1 auto; min-width: 0; margin: 0; padding: 0; min-height: 0; background: none; border-radius: 0; }
+    > input, > select { margin-left: auto; }
+    .BL-HelpButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 32px;
+      width: 32px;
+      height: 32px;
+      padding: 8px;
+      border-radius: 4px;
+      background: none;
+      color: var(--spice-subtext, #bbb);
+      cursor: help;
+      &:hover, &:focus-visible { color: var(--spice-text, #fff); }
+      svg { flex: 0 0 16px; }
+    }
+  }
+  // Stable accessible descriptions remain available before a tooltip opens.
+  .BL-HelpDescription {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .BL-SettingGroup {
+    margin: 8px 0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--background-tinted-base, rgba(255,255,255,.07));
+    .BL-GroupHeader {
+      margin: 0;
+      border-radius: 0;
+      background: var(--spice-sidebar, rgba(255,255,255,.04));
+    }
+    .BL-GroupOptions {
+      border: 0;
+      padding: 0;
+      margin: 0;
+      min-inline-size: 0;
+      // Keep collapsed controls out of layout and keyboard focus, including if
+      // a host/theme stylesheet assigns display to fieldsets.
+      &[hidden] { display: none; }
+      label { margin: 0; background: none; border-radius: 0; padding: 16px; min-height: 56px; }
+      p { margin: 12px 16px 0; }
+      button { margin: 8px 16px 16px; padding: 10px 16px; }
+      .BL-HelpRow {
+        margin: 0;
+        border-radius: 0;
+        background: none;
+        min-height: 56px;
+        label { padding: 0; min-height: 0; }
+        .BL-HelpButton { margin: 0; padding: 8px; }
+      }
+    }
+  }
   // Keep a real checkbox for keyboard/form semantics; only its presentation changes.
   input[type="checkbox"] {
     appearance: none;
@@ -82,7 +154,11 @@
       &::after { transform: translateX(16px); }
     }
   }
-  .BL-TokenTile { flex-direction: column; align-items: stretch; gap: 12px; }
+  // The checkbox's margin reset above must not consume the help row's free space.
+  // Keep the switch at the right edge while title + question icon stay together.
+  .BL-HelpRow > input[type="checkbox"] { margin-left: auto; }
+  .BL-TokenTile { flex-wrap: wrap; }
+  .BL-TokenTile input { flex: 0 0 100%; }
   input[type="password"] { width: 100%; box-sizing: border-box; font-weight: 400; }
   p { font-size: .9rem; line-height: 1.5; color: var(--spice-subtext, #bbb); margin: 12px 4px; }
   button {
@@ -94,6 +170,22 @@
     background: var(--spice-button, #777);
     color: var(--spice-text, #fff);
     cursor: pointer;
+  }
+}
+.BL-SettingsHelpPopup {
+  max-width: 280px;
+  padding: 10px 12px;
+  border: 1px solid var(--spice-button-disabled, #555);
+  border-radius: 6px;
+  background: var(--spice-card, #282828);
+  color: var(--spice-text, #eee);
+  font: 13px/1.45 var(--font-family, sans-serif);
+  box-shadow: 0 4px 16px #0006;
+  .BL-HelpClassic {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--spice-button-disabled, #555);
+    color: var(--spice-subtext, #bbb);
   }
 }
 .spicetify-popup-container:has(.BL-Settings) {

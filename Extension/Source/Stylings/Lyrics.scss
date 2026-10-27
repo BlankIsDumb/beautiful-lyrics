@@ -349,6 +349,23 @@
 	/* When Emphasis is applied we have Synced as well */
 	white-space: pre;
 }
+.Syllable.ShapingRun {
+  // Keep each safe shaping unit in one text context, without separate mark or
+  // letter gradient/transform boxes. Source timing still drives the whole run.
+  display: block;
+  white-space: pre;
+  flex-shrink: 0;
+  unicode-bidi: plaintext;
+}
+.Syllable.ShapingRun.ExplicitSpacing {
+  // Mapped Japanese tokens are independent wrap opportunities. Original source
+  // runs inside a nowrap .Word must stay atomic, rather than shrinking into
+  // separate columns of Thai characters when the complete word is too wide.
+  white-space: pre-wrap;
+  max-width: 100%;
+  flex-shrink: 1;
+  overflow-wrap: anywhere;
+}
 
 .Syllable.PartOfWord.StartOfWord {
 	transform-origin: right center;
@@ -362,6 +379,7 @@
 	content: "";
 	margin-right: 0.3ch;
 }
+.Syllable.ExplicitSpacing::after { content: none; }
 
 .Letter {
 	/* Allows each letter to be side-by-side */

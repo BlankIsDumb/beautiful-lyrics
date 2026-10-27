@@ -1,3 +1,4 @@
+import { Graphemes, LayoutSyllables, RunProgress, type DisplayRun, type TimingInterval } from "../../TextLayout.ts"
 import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // NPM
 import { easeSinOut } from 'npm:d3-ease';
@@ -24,6 +25,8 @@ type AnimatedLetter = { // Time is relative to the Syllable
 }
 type AnimatedSyllable = ( // Time is relative to the entire vocal-set
 	{
+        Intervals: readonly TimingInterval[];
+        TimingDuration: number;
 		Start: number;
 		Duration: number;
 
@@ -112,17 +115,16 @@ const CreateSprings = () => {
 // Emphasis Evaluation Constants
 const MinimumEmphasizedDuration = 1
 const MaximumEmphasizedCharacters = 12
-const IsEmphasized = (metadata: SyllableMetadata, isRomanized: boolean) => {
-	return (
-		((metadata.EndTime - metadata.StartTime) >= MinimumEmphasizedDuration)
-		&& ((isRomanized && metadata.RomanizedText || metadata.Text).length <= MaximumEmphasizedCharacters)
-	)
+const IsEmphasized = (metadata: DisplayRun) => {
+    const count = metadata.SafeLetters ? Graphemes(metadata.Text).length : 0
+    return count > 0 && count <= MaximumEmphasizedCharacters && metadata.TimingDuration >= MinimumEmphasizedDuration
 }
 
 // Class
 export default class SyllableVocals implements SyncedVocals, Giveable {
 	// Private Properties
 	private readonly Maid: Maid = new Maid()
+    private readonly ContentMaid = this.Maid.Give(new Maid())
 
 	private readonly Container: HTMLDivElement
 
@@ -144,8 +146,10 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 	public constructor(
 		lineContainer: HTMLElement,
 		syllablesMetadata: SyllableList, isBackground: boolean,
-		isRomanized: boolean
+		isRomanized: boolean, initialRuns?: readonly DisplayRun[]
 	) {
+        // Retain the old boolean argument for compatibility. Display text comes
+        // from explicit safe runs; provider RomanizedText is no longer mutated.
 		// First create our container
 		const container = this.Maid.Give(document.createElement('div'))
 		container.classList.add('Vocals')
@@ -165,12 +169,28 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			- this.StartTime
 		)
 
-		// Go through and create our syllable-groups
-		const syllableGroups: SyllableList[] = []
-		{
-			let currentSyllableGroup: SyllableList = []
+		this.SetProjection(initialRuns || LayoutSyllables(syllablesMetadata))
 
-			for (const syllableMetadata of syllablesMetadata) {
+		// Now set our state
+		this.SetToGeneralState(false)
+
+		// Finally, add our vocals to our line
+		lineContainer.appendChild(container)
+	}
+
+    // Only text DOM/springs belong to this replaceable content maid. The vocal
+    // container, seek listener, activity signal, source timing and scroll identity
+    // survive an asynchronous annotation update. Renderer snaps new text locally.
+    public SetProjection(runs: readonly DisplayRun[]) {
+        this.ContentMaid.CleanUp()
+        this.Syllables.length = 0
+        const container = this.Container
+		// Go through and create our syllable-groups
+		const syllableGroups: DisplayRun[][] = []
+		{
+			let currentSyllableGroup: DisplayRun[] = []
+
+			for (const syllableMetadata of runs) {
 				// Store ourselves
 				currentSyllableGroup.push(syllableMetadata)
 
@@ -194,7 +214,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			const isInWordGroup = (syllableCount > 1)
 			if (isInWordGroup) {
 				// Create our parent element
-				const parent = this.Maid.Give(document.createElement('span'))
+				const parent = this.ContentMaid.Give(document.createElement('span'))
 				parent.classList.add('Word')
 				parentElement = parent
 
@@ -205,14 +225,16 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			// Now handle all our syllables
 			for (const [index, syllableMetadata] of syllableGroup.entries()) {
 				// Determine if we are emphasised
-				const isEmphasized = IsEmphasized(syllableMetadata, isRomanized)
+				const isEmphasized = IsEmphasized(syllableMetadata)
 
 				// Create our main span element
-				const syllableSpan = this.Maid.Give(document.createElement('span'))
+				const syllableSpan = this.ContentMaid.Give(document.createElement('span'))
 				{
 					// Add our classes
 					syllableSpan.classList.add('Lyric')
 					syllableSpan.classList.add('Syllable')
+                    if (!syllableMetadata.SafeLetters) syllableSpan.classList.add('ShapingRun')
+                    if (syllableMetadata.ExplicitSpacing) syllableSpan.classList.add('ExplicitSpacing')
 					if (isEmphasized) {
 						syllableSpan.classList.add('Emphasis')
 					} else {
@@ -237,10 +259,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 				let letters: (AnimatedLetter[] | undefined)
 				if (isEmphasized) {
 					// Store all our "letters"
-					const letterTexts: string[] = []
-					for (const letter of (isRomanized && syllableMetadata.RomanizedText || syllableMetadata.Text)) {
-						letterTexts.push(letter)
-					}
+					const letterTexts = Graphemes(syllableMetadata.Text)
 
 					// Now determine our relative timestep
 					const relativeTimestep = (1 / letterTexts.length)
@@ -250,7 +269,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					let relativeTimestamp = 0
 					for (const letter of letterTexts) {
 						// Create our letter-span
-						const letterSpan = this.Maid.Give(document.createElement('span'))
+						const letterSpan = this.ContentMaid.Give(document.createElement('span'))
 						letterSpan.classList.add('Letter')
 						letterSpan.classList.add('Synced')
 						letterSpan.innerText = letter
@@ -275,7 +294,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					}
 				} else {
 					// Update our text
-					syllableSpan.innerText = (isRomanized && syllableMetadata.RomanizedText || syllableMetadata.Text)
+					syllableSpan.innerText = syllableMetadata.Text
 				}
 
 				// Determine our time information
@@ -297,6 +316,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					this.Syllables.push(
 						{
 							Type: "Letters",
+                            Intervals: syllableMetadata.Intervals, TimingDuration: syllableMetadata.TimingDuration,
 
 							Start: relativeStart,
 							Duration: duration,
@@ -313,6 +333,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					this.Syllables.push(
 						{
 							Type: "Syllable",
+                            Intervals: syllableMetadata.Intervals, TimingDuration: syllableMetadata.TimingDuration,
 
 							Start: relativeStart,
 							Duration: duration,
@@ -330,12 +351,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 			}
 		}
 
-		// Now set our state
-		this.SetToGeneralState(false)
-
-		// Finally, add our vocals to our line
-		lineContainer.appendChild(container)
-	}
+    }
 
 	// Private Methods
 	private UpdateLiveTextState = (
@@ -483,7 +499,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 			for (const syllable of this.Syllables) {
 				// Determine our time-scale for the syllable
-				const syllableTimeScale = timingProgress(relativeTime, syllable.Start, syllable.Duration)
+				const syllableTimeScale = RunProgress(songTimestamp, syllable.Intervals, syllable.TimingDuration)
 
 				// Handle our letters if we are emphasized
 				if (syllable.Type == "Letters") {
@@ -560,6 +576,11 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 	public ForceState(state: boolean) {
 		this.SetToGeneralState(state)
+	}
+
+	// Scheduler retains this component until its actual Classic springs settle.
+	public NeedsFrame(): boolean {
+		return !this.IsSleeping
 	}
 
 	public IsActive() {

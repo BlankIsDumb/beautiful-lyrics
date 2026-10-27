@@ -23,7 +23,7 @@ import {
 	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
-import { GetBehaviorSettings, OnProviderSettingsChanged } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts"
+import { GetBehaviorSettings, OnBehaviorSettingsChanged } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts"
 
 // Components
 import CardView from "./Card/mod.ts"
@@ -53,7 +53,7 @@ let SetPlaybarPageIconActiveState: (isActive: boolean) => void
 let ActivePageView: (ContainedPageView | FullscreenPageView | undefined)
 
 // Wait for Spotify to start our processing
-OnSpotifyReady
+export const ViewReady = OnSpotifyReady
 .then( // Playbar Icons
 	() => {
 		// Store references for our buttons
@@ -245,7 +245,7 @@ OnSpotifyReady
 			CheckForSidebar()
         }
         ConfigureSidebar()
-        ViewMaid.Give(OnProviderSettingsChanged(ConfigureSidebar))
+        ViewMaid.Give(OnBehaviorSettingsChanged(ConfigureSidebar))
 
 	}
 )
@@ -306,7 +306,11 @@ OnSpotifyReady
 						(element.attributes.getNamedItem("data-testid")?.value === "fullscreen-mode-button")
 						&& (element.id !== "BeautifulLyricsFullscreenButton")
 					) {
-						(element as HTMLElement).style.display = "none"
+						const button = element as HTMLElement
+						const previousDisplay = button.style.display
+						button.style.display = "none"
+						// Disposal/startup rollback must return Spotify's own control.
+						ViewMaid.Give(() => { button.style.display = previousDisplay })
 					}
 				}
 			}

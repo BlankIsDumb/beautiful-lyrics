@@ -1,9 +1,9 @@
 [
   {
-    "name": "Beautiful Lyrics Local",
-    "description": "Personal Beautiful Lyrics fork with local builds, multiple lyric sources and configurable behavior.",
+    "name": "Just Enough Lyrics",
+    "description": "Personal animated lyrics fork with local builds, multiple lyric sources and configurable behavior.",
     "preview": "./Marketing/Marketplace/Icon.gif",
-    "main": "./dist/beautiful-lyrics-local.mjs",
+    "main": "./dist/just-enough-lyrics.mjs",
     "readme": "README.md",
     "authors": [
       {

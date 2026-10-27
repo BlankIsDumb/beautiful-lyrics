@@ -4,6 +4,7 @@ import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyDictionary } from './verify-dictionary.mjs';
+import { wrapBundle } from './bundle-wrapper.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const styles = new Map();
@@ -50,13 +51,13 @@ const result = await build({
 // All style jobs finish inside onLoad, before build resolves. Do not snapshot a
 // promise array while esbuild is still discovering imports (the old offline bug).
 const css = [...styles].sort(([a], [b]) => a.localeCompare(b)).map(([, css]) => css).join('\n');
-const styleCode = `const style=document.createElement('style');style.id='beautiful-lyrics-local';style.textContent=${JSON.stringify(css)};document.head.append(style);\n`;
-const code = styleCode + result.outputFiles[0].text;
+const code = wrapBundle(result.outputFiles[0].text, css);
 verifyDictionary(code, dictionary);
 if (/socalifornian\.live/.test(code)) throw new Error('Local bundle still contains an author-hosted dependency');
 // Keep the established release URL usable too. It must contain the complete
 // local extension, not the upstream loader that downloads an author-hosted bundle.
-const outputs = ['dist/beautiful-lyrics-local.mjs', 'Extension/Builds/Release/beautiful-lyrics.mjs'];
+const outputs = ['dist/just-enough-lyrics.mjs', 'Extension/Builds/Release/just-enough-lyrics.mjs',
+  'dist/beautiful-lyrics-local.mjs', 'Extension/Builds/Release/beautiful-lyrics.mjs'];
 for (const output of outputs) {
   const destination = path.join(root, output);
   await mkdir(path.dirname(destination), { recursive: true });

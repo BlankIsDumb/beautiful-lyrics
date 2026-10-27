@@ -10,6 +10,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 	// Private Properties
 	private readonly Maid: Maid;
 	private readonly LyricMetadata: TextMetadata;
+    private readonly Span: HTMLSpanElement;
 
 	// Constructor
 	public constructor(
@@ -30,6 +31,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 
 		// Create our main span element
 		const syllableSpan = this.Maid.Give(document.createElement('span'))
+		this.Span = syllableSpan
 		syllableSpan.classList.add('Lyric')
 		syllableSpan.classList.add('Static')
 		syllableSpan.innerText = (isRomanized && lyricMetadata.RomanizedText || lyricMetadata.Text)
@@ -38,6 +40,8 @@ export default class StaticVocals implements BaseVocals, Giveable {
 		// Finally, add our vocals to our line
 		lineContainer.appendChild(container)
 	}
+
+    public SetText(text: string) { this.Span.innerText = text }
 
 	// Deconstructor
 	public Destroy() {

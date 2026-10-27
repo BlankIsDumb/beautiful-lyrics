@@ -1,3 +1,4 @@
+import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { Signal } from "@Universal/Modules/Signal.ts"
@@ -169,7 +170,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
 		// Determine our relative time elements
 		const relativeTime = (songTimestamp - this.StartTime)
-		const timeScale = Clamp((relativeTime / this.Duration), 0, 1)
+		const timeScale = timingProgress(relativeTime, 0, this.Duration)
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)
@@ -221,8 +222,15 @@ export default class LineVocals implements SyncedVocals, Giveable {
 		}
 	}
 
+    public SetText(text: string) { this.Span.innerText = text }
+
 	public ForceState(state: boolean) {
 		this.SetToGeneralState(state)
+	}
+
+	// Scheduler retains this component until its actual Classic springs settle.
+	public NeedsFrame(): boolean {
+		return !this.IsSleeping
 	}
 
 	public IsActive() {

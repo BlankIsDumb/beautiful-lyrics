@@ -598,6 +598,11 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		this.SetToGeneralState(state)
 	}
 
+	// Scheduler retains this component until its actual Classic springs settle.
+	public NeedsFrame(): boolean {
+		return !this.IsSleeping
+	}
+
 	public IsActive() {
 		return (this.State === "Active")
 	}

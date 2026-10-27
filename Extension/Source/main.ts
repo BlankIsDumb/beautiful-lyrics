@@ -21,8 +21,9 @@ import {
 
 // Singletons
 // Discord verification belongs to the retired hosted backend.
-import "./LyricViews/mod.ts"
-import "./ProviderControls.ts"
+import { ViewReady } from "./LyricViews/mod.ts"
+import { ProviderControlsReady } from "./ProviderControls.ts"
+import { PlayerReady } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Shared Methods
 import { CreateElement } from "./LyricViews/Shared.ts"
@@ -262,11 +263,17 @@ const Load = async () => {
 	// Local builds have no analytics, remote changelog, or hosted updater.
 
 }
-Load().catch(error => console.error("Beautiful Lyrics failed to initialize", error))
+// Let the entry's ownership guard handle startup errors and dispose resources.
+// Settle every initializer before cleanup so another initializer cannot keep
+// creating UI after a failed sibling has already released runtime ownership.
+export const Ready = Promise.allSettled([Load(), ViewReady, ProviderControlsReady, PlayerReady])
+	.then(results => {
+		for (const result of results) if (result.status === "rejected") throw result.reason
+	})
 
 // Finally, return our maid and also return our UpdateNotificationDetailer
 export const UpdateNotice: UpdateNoticeConfiguration = {
 	Type: "Notification",
-	Name: "Beautiful Lyrics"
+	Name: "Just Enough Lyrics"
 }
 export default GlobalMaid

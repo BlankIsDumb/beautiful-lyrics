@@ -1,6 +1,7 @@
 // Credentials belong to this installation, never the bundle or diagnostics.
 const key = "BeautifulLyricsLocal/SpicyToken";
 const listeners = new Set<() => void>();
+const behaviorListeners = new Set<() => void>();
 export const Providers = ["Musixmatch", "AMLL", "LRCLIB", "Spotify", "Spicy"] as const;
 export type BehaviorSettings = {
   fetchMode: "change" | "required";
@@ -30,15 +31,20 @@ export function SaveProviderSettings(
   token: string,
   behavior: BehaviorSettings,
 ) {
-  const before = JSON.stringify(GetBehaviorSettings());
+  const before = GetBehaviorSettings();
   const oldToken = GetSpicyToken();
   token = token.trim();
   localStorage.setItem(behaviorKey, JSON.stringify(behavior));
   if (token) localStorage.setItem(key, token);
   else localStorage.removeItem(key);
-  // Notify once for the whole form, avoiding multiple lyric reloads per save.
-  if (oldToken !== token || before !== JSON.stringify(GetBehaviorSettings())) {
+  const after = GetBehaviorSettings();
+  // Only source/credential edits invalidate provider results. Consumer demand
+  // changes use their own event and retain completed lyrics/source selection.
+  if (oldToken !== token || JSON.stringify(before.providers) !== JSON.stringify(after.providers)) {
     for (const listener of listeners) listener();
+  }
+  if (before.sidebarEnabled !== after.sidebarEnabled || before.fetchMode !== after.fetchMode) {
+    for (const listener of behaviorListeners) listener();
   }
 }
 export const GetSpicyToken = () => (localStorage.getItem(key) || "").trim();
@@ -52,4 +58,8 @@ export function SetSpicyToken(value: string) {
 export function OnProviderSettingsChanged(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+export function OnBehaviorSettingsChanged(listener: () => void) {
+  behaviorListeners.add(listener);
+  return () => { behaviorListeners.delete(listener); };
 }

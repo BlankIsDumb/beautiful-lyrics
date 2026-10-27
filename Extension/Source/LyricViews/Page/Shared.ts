@@ -15,8 +15,8 @@ import LyricsRenderer from "../../Modules/LyricsRenderer.ts"
 import Icons from "./Icons.ts"
 import {
 	CreateElement,
-	ToggleLanguageRomanization, IsLanguageRomanized, LanguageRomanizationChanged
 } from "../Shared.ts"
+import { PresentationSettings } from "../../PresentationSettings.ts"
 
 // Shared Lyrics Behavior
 export const CreateLyricsRenderer = (
@@ -57,7 +57,7 @@ export const CreateLyricsRenderer = (
 					container, SongLyrics,
 					(
 						(SongLyrics.RomanizedLanguage !== undefined)
-						&& IsLanguageRomanized(SongLyrics.RomanizedLanguage)
+						&& PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage)
 					)
 				),
 				"LyricsRenderer"
@@ -80,16 +80,19 @@ export const SetupRomanizationButton = (
 ) => {
 	// Create our toggle method
 	const ToggleRomanizationState = () => {
+		if (PresentationSettings.isReadOnly()) return
 		if (SongLyrics?.RomanizedLanguage !== undefined) {
-			ToggleLanguageRomanization(
-				SongLyrics.RomanizedLanguage,
-				!IsLanguageRomanized(SongLyrics.RomanizedLanguage)
+			PresentationSettings.setRomanized(
+				"FullLyrics", SongLyrics.RomanizedLanguage,
+				!PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage)
 			)
 		}
 	}
 
 	// Setup behavior and the tooltip
+	romanizationToggle.disabled = PresentationSettings.isReadOnly()
 	romanizationToggle.addEventListener("click", ToggleRomanizationState)
+	maid.Give(() => romanizationToggle.removeEventListener("click", ToggleRomanizationState))
 	const romanizeTooltip = Spotify.Tippy(
 		romanizationToggle,
 		{
@@ -101,7 +104,9 @@ export const SetupRomanizationButton = (
 
 	// Handle updating our state
 	const SetContent = (isRomanized: boolean): undefined => {
-		romanizeTooltip.setContent(isRomanized ? "Disable Romanization" : "Enable Romanization")
+		romanizeTooltip.setContent(PresentationSettings.isReadOnly()
+			? "Update the extension to edit presentation settings"
+			: isRomanized ? "Show original text" : "Show alternate text")
 		romanizationToggle.innerHTML = (isRomanized ? Icons.EnableRomanization : Icons.DisableRomanization)
 	}
 	const SetVisibility = (isVisible: boolean): undefined => {
@@ -110,11 +115,10 @@ export const SetupRomanizationButton = (
 
 	// Handle our romanization state changing and its initial state
 	maid.Give(
-		LanguageRomanizationChanged.Connect(
-			(language, isRomanized) => {
-				if (language === SongLyrics?.RomanizedLanguage) {
-					SetContent(isRomanized)
-					updateLyricsRenderer()
+		PresentationSettings.subscribe(
+			(view, languages) => {
+				if (view === "FullLyrics" && SongLyrics?.RomanizedLanguage !== undefined && languages.includes(SongLyrics.RomanizedLanguage)) {
+					SetContent(PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage))
 				}
 			}
 		)
@@ -126,7 +130,7 @@ export const SetupRomanizationButton = (
 			if (SongLyrics?.RomanizedLanguage === undefined) {
 				SetVisibility(false)
 			} else {
-				SetContent(IsLanguageRomanized(SongLyrics.RomanizedLanguage))
+				SetContent(PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage))
 				SetVisibility(true)
 			}
 		}

@@ -1,5 +1,5 @@
 // Packages
-import Spring from "@Universal/Modules/LegacySpring.ts"
+import type { TextSprings } from "./RenderEffects.ts"
 import { Event } from "@Universal/Modules/Signal.ts"
 
 // General Types
@@ -8,14 +8,10 @@ type TimeValue = {
 	Value: number;
 }
 type TimeValueRange = TimeValue[]
-type Springs = {
-	Scale: Spring;
-	YOffset: Spring;
-	Glow: Spring;
-}
+type Springs = TextSprings
 type LiveText = {
 	Object: HTMLSpanElement;
-	Springs: Springs;
+	Springs?: Springs;
 }
 type LyricState = ("Idle" | "Active" | "Sung")
 

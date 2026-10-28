@@ -242,3 +242,16 @@
 .main-actionButtons .spicetify-topbar-button * {
   -webkit-app-region: no-drag !important;
 }
+
+.BL-Settings {
+  .BL-ViewOptions { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
+  .BL-ViewOptions[hidden] { display: none; }
+  .BL-CaseSettings {
+    margin: 8px 0; border-radius: 10px; overflow: hidden;
+    background: var(--background-tinted-base, rgba(255,255,255,.07));
+    > summary { cursor: pointer; padding: 18px 16px; font-weight: 700; }
+    > summary:focus-visible { outline: 2px solid var(--spice-button-active, #fff); outline-offset: -2px; }
+    > fieldset { border: 0; min-inline-size: 0; padding: 0; margin: 0; }
+    .BL-HelpRow { margin: 0; border-radius: 0; background: none; }
+  }
+}

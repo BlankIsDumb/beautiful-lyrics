@@ -47,6 +47,18 @@ export function SaveProviderSettings(
     for (const listener of behaviorListeners) listener();
   }
 }
+// Immediate behavior controls must never rewrite credentials (including raw
+// legacy bytes) from a stale password field in an already-open settings form.
+export function SaveBehaviorSettings(behavior: BehaviorSettings) {
+  const before = GetBehaviorSettings();
+  if (JSON.stringify(before) === JSON.stringify(behavior)) return;
+  localStorage.setItem(behaviorKey, JSON.stringify(behavior));
+  const after = GetBehaviorSettings();
+  if (JSON.stringify(before.providers) !== JSON.stringify(after.providers)) for (const listener of listeners) listener();
+  if (before.sidebarEnabled !== after.sidebarEnabled || before.fetchMode !== after.fetchMode) {
+    for (const listener of behaviorListeners) listener();
+  }
+}
 export const GetSpicyToken = () => (localStorage.getItem(key) || "").trim();
 export function SetSpicyToken(value: string) {
   value = value.trim();

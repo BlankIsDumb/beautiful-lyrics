@@ -36,11 +36,14 @@ The settings modal uses centered headings, tiles and keyboard-accessible switche
 Now Playing and Full Lyrics have versioned independent language preferences.
 Each view's Alternate text master switch gates its remembered language choices;
 the settings modal nests those choices inside a connected collapsible card.
-Presentation schema 3 reads schemas 1/2, retaining effective language/master values
-and defaulting the new Japanese text form to Romaji. Schema 1 infers its master
-from selected languages; schema 2 retains its explicit master. Schema 3 remembers
-Romaji/Kana independently per view, including while the master is Off. Future
-schemas remain read-only rather than being overwritten by an older build.
+Presentation schema 5 reads schemas 1–4. Each view owns independent Word/Line
+text cases plus universal cue settings, while language/master/Japanese form and
+delay remain view-wide. Untouched Classic/Auto v4 text adopts expressive Word and
+muted Line defaults; edited/non-Classic presets or detail choices are cloned into
+both cases without losing custom values. Old cueAnimation migrates once per view,
+separate from text presets. Partial/malformed Line maps use muted defaults. Future
+schemas remain read-only. Schema 1 infers its master from languages; schemas
+before 3 default Japanese form to Romaji. Remembered Kana/Off choices survive.
 Legacy shared values seed both profiles; the legacy store remains available for
 rollback. Presentation changes do not invalidate provider results; sidebar and
 fetch-mode changes update consumer demand without discarding completed choices.
@@ -50,6 +53,21 @@ alternate text through shared cancellable leases. Closing the view or turning th
 feature Off releases its demand; cancelled/stale results cannot replace new text.
 Cancellation is cooperative: an already executing synchronous tokenizer cannot be
 interrupted, but remaining queued voices and stale installation are stopped.
+
+Source precision selects the active text case independently of requested display
+detail. Line-precision Syllable wrappers always use a whole-line projection; Word
+sources projected as Line retain their Word-source case. Untimed sources stay
+plain, without animated state or a clock subscription. Render events ignore other
+views/inactive cases and retain source data, annotation leases and voice roots.
+
+Cue candidates derive once from the union of all real voice envelopes. A separate
+view event reconciles threshold/motion without rebuilding voices or resetting
+manual-scroll grace. Zero disables dots; positive thresholds compare the full gap
+before the lead-out subtraction. Tiny gaps use a bounded positive interval and
+static dots when inherited animation points would cross. Disabled slots have no
+cue child/springs/continuous work, layout margins or blur-distance contribution.
+Minimal stops text-effect work; universal cue motion and background remain separate.
+The existing clock/transport is unchanged, not a whole-app idle claim.
 
 Japanese primary text can use contextual Romaji or Kana readings. Token surfaces
 are matched sequentially to source ranges, preserving gaps and all backing voices;
@@ -68,7 +86,11 @@ Implementation sources: `Extension/Source/Modules/TextLayout.ts`,
 in `LyricDocument.ts` and `Player/LyricUtilities.ts`; renderer component projection
 updates plus `PresentationSettings.ts`/`ProviderControls.ts` for schema/UI scope.
 The modal uses compact labels and question-mark help with Classic footer values;
-shared delay is under Behavior and each view adds its own signed offset.
+shared delay is under Behavior and each view adds its own signed offset. Native
+change/input events apply scoped values immediately; invalid partial numeric edits
+never reach storage. Completed credential edits use their own setter; behavior
+controls cannot rewrite stale password-field contents. The disconnected modal
+lifetime aborts all handlers, including after a removed form is reattached.
 
 ## Build and compatibility
 Use `npm ci`, `npm test`, `npm run build` at the root. Node 20+ is needed to build;
@@ -86,4 +108,7 @@ their old hosted-release configuration is not read by the emitted extension.
 
 Development notes and old session reports are not installation instructions.
 No long-term GPU/memory benchmark or complete cross-platform runtime certification
-is claimed. The current build retains upstream rendering work and animation loops.
+is claimed. Capability-based text scheduling retains the existing clock and
+background animation. Spring-enabled Classic compatibility components retain their
+local active/settling-voice cadence because the inherited solver's sleep flag does
+not mean zero residual velocity; spring-free text work uses indexed boundaries.

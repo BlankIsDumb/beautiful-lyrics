@@ -1,3 +1,6 @@
+import { ClassicRendering, type RenderingProfile } from "../../../RenderingSettings.ts"
+import { ClearDisabledEffects, EffectProperty, TrackedSpring, type VocalRenderOptions } from "../RenderEffects.ts"
+import { RunProgress, type DisplayRun } from "../../TextLayout.ts"
 import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
@@ -30,7 +33,7 @@ const GlowRange = [
 		Value: 0
 	} // Rest
 ]
-const GlowSpline = GetSpline(GlowRange)
+let GlowSpline: ReturnType<typeof GetSpline> | undefined
 
 const GlowDamping = 0.5
 const GlowFrequency = 1
@@ -46,7 +49,10 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	private readonly Duration: number
 
 	private readonly Span: HTMLSpanElement;
-	private readonly GlowSpring: Spring;
+	private GlowSpring?: Spring;
+    private Profile: RenderingProfile;
+    private Options: VocalRenderOptions;
+    private Projection?: DisplayRun;
 
 	private State: LyricState = "Idle"
 	private IsSleeping: boolean = true
@@ -61,19 +67,23 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	// Constructor
 	public constructor(
 		lineContainer: HTMLElement, lineMetadata: LineVocal,
-		isRomanized: boolean
+		isRomanized: boolean, options: VocalRenderOptions = {}, projection?: DisplayRun
 	) {
 		// First create our container
-		const container = this.Maid.Give(document.createElement('div'))
+		this.Options = options
+        this.Profile = { ...(options.profile || ClassicRendering) }
+        this.Projection = projection
+        const container = options.root || this.Maid.Give(document.createElement('div'))
 		container.classList.add('Vocals')
-		container.classList.add('Lead')
+		if (!options.root) container.classList.add('Lead')
 		this.Container = container
 
 		// Handle our request time-skip signal
-		container.addEventListener(
-			'click',
-			() => this.RequestedTimeSkipSignal.Fire()
-		)
+        if (!options.root) {
+            const click = () => this.RequestedTimeSkipSignal.Fire()
+            container.addEventListener('click', click)
+            this.Maid.Give(() => container.removeEventListener('click', click))
+        }
 
 		// Define our start/end times
 		this.StartTime = lineMetadata.StartTime
@@ -89,19 +99,21 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 		// Now create our live-text element
 		this.Span = syllableSpan
-		this.GlowSpring = new Spring(0, GlowDamping, GlowFrequency)
+		this.GlowSpring = this.Profile.glow ? TrackedSpring(0, GlowDamping, GlowFrequency, options.counters) : undefined
 
 		// Now set our state
 		this.SetToGeneralState(false)
 
 		// Finally, add our vocals to our line
-		lineContainer.appendChild(container)
+		// A controller owns a supplied root, its parenting and click lifetime.
+		if (!options.root) lineContainer.appendChild(container)
 	}
 
 	// Private Methods
 	private UpdateLiveTextState = (timeScale: number, forceTo?: true) => {
 		// Grab our values
-		const glowAlpha = GlowSpline.at(timeScale)
+		if (!this.GlowSpring) return
+		const glowAlpha = (GlowSpline ??= GetSpline(GlowRange)).at(timeScale)
 
 		// Apply them
 		if (forceTo) {
@@ -112,26 +124,18 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	}
 
 	private UpdateLiveTextVisuals = (timeScale: number, deltaTime: number): boolean => {
-		// Update our springs
-		const glowAlpha = this.GlowSpring.Update(deltaTime)
-
-		// Now update our objects
-		this.Span.style.setProperty(
-			"--text-shadow-blur-radius",
-			`${4 + (8 * glowAlpha)}px`
-		)
-		this.Span.style.setProperty(
-			"--text-shadow-opacity",
-			`${glowAlpha * 50}%`
-		)
-		this.Span.style.setProperty(
-			"--gradient-progress",
-			`${0 + (120 * timeScale)}%`
-		)
-
-		// Determine if we are finally asleep or not
-		return this.GlowSpring.IsSleeping()
-	}
+        if (this.GlowSpring) {
+            if (this.Options.counters) this.Options.counters.springUpdates++
+            const glowAlpha = this.GlowSpring.Update(deltaTime)
+            EffectProperty(this.Span, "--text-shadow-blur-radius", `${4 + 8 * glowAlpha}px`, this.Options.counters)
+            EffectProperty(this.Span, "--text-shadow-opacity", `${glowAlpha * 50}%`, this.Options.counters)
+        }
+        if (this.Profile.highlight !== "off") {
+            const progress = this.Profile.highlight === "segment" ? (this.State === "Idle" ? 0 : 1) : timeScale
+            EffectProperty(this.Span, "--gradient-progress", `${120 * progress}%`, this.Options.counters)
+        }
+        return !this.GlowSpring || this.GlowSpring.IsSleeping()
+    }
 
 	private EvaluateClassState() {
 		const removeClasses = ["Active", "Sung"]
@@ -170,7 +174,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
 		// Determine our relative time elements
 		const relativeTime = (songTimestamp - this.StartTime)
-		const timeScale = timingProgress(relativeTime, 0, this.Duration)
+		const timeScale = this.Projection ? RunProgress(songTimestamp, this.Projection.Intervals, this.Projection.TimingDuration) : timingProgress(relativeTime, 0, this.Duration)
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)
@@ -222,7 +226,15 @@ export default class LineVocals implements SyncedVocals, Giveable {
 		}
 	}
 
-    public SetText(text: string) { this.Span.innerText = text }
+    public SetText(text: string, projection?: DisplayRun) { this.Span.innerText = text; this.Projection = projection }
+    public SetRendering(profile: RenderingProfile) {
+        this.Profile = { ...profile }
+        if (!profile.glow) this.GlowSpring = undefined
+        else this.GlowSpring ??= TrackedSpring(0, GlowDamping, GlowFrequency, this.Options.counters)
+        ClearDisabledEffects(this.Span, profile, this.Options.counters)
+    }
+    public RequiresContinuous() { return this.Profile.highlight === "classic" || this.Profile.highlight === "progressive" || this.Profile.glow }
+
 
 	public ForceState(state: boolean) {
 		this.SetToGeneralState(state)

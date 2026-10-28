@@ -1,3 +1,4 @@
+import type { VocalRenderOptions } from "../RenderEffects.ts"
 // Packages
 import { Maid, Giveable } from '@Universal/Modules/Maid.ts'
 
@@ -15,7 +16,7 @@ export default class StaticVocals implements BaseVocals, Giveable {
 	// Constructor
 	public constructor(
 		lineContainer: HTMLElement, lyricMetadata: TextMetadata,
-		isRomanized: boolean
+		isRomanized: boolean, options: VocalRenderOptions = {}
 	) {
 		// Store our lyric-metadata
 		this.LyricMetadata = lyricMetadata
@@ -24,9 +25,9 @@ export default class StaticVocals implements BaseVocals, Giveable {
 		this.Maid = new Maid()
 
 		// First create our container
-		const container = this.Maid.Give(document.createElement('div'))
+		const container = options.root || this.Maid.Give(document.createElement('div'))
 		container.classList.add('Vocals')
-		container.classList.add('Lead')
+		if (!options.root) container.classList.add('Lead')
 		container.classList.add('Active')
 
 		// Create our main span element
@@ -38,7 +39,8 @@ export default class StaticVocals implements BaseVocals, Giveable {
 		container.appendChild(syllableSpan)
 
 		// Finally, add our vocals to our line
-		lineContainer.appendChild(container)
+		// A controller owns a supplied root, its parenting and click lifetime.
+		if (!options.root) lineContainer.appendChild(container)
 	}
 
     public SetText(text: string) { this.Span.innerText = text }

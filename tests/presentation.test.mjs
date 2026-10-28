@@ -74,11 +74,11 @@ test('failed persistence and unknown future schemas leave state and notification
   assert.throws(() => settings.setRomanized('NowPlaying', 'Japanese', true), /quota/);
   assert.equal(settings.isRomanized('NowPlaying', 'Japanese'), false);
   assert.equal(events, 0);
-  const storage = memoryStorage({ [key]: JSON.stringify({ version: 4, profiles: {} }) });
+  const storage = memoryStorage({ [key]: JSON.stringify({ version: 6, profiles: {} }) });
   const future = CreatePresentationSettings(storage);
   assert.equal(future.isReadOnly(), true);
   assert.throws(() => future.setRomanized('FullLyrics', 'Japanese', true), /newer version/);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 4);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 6);
 });
 
 test('master Off remembers choices, persists independently and notifies only effective language changes', () => {
@@ -102,7 +102,7 @@ test('master Off remembers choices, persists independently and notifies only eff
   assert.deepEqual(events.at(-1), ['NowPlaying', []]);
   const reopened = CreatePresentationSettings(storage);
   assert.equal(reopened.getProfile('NowPlaying').romanizationEnabled, false);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 3);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 5);
   draft.romanizationEnabled = true;
   reopened.saveProfile('NowPlaying', draft);
   assert.equal(reopened.isRomanized('NowPlaying', 'Japanese'), true);
@@ -179,4 +179,65 @@ test('schema2 retains original/romanized defaults and schema3 remembers Kana thr
   assert.equal(settings.getProfile('NowPlaying').romanizationEnabled, false);
   assert.equal(settings.getProfile('NowPlaying').japaneseForm, 'romaji');
   assert.equal(settings.isRomanized('FullLyrics', 'Japanese'), true);
+});
+
+
+test('schema4 rendering edits preserve language/form and notify a separate view channel', () => {
+  const storage = memoryStorage({ [key]: JSON.stringify({version:3,profiles:{NowPlaying:{romanizationEnabled:true,japaneseForm:'kana',romanizedLanguages:languages}}}) });
+  const settings = CreatePresentationSettings(storage), events=[], languagesChanged=[];
+  const stop=settings.subscribeRendering((...args)=>events.push(args));
+  settings.subscribe((...args)=>languagesChanged.push(args));
+  const original=settings.getProfile('NowPlaying');
+  assert.equal(original.renderingCases.Word.preset,'classic');
+  settings.saveRendering('NowPlaying', 'Word',{...original.renderingCases.Word,highlight:'off',glow:false});
+  assert.equal(events.length,1);assert.equal(languagesChanged.length,0);
+  assert.equal(settings.getProfile('NowPlaying').renderingCases.Word.preset,'custom');
+  assert.equal(settings.getProfile('NowPlaying').japaneseForm,'kana');
+  settings.setRomanized('NowPlaying','Korean',true);
+  settings.saveLanguages('NowPlaying',languages);
+  assert.equal(events.length,1);
+  assert.equal(settings.getProfile('NowPlaying').renderingCases.Word.highlight,'off');
+  assert.equal(settings.getProfile('FullLyrics').renderingCases.Word.highlight,'classic');
+  const reopened=CreatePresentationSettings(storage);
+  assert.equal(reopened.getProfile('NowPlaying').renderingCases.Word.preset,'custom');
+  assert.equal(reopened.getProfile('NowPlaying').japaneseForm,'kana');
+  stop();settings.saveRendering('FullLyrics', 'Word',{...original.renderingCases.Word,blur:false});assert.equal(events.length,1);
+});
+
+
+test('schema5 defaults and v4 migration split four independent text cases without losing edits or universal cues', () => {
+  const classic={detail:'auto',preset:'classic',highlight:'classic',scale:true,verticalMotion:true,glow:true,blur:true,emphasis:true,cueAnimation:true};
+  const storage=memoryStorage({[key]:JSON.stringify({version:4,profiles:{NowPlaying:{rendering:classic},FullLyrics:{rendering:{...classic,preset:'custom',glow:false,cueAnimation:false},japaneseForm:'kana'}}})});
+  const raw=storage.getItem(key),settings=CreatePresentationSettings(storage);
+  assert.equal(settings.getRendering('NowPlaying','Word').preset,'classic');
+  assert.equal(settings.getRendering('NowPlaying','Line').preset,'balanced');
+  assert.equal(settings.getRendering('NowPlaying','Line').detail,'line');
+  assert.equal(settings.getRendering('NowPlaying','Line').glow,false);
+  assert.deepEqual(settings.getRendering('FullLyrics','Word'),settings.getRendering('FullLyrics','Line'));
+  assert.equal(settings.getRendering('FullLyrics','Word').glow,false);
+  assert.equal(settings.getCues('FullLyrics').motion,false);
+  assert.equal(settings.getCues('NowPlaying').motion,true);
+  assert.equal(settings.getProfile('FullLyrics').japaneseForm,'kana');
+  assert.equal(storage.getItem(key),raw); // Migration is read-only until a real edit.
+  const events=[],cueEvents=[];settings.subscribeRendering((...args)=>events.push(args));settings.subscribeCues((...args)=>cueEvents.push(args));
+  settings.saveCues('NowPlaying',{threshold:100,motion:false});
+  assert.equal(events.length,0);assert.equal(cueEvents.length,1);
+  settings.saveRendering('NowPlaying','Word',{...settings.getRendering('NowPlaying','Word'),glow:false});
+  assert.equal(events.length,1);assert.equal(events[0][1],'Word');assert.equal(cueEvents.length,1);
+  assert.equal(settings.getRendering('NowPlaying','Line').preset,'balanced');
+  const draft=settings.getProfile('NowPlaying');settings.saveProfile('NowPlaying',{...draft,japaneseForm:'kana'});draft.renderingCases.Word.glow=true;
+  assert.equal(settings.getRendering('NowPlaying','Word').glow,false); // Detached save boundary.
+  assert.deepEqual(settings.getCues('NowPlaying'),{threshold:100,motion:false});
+  assert.equal(JSON.parse(storage.getItem(key)).version,5);
+});
+
+test('schema5 partial/corrupt Line maps use muted defaults and edited v4 presets/detail survive both cases', () => {
+  const partial=CreatePresentationSettings(memoryStorage({[key]:JSON.stringify({version:5,profiles:{NowPlaying:{renderingCases:{Word:{glow:false}}},FullLyrics:{renderingCases:{Line:{glow:'bad'}}}}})}));
+  assert.equal(partial.getRendering('NowPlaying','Line').preset,'balanced');
+  assert.equal(partial.getRendering('FullLyrics','Line').glow,false);
+  assert.equal(partial.getRendering('FullLyrics','Line').scale,false);
+  for(const old of [{preset:'minimal',highlight:'off',scale:false,verticalMotion:false,glow:false,blur:false,emphasis:false}, {detail:'line'}, {preset:'custom'}]) {
+    const settings=CreatePresentationSettings(memoryStorage({[key]:JSON.stringify({version:4,profiles:{NowPlaying:{rendering:old}}})}));
+    assert.deepEqual(settings.getRendering('NowPlaying','Word'),settings.getRendering('NowPlaying','Line'));
+  }
 });

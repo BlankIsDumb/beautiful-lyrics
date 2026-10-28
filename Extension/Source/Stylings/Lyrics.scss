@@ -433,3 +433,39 @@
 	initial-value: 0px;
 	inherits: true;
 }
+
+// Scoped capability overrides. The default Classic tuple keeps the original
+// rules above; disabled effects remove their actual visual contribution.
+.Vocals[data-jel-highlight="off"] {
+  transition: none;
+  &.Lead { opacity: var(--vocal-active-opacity) !important; }
+  &.Background { opacity: var(--background-active-opacity) !important; }
+  .Synced {
+    background-image: none;
+    background-color: transparent;
+    -webkit-text-fill-color: white;
+    color: white;
+  }
+  // Solid original glyphs need real blur: the legacy transparent-gradient
+  // shadow trick only works while highlight supplies the visible foreground.
+  &[data-jel-blur="on"] { filter: blur(var(--text-blur, 0px)); }
+}
+.Vocals[data-jel-highlight="off"][data-jel-glow="off"] .Synced { text-shadow: none; }
+.Vocals[data-jel-glow="off"].Active .Synced { text-shadow: none; }
+.Vocals[data-jel-blur="off"] { --text-blur: 0px; }
+.Vocals[data-jel-scale="off"]:is(.Lead, .Background) .Line { scale: none; transition: none; }
+.Vocals[data-jel-scale="off"][data-jel-verticalMotion="off"][data-jel-glow="off"] {
+  will-change: auto;
+  .Lyric, .Letter { will-change: auto; }
+}
+.Interlude.StaticCue, .Interlude.StaticCue .InterludeDot {
+  transform: none;
+  scale: none;
+  box-shadow: none;
+  will-change: auto;
+}
+
+.LyricsScrollContainer.UserScrolling .Vocals[data-jel-highlight="off"]:not(.Active) { filter: none; }
+
+// Universal cue candidates keep stable slots, but disabled slots occupy no space.
+.VocalsGroup[hidden] { display: none; }

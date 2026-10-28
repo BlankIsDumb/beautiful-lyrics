@@ -16,13 +16,14 @@ if (!customElements.get(lifetimeTag)) {
   });
 }
 
-export function CreateSettingsHelp(form: HTMLFormElement) {
+export function CreateSettingsHelp(form: HTMLFormElement, onDispose?: () => void) {
   disposeActiveHelp?.();
   const resources: (() => void)[] = [];
   let disposed = false;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
+    onDispose?.(); // Abort every immediate form handler before focus/tooltip cleanup.
     for (const destroy of resources) destroy();
     resources.length = 0;
     if (disposeActiveHelp === dispose) disposeActiveHelp = undefined;

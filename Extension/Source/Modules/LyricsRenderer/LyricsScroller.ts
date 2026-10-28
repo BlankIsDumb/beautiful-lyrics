@@ -1,3 +1,4 @@
+import type { RenderingCounters } from "../../RenderingSettings.ts"
 // NPM
 import "../../Simplebar/style.css"
 // @deno-types="npm:@types/simplebar"
@@ -28,6 +29,7 @@ const AutoScrollingStopsAfter = (1 / 30) // Determines how long after the last a
 
 // Helper Method
 const GetTotalElementHeight = (element: HTMLElement): number => {
+    if (element.hidden) return 0 // Hidden cue slots must not retain computed margins.
 	const style = globalThis.getComputedStyle(element)
 	const marginTop = parseFloat(style.marginTop)
 	const marginBottom = parseFloat(style.marginBottom)
@@ -58,11 +60,12 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	private LyricsEnded: boolean = false
 	private MoveQueued = false
 	private LayoutQueued = false
+    private PreserveManualGrace = false
 
 	// Constructor
 	public constructor(
 		scrollContainer: HTMLDivElement, lyricsContainer: HTMLDivElement,
-		vocalGroups: VocalGroups<V>, lyricsAreSynced: boolean
+		vocalGroups: VocalGroups<V>, lyricsAreSynced: boolean, private BlurEnabled = true, private counters?: RenderingCounters
 	) {
 		// Mark our synced-state
 		this.LyricsAreSynced = lyricsAreSynced
@@ -86,15 +89,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		const resizeObserver = this.Maid.Give(
 			new ResizeObserver(
 				() => {
-					if (this.LayoutQueued) return
-					this.LayoutQueued = true
-					// Recalculation writes the container height. Defer it out of
-					// ResizeObserver delivery to avoid resize-loop notifications.
-					this.Maid.Give(OnPreRender(() => {
-						this.LayoutQueued = false
-						this.UpdateLyricHeights()
-						if (lyricsAreSynced) this.MoveToActiveLyrics()
-					}), 'MeasureLyrics')
+                    this.QueueLayoutMeasure()
 				}
 			)
 		)
@@ -117,6 +112,25 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		}
 	}
 
+    // Eligibility can hide a zero-content cue group without changing its content
+    // box, so ResizeObserver alone cannot detect the removed CSS margins.
+    public RefreshCueLayout() {
+        this.DetermineLyricBlur()
+        this.PreserveManualGrace = true
+        this.QueueLayoutMeasure()
+    }
+    private QueueLayoutMeasure() {
+        if (this.LayoutQueued) return
+        this.LayoutQueued = true
+        this.Maid.Give(OnPreRender(() => {
+            this.LayoutQueued = false
+            const preserve = this.PreserveManualGrace
+            if (!this.AutoScrollBlocked) this.PreserveManualGrace = false
+            this.UpdateLyricHeights()
+            if (this.LyricsAreSynced && !(preserve && this.AutoScrollBlocked)) this.MoveToActiveLyrics()
+        }), "MeasureLyrics")
+    }
+
 	// Private Methods
 	private ToggleAutoScrollBlock(blocked: boolean) {
 		if (this.AutoScrollBlocked !== blocked) {
@@ -125,10 +139,19 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 				this.ScrollContainer.classList.add("UserScrolling")
 			} else {
 				this.AutoScrollBlocked = false
+                this.PreserveManualGrace = false
 				this.ScrollContainer.classList.remove("UserScrolling")
 			}
 		}
 	}
+
+    private FinishManualScrollGrace() {
+        // A cue edit protects the current grace window only. If its timeout
+        // lands in silence, MoveToActiveLyrics returns before unblocking; do not
+        // leave the cue guard latched and suppress future playback activity.
+        this.PreserveManualGrace = false
+        this.MoveToActiveLyrics()
+    }
 
 	private WatchAutoScrollBlocking() {
 		const callback = () => {
@@ -138,7 +161,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 				this.Maid.Give(
 					Timeout(
 						UserScrollingStopsAfter,
-						() => this.MoveToActiveLyrics()
+						() => this.FinishManualScrollGrace()
 					),
 					"WaitForUserToStopScrolling"
 				)
@@ -174,7 +197,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		// vocal has its new state before choosing the overlap viewport.
 		queueMicrotask(() => {
 			this.MoveQueued = false
-			if (!this.Maid.IsDestroyed()) this.MoveToActiveLyrics(true)
+			if (!this.Maid.IsDestroyed() && !(this.PreserveManualGrace && this.AutoScrollBlocked)) this.MoveToActiveLyrics(true)
 		})
 	}
 
@@ -201,11 +224,24 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		this.Scroller.recalculate()
 	}
 
-	private DetermineLyricBlur() {
+	public SetBlurEnabled(enabled: boolean) {
+        if (this.BlurEnabled === enabled) return
+        this.BlurEnabled = enabled
+        if (enabled) this.DetermineLyricBlur()
+        else for (const group of this.VocalGroups as VocalGroups<SyncedVocals>) for (const vocal of group.Vocals) {
+            (vocal as SyncedVocals & { ClearBlur?(): void }).ClearBlur?.()
+        }
+    }
+
+    private DetermineLyricBlur() {
+        // Blur Off skips both the activity scan and distance/style work.
+        if (!this.BlurEnabled || !this.LyricsAreSynced) return
+        if (this.counters) this.counters.blurCalculations++
 		// Grab our start/end incides for our active vocals (we go by vocal not by group in this instance)
 		let startIndex: (number | undefined), endIndex: (number | undefined)
 		const vocals = []
 		for (const vocalGroup of (this.VocalGroups as VocalGroups<SyncedVocals>)) {
+            if (vocalGroup.GroupContainer.hidden) continue
 			for(const vocal of vocalGroup.Vocals) {
 				if (vocal.IsActive()) {
 					const vocalIndex = vocals.length
@@ -223,7 +259,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 
 		// If we don't have a start-index then set it to the end vocal
 		if ((startIndex === undefined) || (endIndex === undefined)) {
-			startIndex = this.LastActiveVocalIndex
+			startIndex = Math.min(this.LastActiveVocalIndex, Math.max(0, vocals.length - 1))
 			endIndex = startIndex
 		} else {
 			this.LastActiveVocalIndex = startIndex

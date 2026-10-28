@@ -7,7 +7,7 @@ const load = async entry => {
   const result = await build({ entryPoints: [entry], bundle: true, write: false, format: 'esm' });
   return import('data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64'));
 };
-const { NormalizeLyrics, ProjectClassic, DeriveCues } = await load('Extension/Source/Modules/LyricDocument.ts');
+const { NormalizeLyrics, ProjectClassic, DeriveCues, DeriveCueCandidates } = await load('Extension/Source/Modules/LyricDocument.ts');
 const { LyricTimeline, LyricTime, TransportTime } = await load('Extension/Source/Modules/LyricTimeline.ts');
 const { CreateTimingSettings } = await load('Extension/Source/TimingSettings.ts');
 const span = (Text, StartTime, EndTime, IsPartOfWord = false) => ({ Text, StartTime, EndTime, IsPartOfWord });
@@ -159,12 +159,14 @@ test('signed shared/view offsets invert seek, clamp transport only and persist w
 // Exercise the actual renderer orchestration with narrow host/visual substitutes.
 // No Spotify, real storage, source lookups or actual client's DOM is involved.
 test('renderer wires indexed work, true spring settling, paused offsets, inverse clicks and disposal', async () => {
-  const harness = { visuals: [], scrollers: [], pending: new Set() };
+  const harness = { visuals: [], cues: [], scrollers: [], pending: new Set() };
   globalThis.__timingHarness = harness;
   class Element {
     classList = { add() {} };
-    appendChild() {}
-    append() {}
+    dataset = {};
+    children = [];
+    appendChild(child) {this.children.push(child)}
+    append(child) {this.children.push(child)}
     remove() {}
   }
   const previous = Object.fromEntries(['document', 'Element', 'MutationObserver', 'ResizeObserver', 'localStorage'].map(key => [key, globalThis[key]]));
@@ -183,9 +185,17 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       export function OnPreRender(callback){const set=globalThis.__timingHarness.pending;set.add(callback);return ()=>set.delete(callback)}`,
     'scroller-stub': `export class LyricsScroller {
       forced=[]; ended=[]; constructor(){globalThis.__timingHarness.scrollers.push(this)}
-      SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
+      SetBlurEnabled(){} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
     }`,
-    'visual-stub': visualCode,
+    'controller-stub': `export class VocalController {
+      calls=[];frames=0;renderChanges=0;RequestedTimeSkip={Connect:callback=>{this.click=callback}};
+      constructor(parent,document,voice){this.text=voice.spans.map(span=>span.Text).join('');globalThis.__timingHarness.visuals.push(this)}
+      SetProjection(runs){this.text=runs.map(run=>run.Text).join('');this.projection=runs}
+      SetRendering(profile){this.rendering=profile;this.renderChanges++} RequiresContinuous(){return true}
+      Animate(...args){this.calls.push(args);if(this.frames>0)this.frames--}
+      NeedsFrame(){return this.frames>0} Destroy(){this.destroyed=true}
+    }`,
+    'cue-stub':'export class CueController {RequestedTimeSkip={Connect:()=>()=>{}};calls=[];constructor(){globalThis.__timingHarness.cues.push(this)}Animate(){}SetSettings(...args){this.calls.push(args)}NeedsFrame(){return false}RequiresContinuous(){return false}Destroy(){}}',
     'style-stub': '',
   };
   try {
@@ -193,9 +203,10 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       bundle: true, write: false, format: 'esm', plugins: [{ name: 'fake-host', setup(build) {
         build.onResolve({ filter: /AnnotationService\.ts$/ }, () => ({ path: 'annotation-stub', namespace: 'stub' }));
         build.onResolve({ filter: /LyricClock\.ts$/ }, () => ({ path: 'clock-stub', namespace: 'stub' }));
-        build.onResolve({ filter: /Scheduler\.ts$/ }, () => ({ path: 'scheduler-stub', namespace: 'stub' }));
+        build.onResolve({ filter: /(?:^|[\\/])Scheduler\.ts$/ }, () => ({ path: 'scheduler-stub', namespace: 'stub' }));
         build.onResolve({ filter: /LyricsScroller\.ts$/ }, () => ({ path: 'scroller-stub', namespace: 'stub' }));
-        build.onResolve({ filter: /Components\/.*\.ts$/ }, () => ({ path: 'visual-stub', namespace: 'stub' }));
+        build.onResolve({ filter: /VocalController\.ts$/ }, () => ({path:'controller-stub',namespace:'stub'}));
+        build.onResolve({ filter: /CueController\.ts$/ }, () => ({path:'cue-stub',namespace:'stub'}));
         build.onResolve({ filter: /\.scss$/ }, () => ({ path: 'style-stub', namespace: 'stub' }));
         build.onResolve({ filter: /^@Universal\// }, args => ({ path: path.resolve('Universal', args.path.slice('@Universal/'.length)) }));
         build.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({ contents: stubs[args.path], loader: 'js' }));
@@ -249,6 +260,31 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     TimingSettings.save({ Shared: 0, NowPlaying: 0, FullLyrics: 0 });
     assert.equal(harness.visuals[0].calls.length, afterDestroy);
     assert.equal(harness.visuals.every(v => v.destroyed), true);
+    // Provider part envelopes remain the seek authority; normalized timing
+    // envelopes can start later. Static source preferences add no clock lease.
+    const envelope={Type:'Syllable',NaturalAlignment:'Left',StartTime:2,EndTime:10,Content:[{Type:'Vocal',Lead:{StartTime:2,EndTime:10,Syllables:[{Text:'one',StartTime:5,EndTime:6,IsPartOfWord:false},{Text:'two',StartTime:7,EndTime:8,IsPartOfWord:false}]}}]};
+    const envelopeParent=new Element(),envelopeRenderer=new Renderer(envelopeParent,envelope,false,'NowPlaying',clock);
+    TimingSettings.save({Shared:.5,NowPlaying:1,FullLyrics:0});
+    harness.visuals.at(-1).click();assert.equal(seeks.at(-1),3.5);
+    const lyricsNode=envelopeParent.children.at(-1).children[0];
+    assert.equal(lyricsNode.dataset.effectivePrecision,'word');
+    PresentationSettings.saveRendering('NowPlaying', 'Word',{...PresentationSettings.getProfile('NowPlaying').renderingCases.Word,detail:'line'});
+    assert.equal(lyricsNode.dataset.effectivePrecision,'line');
+    const projectedWord=harness.visuals.at(-1),beforeInactive=projectedWord.renderChanges;
+    PresentationSettings.saveRendering('NowPlaying','Line',{...PresentationSettings.getRendering('NowPlaying','Line'),glow:true});
+    assert.equal(projectedWord.renderChanges,beforeInactive); // Word source stays Word case when displayed as Line.
+    const cue=harness.cues.at(-1),cueBefore=cue.calls.length,scroller=harness.scrollers.at(-1),forcedBefore=scroller.forced.length;
+    PresentationSettings.saveCues('NowPlaying',{threshold:0,motion:false});
+    assert.equal(cue.calls.length,cueBefore+1);assert.equal(projectedWord.renderChanges,beforeInactive);
+    assert.equal(scroller.forced.length,forcedBefore);assert.equal(scroller.cueRefreshes,1);
+    const otherCueBefore=cue.calls.length;PresentationSettings.saveCues('FullLyrics',{threshold:100,motion:true});assert.equal(cue.calls.length,otherCueBefore);
+
+    envelopeRenderer.Destroy();
+    const staticRenderer=new Renderer(new Element(),{Type:'Static',NaturalAlignment:'Left',Lines:[{Text:'plain'}]},false,'NowPlaying',clock);
+    assert.equal(consumers.size,0);
+    PresentationSettings.saveRendering('NowPlaying', 'Word',{...PresentationSettings.getProfile('NowPlaying').renderingCases.Word,detail:'word',blur:false});
+    assert.equal(consumers.size,0);staticRenderer.Destroy();
+    TimingSettings.save({Shared:0,NowPlaying:0,FullLyrics:0});
     // Annotation updates keep voice/scroller objects and never force manual scroll.
     const jobs = [];
     harness.acquire = (document, options) => {
@@ -280,6 +316,16 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     assert.equal(nowVocal.text, 'かな');
     jobs[1].resolve(mapped(jobs[1], 'full romaji')); jobs[2].resolve(mapped(jobs[2], 'now kana')); await Promise.resolve();
     assert.equal(nowVocal.text, 'now kana'); assert.equal(fullVocal.text, 'full romaji');
+    const beforeRender=jobs.length, currentLease=jobs[2];
+    PresentationSettings.saveRendering('NowPlaying', 'Word',{...PresentationSettings.getProfile('NowPlaying').renderingCases.Word,highlight:'off',glow:false});
+    assert.equal(jobs.length,beforeRender);assert.equal(currentLease.released,false);
+    assert.equal(nowVocal.text,'now kana');assert.equal(nowScroller.forced.length,forcedNow);
+    assert.equal(PresentationSettings.getProfile('NowPlaying').japaneseForm,'kana');
+    const beforeLine=nowVocal.renderChanges;
+    PresentationSettings.saveRendering('NowPlaying','Line',{...PresentationSettings.getRendering('NowPlaying','Line'),highlight:'off'});
+    assert.equal(nowVocal.renderChanges,beforeLine+1);assert.equal(jobs.length,beforeRender);
+    assert.equal(currentLease.released,false);assert.equal(nowVocal.text,'now kana');
+
     const beforeIrrelevant = jobs.length;
     PresentationSettings.setRomanized('NowPlaying', 'Chinese', true);
     assert.equal(jobs.length, beforeIrrelevant);
@@ -314,8 +360,8 @@ test('actual Classic line animator keeps zero-duration states and CSS values fin
     classes = new Set();
     properties = new Map();
     classList = { add: value => this.classes.add(value), remove: value => this.classes.delete(value), contains: value => this.classes.has(value) };
-    style = { setProperty: (key, value) => this.properties.set(key, value) };
-    appendChild() {} addEventListener() {} remove() {}
+    style = { getPropertyValue: key => this.properties.get(key)||"", setProperty: (key, value) => this.properties.set(key, value) };
+    appendChild() {} addEventListener() {} removeEventListener() {} remove() {}
   }
   const previous = Object.fromEntries(['document', 'Element', 'MutationObserver', 'ResizeObserver'].map(key => [key, globalThis[key]]));
   Object.assign(globalThis, { document: { createElement: () => { const element = new Element(); elements.push(element); return element; } }, Element, MutationObserver: class {}, ResizeObserver: class {} });
@@ -323,7 +369,7 @@ test('actual Classic line animator keeps zero-duration states and CSS values fin
     const result = await build({ entryPoints: ['Extension/Source/Modules/LyricsRenderer/Components/LineVocals.ts'], bundle: true, write: false, format: 'esm',
       plugins: [{ name: 'line-host', setup(build) {
         build.onResolve({ filter: /^npm:/ }, args => build.resolve(args.path.slice(4), { resolveDir: process.cwd(), kind: args.kind }));
-        build.onResolve({ filter: /Scheduler\.ts$/ }, () => ({ path: 'scheduler', namespace: 'stub' }));
+        build.onResolve({ filter: /(?:^|[\\/])Scheduler\.ts$/ }, () => ({ path: 'scheduler', namespace: 'stub' }));
         build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'export const IsScheduled=()=>false;export const Cancel=()=>{};', loader: 'js' }));
         build.onResolve({ filter: /^@(Universal|Spices)\// }, args => {
           const base = args.path.startsWith('@Universal/') ? 'Universal' : 'Extension/Spices';
@@ -339,4 +385,21 @@ test('actual Classic line animator keeps zero-duration states and CSS values fin
     }
     line.Destroy();
   } finally { Object.assign(globalThis, previous); }
+});
+
+
+test('cue eligibility uses full positive all-voice union gaps, zero Off and literal100 seconds', () => {
+  const lyrics={Type:'Syllable',StartTime:0,EndTime:104,Content:[
+    {Type:'Vocal',Lead:voice(span('later',102,104))},
+    {Type:'Vocal',Lead:voice(span('first',0,1)),Background:[voice(span('backing',.5,1.5)),voice(span('last backing',1,2))]},
+  ]};
+  const doc=NormalizeLyrics(lyrics),before=JSON.stringify(doc),candidates=DeriveCueCandidates(doc);
+  assert.equal(candidates.length,1);assert.equal(candidates[0].gapSeconds,100);
+  assert.deepEqual([candidates[0].start,candidates[0].end],[2,101.75]);
+  assert.equal(DeriveCues(doc,0).length,0);assert.equal(DeriveCues(doc,100).length,1);assert.equal(DeriveCues(doc,100.1).length,0);
+  const tiny=NormalizeLyrics({Type:'Line',StartTime:0,EndTime:2,Content:[{Type:'Vocal',Text:'one',StartTime:0,EndTime:1},{Type:'Vocal',Text:'two',StartTime:1.1,EndTime:2}]});
+  const tinyCue=DeriveCues(tiny,.1)[0];assert.ok(tinyCue.end>tinyCue.start);assert.ok(tinyCue.end<1.1);
+  const point=NormalizeLyrics({Type:'Line',StartTime:0,EndTime:3,Content:[{Type:'Vocal',Text:'point',StartTime:1,EndTime:1},{Type:'Vocal',Text:'next',StartTime:2,EndTime:3}]});
+  assert.deepEqual(DeriveCueCandidates(point).map(cue=>cue.gapSeconds),[1,1]);
+  assert.equal(JSON.stringify(doc),before); // Cues never enter immutable/source caches.
 });

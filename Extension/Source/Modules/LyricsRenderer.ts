@@ -5,8 +5,8 @@ import { type TransformedLyrics } from "@Spices/Spicetify/Services/Player/mod.ts
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
-import { GetLyricDocument, ProjectClassic } from "./LyricDocument.ts"
-import { LyricTimeline, LyricTime, TransportTime } from "./LyricTimeline.ts"
+import { GetLyricDocument, ProjectClassic, DeriveCueCandidates } from "./LyricDocument.ts"
+import { TransportTime } from "./LyricTimeline.ts"
 import { PlayerLyricClock, type LyricClock } from "./LyricClock.ts"
 import { TimingSettings } from "../TimingSettings.ts"
 import { PresentationSettings, type PresentationView } from "../PresentationSettings.ts"
@@ -14,16 +14,16 @@ import { AnnotationService, VoiceLanguage } from "./AnnotationService.ts"
 import { LayoutVoice, type DisplayRun } from "./TextLayout.ts"
 
 // Our Types
-import { BaseVocals, SyncedVocals } from "./LyricsRenderer/Types.d.ts"
+import { SyncedVocals } from "./LyricsRenderer/Types.d.ts"
 
 // Our Modules
 import { LyricsScroller, VocalGroups } from "./LyricsRenderer/LyricsScroller.ts"
 
 // Our Components
-import InterludeVisual from "./LyricsRenderer/Components/Interlude.ts"
-import StaticVocals from "./LyricsRenderer/Components/StaticVocals.ts"
-import LineVocals from "./LyricsRenderer/Components/LineVocals.ts"
-import SyllableVocals from "./LyricsRenderer/Components/SyllableVocals.ts"
+import { VocalController } from "./LyricsRenderer/VocalController.ts"
+import { CueController } from "./LyricsRenderer/CueController.ts"
+import { RenderScheduler } from "./LyricsRenderer/RenderScheduler.ts"
+import { ClassicRendering, SourceCaseFor, type RenderingCounters } from "../RenderingSettings.ts"
 
 // CSS
 import "../Stylings/Lyrics.scss"
@@ -37,23 +37,19 @@ export default class LyricsRenderer implements Giveable {
 	constructor(
 		parentContainer: HTMLDivElement,
 		sourceLyrics: TransformedLyrics, isRomanized: boolean,
-        view: PresentationView = "FullLyrics", clock: LyricClock = PlayerLyricClock
+        view: PresentationView = "FullLyrics", clock: LyricClock = PlayerLyricClock, counters?: RenderingCounters
     ) {
         // Keep the legacy boolean argument position for callers; per-view profile
         // demand now owns alternate text instead of preconverted source fields.
         const lyricDocument = GetLyricDocument(sourceLyrics)
         const availableLanguages = new Set(lyricDocument.groups.flatMap(group => group.voices.map(voice => VoiceLanguage(voice, sourceLyrics.Language))))
-        const transformedLyrics = { ...ProjectClassic(lyricDocument), NaturalAlignment: sourceLyrics.NaturalAlignment }
+        const candidates = DeriveCueCandidates(lyricDocument)
+        const gaps = new Map(candidates.map(cue => [cue.start, cue.gapSeconds]))
+        const transformedLyrics = { ...ProjectClassic(lyricDocument, candidates), NaturalAlignment: sourceLyrics.NaturalAlignment }
         const bindings = new Map<string, { base: readonly DisplayRun[]; current: readonly DisplayRun[]; apply: (runs: readonly DisplayRun[]) => void }>()
         const bind = (voice: (typeof lyricDocument.groups)[number]["voices"][number], apply: (runs: readonly DisplayRun[]) => void, base = LayoutVoice(voice)) => {
             bindings.set(voice.id, { base, current: base, apply })
         }
-        const snap = (vocal: SyncedVocals) => {
-            // This is a local text refresh, not a seek. Preserve manual-scroll
-            // grace; the existing ResizeObserver remeasures new text geometry.
-            vocal.Animate(LyricTime(clock.now(), TimingSettings.get("Shared"), TimingSettings.get(view)), 0, true)
-        }
-
     // Attribution belongs to every rendering surface, including the sidebar.
     if (transformedLyrics.Attribution) {
       const credit=this.Maid.Give(document.createElement('div'));
@@ -77,155 +73,70 @@ export default class LyricsRenderer implements Giveable {
 		// Now set our natural-alignment
 		lyricsContainer.classList.add(`NaturallyAligned${transformedLyrics.NaturalAlignment}`)
 
-		// Now handle creating our vocals
-		if (transformedLyrics.Type === "Static") {
-			// Populate our lines (not technically VocalGroups since we're static)
-			const lines: VocalGroups<BaseVocals> = []
-			for (const [groupIndex, line] of transformedLyrics.Lines.entries()) {
-				// Create our container
-				const lineContainer = this.Maid.Give(document.createElement("div"))
-				lineContainer.classList.add("VocalsGroup")
-
-                const vocal = this.Maid.Give(new StaticVocals(lineContainer, line, false))
-                bind(lyricDocument.groups[groupIndex].voices[0], runs => vocal.SetText(runs.map(run => run.Text).join("")))
-                lines.push({ GroupContainer: lineContainer, Vocals: [vocal] })
-
-				// Parent our container
-				lyricsContainer.appendChild(lineContainer)
-			}
-
-			// Create our scroller
-			this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, lines, false))
-		} else {
-			// Store our vocal-groups
-			const vocalGroups: VocalGroups<SyncedVocals> = []
-			const vocalGroupStartTimes: number[] = []
-            let sourceGroupIndex = 0
-
-			// Now populate our vocal-groups based on our type
-			if (transformedLyrics.Type === "Line") {
-				for (const vocalGroup of transformedLyrics.Content) {
-					// Create our container
-					const vocalGroupContainer = this.Maid.Give(document.createElement("button"))
-					vocalGroupContainer.classList.add("VocalsGroup")
-
-					// Determine our how we populate/manipulate this container
-					if (vocalGroup.Type === "Vocal") {
-						// Add our alignment
-						if (vocalGroup.OppositeAligned) {
-							vocalGroupContainer.classList.add("AlignedOpposite")
-						}
-
-                        const vocal = this.Maid.Give(new LineVocals(vocalGroupContainer, vocalGroup, false))
-                        bind(lyricDocument.groups[sourceGroupIndex++].voices[0], runs => { vocal.SetText(runs.map(run => run.Text).join("")); snap(vocal) })
-                        vocalGroups.push({ GroupContainer: vocalGroupContainer, Vocals: [vocal] })
-
-						vocalGroupStartTimes.push(vocalGroup.StartTime)
-					} else {
-						vocalGroups.push(
-							{
-								GroupContainer: vocalGroupContainer,
-								Vocals: [this.Maid.Give(new InterludeVisual(vocalGroupContainer, vocalGroup))]
-							}
-						)
-						vocalGroupStartTimes.push(vocalGroup.StartTime)
-					}
-
-					// Parent our container
-					lyricsContainer.appendChild(vocalGroupContainer)
-				}
-			} else {
-				for (const vocalGroup of transformedLyrics.Content) {
-					// Create our container
-					const vocalGroupContainer = this.Maid.Give(document.createElement("button"))
-					vocalGroupContainer.classList.add("VocalsGroup")
-
-					// Determine our how we populate/manipulate this container
-					if (vocalGroup.Type === "Vocal") {
-						// Add our alignment
-						if (vocalGroup.OppositeAligned) {
-							vocalGroupContainer.classList.add("AlignedOpposite")
-						}
-
-                        const vocals: SyllableVocals[] = []
-                        const originals = lyricDocument.groups[sourceGroupIndex++].voices
-                        const parts = [vocalGroup.Lead, ...(vocalGroup.Background || [])]
-                        let startTime = Math.min(...parts.map(part => part.StartTime))
-                        parts.forEach((part, index) => {
-                            const base = LayoutVoice(originals[index])
-                            const vocal = this.Maid.Give(new SyllableVocals(vocalGroupContainer, part.Syllables, index > 0, false, base))
-                            bind(originals[index], runs => { vocal.SetProjection(runs); snap(vocal) }, base)
-                            vocals.push(vocal)
-                        })
-
-						vocalGroups.push(
-							{
-								GroupContainer: vocalGroupContainer,
-								Vocals: vocals
-							}
-						)
-						vocalGroupStartTimes.push(startTime)
-					} else {
-						vocalGroups.push(
-							{
-								GroupContainer: vocalGroupContainer,
-								Vocals: [this.Maid.Give(new InterludeVisual(vocalGroupContainer, vocalGroup))]
-							}
-						)
-						vocalGroupStartTimes.push(vocalGroup.StartTime)
-					}
-
-					// Parent our container
-					lyricsContainer.appendChild(vocalGroupContainer)
-				}
-			}
-
-			// Now create our scroller
-			const scroller = this.Maid.Give(
-				new LyricsScroller(
-					scrollContainer, lyricsContainer,
-					vocalGroups, true
-				)
-			)
-			
-			// Stable component IDs refer to this one immutable projection. Only index
-            // boundaries, active voices and genuinely settling springs run each frame.
-            const visuals = new Map<string, SyncedVocals>()
-            const intervals: { id: string; start: number; end: number }[] = []
-            for (const [groupIndex, group] of vocalGroups.entries()) {
-                const row = transformedLyrics.Content[groupIndex]
-                group.Vocals.forEach((vocal, voiceIndex) => {
-                    const id = `${groupIndex}/${voiceIndex}`
-                    visuals.set(id, vocal)
-                    if (row.Type === "Vocal" && "Lead" in row) {
-                        const spans = [row.Lead, ...(row.Background || [])][voiceIndex].Syllables
-                        intervals.push({ id, start: Math.min(...spans.map(span => span.StartTime)),
-                            end: Math.max(...spans.map(span => span.EndTime)) })
-                    } else {
-                        intervals.push({ id, start: row.StartTime, end: row.EndTime })
+        const sourceCase = SourceCaseFor(lyricDocument.precision)
+        let rendering = sourceCase ? PresentationSettings.getRendering(view, sourceCase) : { ...ClassicRendering }
+        let cueSettings = PresentationSettings.getCues(view)
+        const vocals: VocalController[] = []
+        const cues: CueController[] = []
+        const vocalGroups: VocalGroups<SyncedVocals> = []
+        const visuals = new Map<string, VocalController | CueController>()
+        const owners = new Map<string, string>()
+        const intervals: { id: string; start: number; end: number }[] = []
+        let sourceGroupIndex = 0
+        const addInterval = (owner: string, start: number, end: number) => {
+            const id = String(intervals.length)
+            owners.set(id, owner); intervals.push({ id, start, end })
+        }
+        const rows = transformedLyrics.Type === "Static" ? transformedLyrics.Lines : transformedLyrics.Content
+        const groupStarts: number[] = []
+        for (const row of rows) {
+            const groupContainer = this.Maid.Give(document.createElement(transformedLyrics.Type === "Static" ? "div" : "button"))
+            groupContainer.classList.add("VocalsGroup")
+            const groupVocals: (VocalController | CueController)[] = []
+            if ("Type" in row && row.Type === "Interlude") {
+                const cue = this.Maid.Give(new CueController(groupContainer, row, cueSettings, counters, gaps.get(row.StartTime)))
+                groupVocals.push(cue); cues.push(cue)
+                const id = `cue/${vocalGroups.length}`
+                visuals.set(id, cue); addInterval(id, row.StartTime, row.EndTime)
+                groupStarts.push(row.StartTime)
+            } else {
+                const group = lyricDocument.groups[sourceGroupIndex++]
+                if (group.oppositeAligned) groupContainer.classList.add("AlignedOpposite")
+                groupStarts.push(Math.min(...group.voices.map(voice => voice.sourceInterval?.start ?? voice.start)))
+                for (const voice of group.voices) {
+                    const base = LayoutVoice(voice)
+                    const vocal = this.Maid.Give(new VocalController(groupContainer, lyricDocument, voice, rendering, counters, base))
+                    bind(voice, runs => vocal.SetProjection(runs, lyricTime()), base)
+                    groupVocals.push(vocal); vocals.push(vocal); visuals.set(voice.id, vocal)
+                    if (lyricDocument.type !== "Static") {
+                        addInterval(voice.id, voice.start, voice.end)
+                        // Discrete segment highlight needs source starts/strict ends
+                        // even while the surrounding voice remains active.
+                        for (const span of voice.spans) addInterval(voice.id, span.start!, span.end!)
                     }
-                })
-            }
-            const timeline = new LyricTimeline(intervals)
-            const settling = new Set<string>()
-            let previousTime: number | undefined
-            let justSkippedByVocal = false
-            const offsets = () => [TimingSettings.get("Shared"), TimingSettings.get(view)] as const
-            let effectiveOffset = offsets().reduce((sum, value) => sum + value, 0)
-            const update = (deltaTime: number, skipped?: true) => {
-                const [shared, local] = offsets()
-                const timestamp = LyricTime(clock.now(), shared, local)
-                // Clock discontinuities and offset changes must snap inactive
-                // components too; normal forward frames never sweep the song.
-                const immediate = skipped || (previousTime !== undefined && timestamp < previousTime) || undefined
-                const state = timeline.evaluate(timestamp, immediate)
-                const work = new Set([...state.changed, ...state.active, ...settling])
-                for (const id of work) {
-                    const vocal = visuals.get(id)!
-                    vocal.Animate(timestamp, deltaTime, immediate)
-                    if (vocal.NeedsFrame()) settling.add(id)
-                    else settling.delete(id)
                 }
+            }
+            vocalGroups.push({ GroupContainer: groupContainer, Vocals: groupVocals })
+            lyricsContainer.appendChild(groupContainer)
+        }
+        const updatePrecision = () => {
+            lyricsContainer.dataset.effectivePrecision = lyricDocument.type === "Static" ? "static"
+                : rendering.detail === "line" ? "line" : lyricDocument.precision
+        }
+        updatePrecision()
+        const scroller = this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, vocalGroups,
+            lyricDocument.type !== "Static", rendering.blur, counters))
+        const offsets = () => [TimingSettings.get("Shared"), TimingSettings.get(view)] as const
+        let effectiveOffset = TimingSettings.get("Shared") + TimingSettings.get(view)
+        const lyricTime = () => clock.now() - effectiveOffset
+        const scheduler = new RenderScheduler(visuals, intervals, owners, counters)
+        let justSkippedByVocal = false
+        if (lyricDocument.type !== "Static") {
+            let previousTime: number | undefined
+            const update = (deltaTime: number, skipped?: true) => {
+                const timestamp = lyricTime()
+                const immediate = skipped || (previousTime !== undefined && timestamp < previousTime) || undefined
+                scheduler.update(timestamp, deltaTime, immediate)
                 previousTime = timestamp
                 scroller.SetLyricsEnded(timestamp >= lyricDocument.end)
                 if (immediate) scroller.ForceToActive(justSkippedByVocal || undefined)
@@ -234,28 +145,36 @@ export default class LyricsRenderer implements Giveable {
             this.Maid.Give(clock.subscribe(update))
             this.Maid.Give(TimingSettings.subscribe(scopes => {
                 if (!scopes.includes("Shared") && !scopes.includes(view)) return
-                const nextOffset = offsets().reduce((sum, value) => sum + value, 0)
+                const nextOffset = TimingSettings.get("Shared") + TimingSettings.get(view)
                 if (nextOffset === effectiveOffset) return
-                effectiveOffset = nextOffset
-                update(0, true)
+                effectiveOffset = nextOffset; update(0, true)
             }))
             this.Maid.Give(OnPreRender(() => update(1 / 60, true)))
+            for (const [index, group] of vocalGroups.entries()) for (const vocal of group.Vocals) {
+                this.Maid.Give(vocal.RequestedTimeSkip.Connect(() => {
+                    justSkippedByVocal = true
+                    clock.seek(TransportTime(groupStarts[index], ...offsets(), clock.duration()))
+                }))
+            }
+        }
+        this.Maid.Give(PresentationSettings.subscribeRendering((changedView, changedCase, fields) => {
+            if (!sourceCase || changedCase !== sourceCase || changedView !== view || fields.every(field => field === "preset")) return
+            rendering = PresentationSettings.getRendering(view, sourceCase)
+            updatePrecision()
+            const time = lyricTime()
+            for (const vocal of vocals) vocal.SetRendering(rendering, time)
+            scroller.SetBlurEnabled(rendering.blur)
+            scheduler.refresh()
+        }))
 
-			// Handle time-skipping
-			for (const [index, vocalGroup] of vocalGroups.entries()) {
-				const startTime = vocalGroupStartTimes[index]
-				
-				for (const vocal of vocalGroup.Vocals) {
-					vocal.RequestedTimeSkip.Connect(
-						() => {
-							justSkippedByVocal = true
-							const [shared, local] = offsets()
-							clock.seek(TransportTime(startTime, shared, local, clock.duration()))
-						}
-					)
-				}
-			}
-		}
+        this.Maid.Give(PresentationSettings.subscribeCues((changedView) => {
+            if (changedView !== view || lyricDocument.type === "Static") return
+            cueSettings = PresentationSettings.getCues(view)
+            const time = lyricTime()
+            for (const cue of cues) cue.SetSettings(cueSettings, time)
+            scroller.RefreshCueLayout()
+            scheduler.refresh()
+        }))
 
         let generation = 0
         let release: (() => void) | undefined

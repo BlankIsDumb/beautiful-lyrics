@@ -1,5 +1,78 @@
 # Validation
 
+## Four text cases / immediate settings — 5.1.0-local.13, 2026-10-28
+
+- Implemented, source-reviewed and applied locally: four independent source-selected
+  text cases, two universal view cue configurations, schema5 migration, immediate
+  native-event settings/no Save, whole Now Playing collapse and native case sections.
+  Edited legacy values are retained in both migrated text maps; untimed stays plain.
+- Final full suite **99/99 passed**, zero failures/skips, after the grace-expiry fix.
+  Exact accepted `.12` Syllable/ordinary Line/cue Classic comparison passed1/1.
+  The form test uses an isolated owned CDP target with browser focus emulation
+  before navigation and strict trusted native-focus assertions; this resolves
+  parallel headless focus contention without changing production focus behavior.
+  It is not physical-pointer or native desktop focus evidence.
+- Actual-component Chromium tests cover animated15-spring cue teardown at0, zero
+  hidden margins/blur slots, Line-precision wrappers, and full manual grace after
+  physical scrolling stops. The existing750ms callback clears the cue-only guard
+  even when expiry occurs in silence, allowing later normal playback reconciliation.
+- Native read-only settings inspection passed: four cases/two universal cue configs,
+  no Save, disabled Now Playing fully collapsed, visible adjacent help/Classic footer
+  and retained custom migration choices. The collapsed overview screenshot was
+  inspected. No input/change events or settings-store writes were exercised there.
+- Native synthetic components passed all four expected display/finite-style checks:
+  Now Playing Word used6springs, Line0; Fullscreen Word displayed as Line used0,
+  and Fullscreen Line/Highlight Off wrote0effects. Universal Now Playing dots used
+  15springs, then threshold0 left no dots/continuous consumer/updates/writes;
+  Fullscreen threshold0 allocated0springs. This is native geometry/counter evidence,
+  with no native fixture screenshot or controlled real-song comparison claim.
+- All four outputs and the installed canonical file match SHA256
+  `9D1639C51EB7CD755BC819C66F6ADBFDBA78405E84D152A1182715F2667BCD53`.
+  Current artifacts passed dictionary byte verification. Fresh reload preserved
+  current track/route/play state, raw preferences/credential digest and unrelated/
+  theme file hashes. The raw presentation schema stayed4 because inspection did
+  not edit it; migration is lazy. Owned modal/fixture cleanup was confirmed.
+- The user later navigated to the lyric page independently. Validation invoked no
+  player/route APIs. Real-song comparative/manual verification remains outstanding;
+  existing oversized-word/paint-containment limits are unchanged. No CPU/GPU gain
+  or universal visual certification is claimed.
+
+## Text capabilities — 5.1.0-local.12, 2026-10-27
+
+- Implemented, source-reviewed and applied locally. Per-view text presets/detail/
+  independent basic effects use presentation schema 4 and a separate rendering
+  event channel. Render edits retain source selection, annotation leases, stable
+  voice roots and manual-scroll grace. Untimed sources remain plain without an
+  extra clock subscription. Background/transport behavior is unchanged.
+- Final full suite: **96/96 passed**, zero skips/failures. Standalone real Chromium
+  covers roots/roles/click cleanup, detail changes, draft/save isolation, computed
+  CSS combinations, Minimal/static-cue zero effects, static-source fallback and
+  repeated-time settling. Exact accepted Classic Syllable, Line and cue comparison
+  also passed with separate baseline/current styles, non-immediate evolution,
+  overlap/gaps/points, repeated timestamps and seeks.
+- The comparison exposed that the inherited spring's sleep flag can retain
+  velocity. The corrected compatibility path keeps whole active/settling-voice
+  spring cadence; spring-free paths remain indexed. Solver/curves are unchanged.
+- Native synthetic fixture in the installed font environment passed four cases:
+  expected display text/finite styles, zero Classic cadence differences, zero
+  Minimal text springs/updates/effect-style writes, and zero internally wrapped
+  original shaping runs. This is computed-style/geometry/counter evidence; its
+  screenshot was captured after closure and provides no fixture visual proof.
+- Native settings draft preview passed Minimal → Glow → Custom, unchanged other
+  view draft, title-adjacent visible help and Classic footer. Its screenshot was
+  inspected; the owned modal closed without saving. An inactive document required
+  a synthetic mouseenter through the actual tooltip trigger, not physical hover.
+- Installed `.12` reports one runtime/style/settings button. Preference bytes,
+  credential digest, unrelated/theme file hashes and fresh track/route/pause state
+  were unchanged. The paused position advanced 10 ms on host resynchronization
+  (21,463 → 21,473 ms); no play/seek action was invoked. Four complete build
+  outputs and installed canonical file match
+  SHA256 `64818605B7B4ED024FE20CA6C231CDC0535527AA029FAF60D59BCDD751D58431`.
+- Known oversized-word overflow remains: baseline/current synthetic measurements
+  were approximately 133.796 px each. Paint containment is unchanged. Native
+  real-song playback still needs the user's manual check; no universal visual,
+  clipping or CPU/GPU improvement is claimed.
+
 ## Original Thai word wrapping regression — 5.1.0-local.11, 2026-10-27
 
 - Fixed two local.10 regressions: original shaping runs could shrink/wrap internally

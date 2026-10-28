@@ -74,29 +74,37 @@ export function NormalizeLyrics(lyrics: Lyrics): LyricDocument {
   });
 }
 
-export type LyricCue = Readonly<Interval & { id: string }>;
-export function DeriveCues(document: LyricDocument, minimumGap = 2, endLead = 0.25): readonly LyricCue[] {
+export type LyricCue = Readonly<Interval & { id: string; gapSeconds: number }>;
+export function DeriveCueCandidates(document: LyricDocument, endLead = 0.25): readonly LyricCue[] {
   if (document.type === "Static") return [];
-  // Use every actual voice, sorted independently of provider group order. A
-  // group's envelope would hide genuine silence between nonoverlapping voices.
+  // Union ALL real voice envelopes, independently of provider order. Candidates
+  // are view-independent; eligibility never mutates this document or caches.
   const intervals = document.groups.flatMap(group => group.voices.map(voice => ({ start: voice.start, end: voice.end })))
     .sort((a, b) => a.start - b.start || a.end - b.end);
   const cues: LyricCue[] = [];
   let end = 0;
   for (const interval of intervals) {
-    if (interval.start - end >= minimumGap && interval.start - endLead > end) {
-      cues.push(Object.freeze({ id: `${document.id}/cue${cues.length}`, start: end, end: interval.start - endLead }));
+    const gapSeconds = interval.start - end;
+    if (gapSeconds > 0) {
+      // Keep the Classic .25s lead for ordinary gaps. A small positive gap still
+      // gets positive display time instead of a reversed/zero-duration cue.
+      cues.push(Object.freeze({ id: `${document.id}/cue${cues.length}`, start: end,
+        end: interval.start - Math.min(endLead, gapSeconds / 2), gapSeconds }));
     }
     end = Math.max(end, interval.end);
   }
-  // Classic shows intro/internal gaps only; trailing silence remains unchanged.
+  // Preserve Classic intro/internal gaps, without adding trailing/outro cues.
   return Object.freeze(cues);
+}
+export function DeriveCues(document: LyricDocument, minimumGap = 2, endLead = 0.25): readonly LyricCue[] {
+  if (minimumGap <= 0) return []; // The user-facing zero value explicitly means Off.
+  return DeriveCueCandidates(document, endLead).filter(cue => cue.gapSeconds >= minimumGap);
 }
 
 // Temporary compatibility projection: the immutable document is the timing/data
 // boundary, while the accepted Classic DOM/effect components keep their DTOs.
 // Cues exist only in this ephemeral view and never enter transformed caches.
-export function ProjectClassic(document: LyricDocument): Lyrics {
+export function ProjectClassic(document: LyricDocument, candidates = DeriveCues(document)): Lyrics {
   // These clones are mutable compatibility DTOs; readonly applies to the owned
   // document, not to detached data handed to legacy components.
   const metadata = { Source: structuredClone(document.source) as Lyrics["Source"], Attribution: structuredClone(document.attribution) as Lyrics["Attribution"] };
@@ -112,7 +120,7 @@ export function ProjectClassic(document: LyricDocument): Lyrics {
   });
   // Merge sorted cues once instead of rescanning/splicing the full song per cue.
   // Provider vocal order remains untouched, including unusual unsorted input.
-  const cues = DeriveCues(document);
+  const cues = candidates;
   const projected: any[] = [];
   let cueIndex = 0;
   const appendCue = (cue: LyricCue) => projected.push({ Type: "Interlude", StartTime: cue.start, EndTime: cue.end });

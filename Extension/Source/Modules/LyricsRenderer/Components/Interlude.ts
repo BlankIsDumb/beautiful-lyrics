@@ -1,3 +1,5 @@
+import { EffectProperty, TrackedSpring, type VocalRenderOptions } from "../RenderEffects.ts"
+import type { RenderingCounters } from "../../../RenderingSettings.ts"
 // NPM
 import { CurveInterpolator } from "npm:curve-interpolator"
 import { easeSinOut } from "npm:d3-ease"
@@ -112,18 +114,19 @@ const DotAnimations = {
 		} // Rest
 	]
 }
-const DotSplines = {
+let DotSplines: { ScaleSpline: ReturnType<typeof GetSpline>; YOffsetSpline: ReturnType<typeof GetSpline>; GlowSpline: ReturnType<typeof GetSpline>; OpacitySpline: ReturnType<typeof GetSpline> } | undefined
+const GetDotSplines = () => DotSplines ??= {
 	ScaleSpline: GetSpline(DotAnimations.ScaleRange),
 	YOffsetSpline: GetSpline(DotAnimations.YOffsetRange),
 	GlowSpline: GetSpline(DotAnimations.GlowRange),
 	OpacitySpline: GetSpline(DotAnimations.OpacityRange)
 }
-const CreateDotSprings = () => {
+const CreateDotSprings = (counters?: RenderingCounters) => {
 	return {
-		Scale: new Spring(0, DotAnimations.ScaleDamping, DotAnimations.ScaleFrequency),
-		YOffset: new Spring(0, DotAnimations.YOffsetDamping, DotAnimations.YOffsetFrequency),
-		Glow: new Spring(0, DotAnimations.GlowDamping, DotAnimations.GlowFrequency),
-		Opacity: new Spring(0, DotAnimations.GlowDamping, DotAnimations.GlowFrequency)
+		Scale: TrackedSpring(0, DotAnimations.ScaleDamping, DotAnimations.ScaleFrequency, counters),
+		YOffset: TrackedSpring(0, DotAnimations.YOffsetDamping, DotAnimations.YOffsetFrequency, counters),
+		Glow: TrackedSpring(0, DotAnimations.GlowDamping, DotAnimations.GlowFrequency, counters),
+		Opacity: TrackedSpring(0, DotAnimations.GlowDamping, DotAnimations.GlowFrequency, counters)
 	}
 }
 
@@ -187,14 +190,15 @@ const MainAnimations = {
 const PulseInterval = 2.25 // Every X seconds
 const DownPulse = 0.95
 const UpPulse = 1.05
-const MainYOffsetSpline = new CurveInterpolator(
+let MainYOffsetSpline: CurveInterpolator | undefined
+const GetMainYOffsetSpline = () => MainYOffsetSpline ??= new CurveInterpolator(
 	MainAnimations.YOffsetRange.map((metadata) => [metadata.Time, metadata.Value])
 )
-const CreateMainSprings = () => {
+const CreateMainSprings = (counters?: RenderingCounters) => {
 	return {
-		Scale: new Spring(0, MainAnimations.ScaleDamping, MainAnimations.ScaleFrequency),
-		YOffset: new Spring(0, MainAnimations.YOffsetDamping, MainAnimations.YOffsetFrequency),
-		Opacity: new Spring(0, MainAnimations.YOffsetDamping, MainAnimations.YOffsetFrequency)
+		Scale: TrackedSpring(0, MainAnimations.ScaleDamping, MainAnimations.ScaleFrequency, counters),
+		YOffset: TrackedSpring(0, MainAnimations.YOffsetDamping, MainAnimations.YOffsetFrequency, counters),
+		Opacity: TrackedSpring(0, MainAnimations.YOffsetDamping, MainAnimations.YOffsetFrequency, counters)
 	}
 }
 
@@ -202,6 +206,7 @@ const CreateMainSprings = () => {
 export default class InterludeVisual implements SyncedVocals, Giveable {
 	// Private Properties
 	private readonly Maid: Maid = new Maid()
+    private Options: VocalRenderOptions
 
 	private readonly Container: HTMLDivElement
 
@@ -223,16 +228,17 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 	public readonly RequestedTimeSkip = this.RequestedTimeSkipSignal.GetEvent()
 
 	// Constructor
-	public constructor(lineContainer: HTMLElement, interludeMetadata: Interlude) {
+	public constructor(lineContainer: HTMLElement, interludeMetadata: Interlude, options: VocalRenderOptions = {}) {
 		// First create our container
-		const container = this.Maid.Give(document.createElement('div'))
+		this.Options = options
+        const container = options.root || this.Maid.Give(document.createElement('div'))
 		container.classList.add('Interlude')
 		this.Container = container
 
 		// Create our LiveText
 		this.LiveText = {
 			Object: container,
-			Springs: CreateMainSprings()
+			Springs: CreateMainSprings(options.counters)
 		}
 
 		// Define our start/end times
@@ -324,7 +330,7 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 
 						LiveText: {
 							Object: syllableSpan,
-							Springs: CreateDotSprings()
+							Springs: CreateDotSprings(options.counters)
 						}
 					}
 				)
@@ -341,8 +347,14 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		this.SetToGeneralState(false)
 
 		// Finally, add our vocals to our line
-		lineContainer.appendChild(container)
+		// A controller owns a supplied root, its parenting and click lifetime.
+		if (!options.root) lineContainer.appendChild(container)
 	}
+
+    private UpdateSpring(spring: Spring, delta: number) {
+        if (this.Options.counters) this.Options.counters.springUpdates++
+        return spring.Update(delta)
+    }
 
 	// Private Methods
 	private UpdateLiveDotState = (
@@ -351,10 +363,10 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		forceTo?: true
 	) => {
 		// Grab our values
-		const scale = DotSplines.ScaleSpline.at(timeScale)
-		const yOffset = DotSplines.YOffsetSpline.at(timeScale)
-		const glowAlpha = DotSplines.GlowSpline.at(glowTimeScale)
-		const opacity = DotSplines.OpacitySpline.at(timeScale)
+		const scale = GetDotSplines().ScaleSpline.at(timeScale)
+		const yOffset = GetDotSplines().YOffsetSpline.at(timeScale)
+		const glowAlpha = GetDotSplines().GlowSpline.at(glowTimeScale)
+		const opacity = GetDotSplines().OpacitySpline.at(timeScale)
 
 		// Apply them
 		if (forceTo) {
@@ -375,23 +387,17 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		deltaTime: number
 	): boolean => {
 		// Update our springs
-		const scale = liveText.Springs.Scale.Update(deltaTime)
-		const yOffset = liveText.Springs.YOffset.Update(deltaTime)
-		const glowAlpha = liveText.Springs.Glow.Update(deltaTime)
-		const opacity = liveText.Springs.Opacity.Update(deltaTime)
+		const scale = this.UpdateSpring(liveText.Springs.Scale, deltaTime)
+		const yOffset = this.UpdateSpring(liveText.Springs.YOffset, deltaTime)
+		const glowAlpha = this.UpdateSpring(liveText.Springs.Glow, deltaTime)
+		const opacity = this.UpdateSpring(liveText.Springs.Opacity, deltaTime)
 
 		// Now update our objects
-		liveText.Object.style.transform = `translateY(calc(var(--dot-size) * ${yOffset}))`
-		liveText.Object.style.scale = scale.toString()
-		liveText.Object.style.setProperty(
-			"--text-shadow-blur-radius",
-			`${4 + (6 * glowAlpha)}px`
-		)
-		liveText.Object.style.setProperty(
-			"--text-shadow-opacity",
-			`${glowAlpha * 90}%`
-		)
-		liveText.Object.style.opacity = opacity.toString()
+		EffectProperty(liveText.Object, "transform", `translateY(calc(var(--dot-size) * ${yOffset}))`, this.Options.counters)
+		EffectProperty(liveText.Object, "scale", scale.toString(), this.Options.counters)
+		EffectProperty(liveText.Object, "--text-shadow-blur-radius", `${4 + (6 * glowAlpha)}px`, this.Options.counters)
+		EffectProperty(liveText.Object, "--text-shadow-opacity", `${glowAlpha * 90}%`, this.Options.counters)
+		EffectProperty(liveText.Object, "opacity", opacity.toString(), this.Options.counters)
 
 		// Determine if we are finally asleep or not
 		return (
@@ -408,7 +414,7 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		forceTo?: true
 	) => {
 		// Grab easy values
-		const yOffset = MainYOffsetSpline.getPointAt(timeScale)[1]
+		const yOffset = GetMainYOffsetSpline().getPointAt(timeScale)[1]
 
 		// Find our scale/opacity points
 		const scaleIntersections = (this.ScaleSpline.getIntersects(timeScale) as number[][])
@@ -439,14 +445,14 @@ export default class InterludeVisual implements SyncedVocals, Giveable {
 		deltaTime: number
 	): boolean => {
 		// Update our springs
-		const scale = liveText.Springs.Scale.Update(deltaTime)
-		const yOffset = liveText.Springs.YOffset.Update(deltaTime)
-		const opacity = liveText.Springs.Opacity.Update(deltaTime)
+		const scale = this.UpdateSpring(liveText.Springs.Scale, deltaTime)
+		const yOffset = this.UpdateSpring(liveText.Springs.YOffset, deltaTime)
+		const opacity = this.UpdateSpring(liveText.Springs.Opacity, deltaTime)
 
 		// Now update our objects
-		liveText.Object.style.transform = `translateY(calc(var(--dot-size) * ${yOffset}))`
-		liveText.Object.style.scale = scale.toString()
-		liveText.Object.style.opacity = easeSinOut(opacity).toString()
+		EffectProperty(liveText.Object, "transform", `translateY(calc(var(--dot-size) * ${yOffset}))`, this.Options.counters)
+		EffectProperty(liveText.Object, "scale", scale.toString(), this.Options.counters)
+		EffectProperty(liveText.Object, "opacity", easeSinOut(opacity).toString(), this.Options.counters)
 
 		// Determine if we are finally asleep or not
 		return (

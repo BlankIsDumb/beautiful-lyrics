@@ -7,7 +7,8 @@ import {
 import {
   GetSpicyToken,
   GetBehaviorSettings,
-  SaveProviderSettings,
+  SaveBehaviorSettings,
+  SetSpicyToken,
   Providers,
 } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts";
 import {
@@ -21,229 +22,174 @@ import type { Maid } from "@Universal/Modules/Maid.ts";
 import Icons from "./LyricViews/Icons.ts";
 import { PresentationSettings, PresentationLanguages, type PresentationView } from "./PresentationSettings.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
+import { ApplyTextPreset, NormalizeRendering, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp } from "./SettingsHelp.ts";
 import "./Stylings/ProviderControls.scss";
 
 export function OpenProviderSettings() {
   const content = document.createElement("form");
   content.className = "BL-Settings";
-  const addHelp = CreateSettingsHelp(content);
-  const behaviorSection = document.createElement("section");
-  content.append(behaviorSection);
-  const behavior = GetBehaviorSettings();
-  const behaviorTitle = document.createElement("h3");
-  behaviorTitle.textContent = "Behavior";
-  const fetchLabel = document.createElement("label");
-  fetchLabel.textContent = "Fetch lyrics";
-  const fetchMode = document.createElement("select");
-  fetchMode.id = "BL-FetchMode";
-  for (const [value, text] of [
-    ["change", "On song change"],
-    ["required", "When required"],
-  ]) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = text;
-    fetchMode.append(option);
-  }
-  fetchMode.value = behavior.fetchMode;
-  fetchLabel.append(fetchMode);
-  const toggle = (text: string, checked: boolean, id: string, parent: HTMLElement = content) => {
-    const label = document.createElement("label");
-    label.textContent = text;
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.setAttribute("role", "switch");
-    input.checked = checked;
-    input.id = id;
-    label.append(input);
-    parent.append(label);
+  const lifetime = new AbortController();
+  const addHelp = CreateSettingsHelp(content, () => {
+    lifetime.abort();
+    for (const control of content.querySelectorAll<HTMLInputElement>("input,select,button")) control.disabled = true;
+  });
+  // No draft-wide Save and no broad observer: every native event has this exact
+  // modal lifetime. Guard inherited fieldset disabling as well as late events.
+  const listen = (control: HTMLElement, type: string, handler: (event: Event) => void) => {
+    control.addEventListener(type, event => {
+      if (lifetime.signal.aborted || !content.isConnected || control.matches(":disabled")) return;
+      handler(event);
+    }, { signal: lifetime.signal });
+  };
+  content.onsubmit = event => event.preventDefault();
+  const status = document.createElement("p"); status.setAttribute("role", "status");
+  const apply = (action: () => void, restore?: () => void) => {
+    try { action(); status.textContent = "Applied."; return true; }
+    catch { restore?.(); status.textContent = "Could not apply settings on this device."; return false; }
+  };
+  const heading = (parent: HTMLElement, text: string, tag = "h3") => {
+    const element = document.createElement(tag); element.textContent = text; parent.append(element); return element;
+  };
+  const row = (parent: HTMLElement, text: string, control: HTMLElement, help: string, classic: string) => {
+    const label = document.createElement("label"); label.textContent = text; label.append(control); parent.append(label);
+    return addHelp(label, control, help, classic);
+  };
+  const toggle = (parent: HTMLElement, text: string, id: string, checked: boolean, help: string, classic: string) => {
+    const input = document.createElement("input"); input.type = "checkbox"; input.id = id; input.checked = checked;
+    input.setAttribute("role", "switch"); input.setAttribute("aria-label", text);
+    row(parent, text, input, help, classic); return input;
+  };
+  const select = (parent: HTMLElement, text: string, id: string, choices: readonly (readonly [string, string])[], value: string, help: string, classic: string) => {
+    const input = document.createElement("select"); input.id = id; input.setAttribute("aria-label", text);
+    for (const [value, text] of choices) { const option = document.createElement("option"); option.value = value; option.textContent = text; input.append(option); }
+    input.value = value; row(parent, text, input, help, classic); return input;
+  };
+  const checkbox = (input: HTMLInputElement, write: (value: boolean) => void, read: () => boolean, after?: () => void) => {
+    listen(input, "change", () => { apply(() => write(input.checked), () => { input.checked = read(); }); after?.(); });
+  };
+  const numeric = (parent: HTMLElement, text: string, id: string, read: () => number, write: (value: number) => void,
+    help: string, classic: string, minimum: number, maximum?: number, step = "0.05", disabled = false) => {
+    const input = document.createElement("input"); input.type = "number"; input.id = id; input.required = true;
+    input.min = String(minimum); if (maximum !== undefined) input.max = String(maximum);
+    input.step = step; input.value = String(read()); input.disabled = disabled;
+    input.setAttribute("aria-label", text); row(parent, text, input, help, classic);
+    const valid = () => input.value.trim() !== "" && input.validity.valid && Number.isFinite(input.valueAsNumber);
+    listen(input, "input", () => {
+      if (!valid()) { input.setAttribute("aria-invalid", "true"); status.textContent = "Enter a valid number; the previous value is still active."; return; }
+      input.removeAttribute("aria-invalid"); apply(() => write(input.valueAsNumber), () => { input.value = String(read()); });
+    });
+    listen(input, "blur", () => {
+      if (valid()) return;
+      input.value = String(read()); input.removeAttribute("aria-invalid");
+      status.textContent = "Invalid number discarded; the previous value is still active.";
+    });
     return input;
   };
-  behaviorSection.append(behaviorTitle, fetchLabel);
-  addHelp(fetchLabel, fetchMode, "When required loads on the lyrics page. An enabled sidebar also loads on song change.", "On song change");
-  const sourcesTitle = document.createElement("h4");
-  sourcesTitle.textContent = "Enabled providers";
-  behaviorSection.append(sourcesTitle);
-  const sourceInputs = Object.fromEntries(
-    Providers.map((name) => [
-      name,
-      toggle(name, behavior.providers[name], "BL-Provider-" + name, behaviorSection),
-    ]),
-  );
-  const nowPlayingTitle = document.createElement("h3");
-  nowPlayingTitle.textContent = "Now Playing";
-  nowPlayingTitle.id = "JEL-NowPlaying-Heading";
-  const nowPlayingSection = document.createElement("section");
-  nowPlayingSection.className = "BL-ViewSettings";
-  nowPlayingSection.setAttribute("aria-labelledby", nowPlayingTitle.id);
-  nowPlayingSection.append(nowPlayingTitle);
-  content.append(nowPlayingSection);
-  const sidebar = toggle("Enabled", behavior.sidebarEnabled, "BL-SidebarEnabled", nowPlayingSection);
-  sidebar.setAttribute("aria-label", "Now Playing enabled");
-  // These are drafts until Save, just like credentials. Expose only capabilities
-  // the current renderer implements; future effects get controls in their pass.
-  const languageInputs = new Map<PresentationView, { enabled: HTMLInputElement; languages: Record<string, HTMLInputElement>; japaneseForm: HTMLSelectElement }>();
-  const presentationReadOnly = PresentationSettings.isReadOnly();
-  const timingInputs = new Map<"Shared" | PresentationView, HTMLInputElement>();
-  const timingReadOnly = TimingSettings.isReadOnly();
-  const addTiming = (scope: "Shared" | PresentationView, parent: HTMLElement) => {
-    const label = document.createElement("label");
-    label.textContent = scope === "Shared" ? "Lyric delay (s)" : "Delay offset (s)";
-    const offset = document.createElement("input");
-    offset.type = "number";
-    offset.id = `JEL-${scope}-TimingOffset`;
-    offset.min = String(-TimingOffsetLimit);
-    offset.max = String(TimingOffsetLimit);
-    offset.step = "0.05";
-    offset.required = true;
-    offset.value = String(TimingSettings.get(scope));
-    offset.disabled = timingReadOnly;
-    offset.setAttribute("aria-label", scope === "Shared" ? "Shared lyric delay in seconds"
-      : `${scope === "NowPlaying" ? "Now Playing" : "Full Lyrics"} delay offset in seconds`);
-    label.append(offset);
-    parent.append(label);
-    const row = addHelp(label, offset, scope === "Shared"
-      ? "Both views. Positive = later; negative = earlier. View offsets add to this delay."
-      : "This view only, added to the shared delay. Positive = later; negative = earlier.", "0 s");
-    timingInputs.set(scope, offset);
-    if (timingReadOnly) {
-      const note = document.createElement("p");
-      note.textContent = "Timing settings were saved by a newer version. Update the extension to edit them.";
-      parent.append(note);
-    }
-    return row;
-  };
-  const sharedTiming = addTiming("Shared", behaviorSection);
-  behaviorSection.insertBefore(sharedTiming, sourcesTitle);
-  for (const view of ["NowPlaying", "FullLyrics"] as const) {
-    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Full Lyrics";
-    const section = view === "NowPlaying" ? nowPlayingSection : document.createElement("section");
-    if (view === "FullLyrics") {
-      section.className = "BL-ViewSettings";
-      const heading = document.createElement("h3");
-      heading.textContent = "Full Lyrics";
-      heading.id = "JEL-FullLyrics-Heading";
-      section.setAttribute("aria-labelledby", heading.id);
-      section.append(heading);
-      content.append(section);
-    }
-    addTiming(view, section);
-    // Match Comfy's connected subsection card: one switch/header owns its
-    // subordinate controls. Hidden controls keep their draft values when Off.
-    const group = document.createElement("div");
-    group.className = "BL-SettingGroup";
-    section.append(group);
-    const profile = PresentationSettings.getProfile(view);
-    const enabled = toggle("Alternate text", profile.romanizationEnabled, `JEL-${view}-RomanizationEnabled`, group);
-
-    enabled.disabled = presentationReadOnly;
-    enabled.setAttribute("aria-label", `${viewTitle} alternate text`);
-    const options = document.createElement("fieldset");
-    options.className = "BL-GroupOptions";
-    options.id = `JEL-${view}-RomanizationOptions`;
-    options.setAttribute("aria-label", `${viewTitle} alternate text options`);
-    enabled.setAttribute("aria-controls", options.id);
-    const updateExpansion = () => {
-      options.hidden = !enabled.checked;
-      options.disabled = presentationReadOnly || !enabled.checked;
-      enabled.setAttribute("aria-expanded", String(enabled.checked));
-    };
-    enabled.onchange = updateExpansion;
-    addHelp(enabled.parentElement as HTMLLabelElement, enabled,
-      "Show pinyin, Japanese romaji/kana or romaja. Off shows original text and remembers your choices.", "Off").classList.add("BL-GroupHeader");
-    const names = { Chinese: "Chinese (pinyin)", Japanese: "Japanese", Korean: "Korean (romaja)" };
-    const inputs = Object.fromEntries(PresentationLanguages.map(language => [language,
-      toggle(names[language], profile.romanizedLanguages[language], `JEL-${view}-${language}`, options),
-    ]));
-    for (const language of PresentationLanguages) {
-      inputs[language].setAttribute("aria-label", `${viewTitle} ${language} alternate text`);
-      inputs[language].disabled = presentationReadOnly;
-    }
-    const japaneseLabel = document.createElement("label");
-    japaneseLabel.textContent = "Japanese text";
-    const japaneseForm = document.createElement("select");
-    japaneseForm.id = `JEL-${view}-JapaneseForm`;
-    japaneseForm.disabled = presentationReadOnly;
-    for (const [value, text] of [["romaji", "Romaji"], ["kana", "Kana"]]) {
-      const option = document.createElement("option"); option.value = value; option.textContent = text; japaneseForm.append(option);
-    }
-    japaneseForm.value = profile.japaneseForm;
-    japaneseForm.setAttribute("aria-label", `${viewTitle} Japanese text form`);
-    japaneseLabel.append(japaneseForm);
-    options.append(japaneseLabel);
-    addHelp(japaneseLabel, japaneseForm, "Primary text when Japanese is selected. Kana uses contextual readings; Original is shown while loading or if unavailable.", "Romaji");
-    languageInputs.set(view, { enabled, languages: inputs, japaneseForm });
-    group.append(options);
-    updateExpansion();
-    if (presentationReadOnly) {
-      const note = document.createElement("p");
-      note.textContent = "Presentation settings were saved by a newer version. Update the extension to edit them. Provider settings remain available.";
-      section.append(note);
-    }
+  const behaviorSection = document.createElement("section"); content.append(behaviorSection); heading(behaviorSection, "Behavior");
+  const fetchMode = select(behaviorSection, "Fetch lyrics", "BL-FetchMode", [["change", "On song change"], ["required", "When required"]], GetBehaviorSettings().fetchMode,
+    "When required loads on the lyrics page. An enabled sidebar also loads on song change.", "On song change");
+  listen(fetchMode, "change", () => apply(() => SaveBehaviorSettings({ ...GetBehaviorSettings(), fetchMode: fetchMode.value as "change" | "required" }), () => { fetchMode.value = GetBehaviorSettings().fetchMode; }));
+  const timingReadOnly = TimingSettings.isReadOnly(), presentationReadOnly = PresentationSettings.isReadOnly();
+  const addTiming = (scope: "Shared" | PresentationView, parent: HTMLElement) => numeric(parent,
+    scope === "Shared" ? "Lyric delay (s)" : "Delay offset (s)", `JEL-${scope}-TimingOffset`, () => TimingSettings.get(scope),
+    value => TimingSettings.save({ Shared: TimingSettings.get("Shared"), NowPlaying: TimingSettings.get("NowPlaying"), FullLyrics: TimingSettings.get("FullLyrics"), [scope]: value }),
+    scope === "Shared" ? "Both views. Positive = later; negative = earlier. View offsets add to this delay." : "This view only, added to the shared delay. Positive = later; negative = earlier.", "0 s", -TimingOffsetLimit, TimingOffsetLimit, "0.05", timingReadOnly);
+  const shared = addTiming("Shared", behaviorSection); shared.setAttribute("aria-label", "Shared lyric delay in seconds");
+  if (timingReadOnly) heading(behaviorSection, "Timing settings require a newer version.", "p");
+  heading(behaviorSection, "Enabled providers", "h4");
+  for (const name of Providers) {
+    const input = toggle(behaviorSection, name, "BL-Provider-" + name, GetBehaviorSettings().providers[name], "Available lyric source. Changes reload the current source choices.", "On");
+    checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
   }
-  const title = document.createElement("h3");
-  title.textContent = "Spicy";
-  const label = document.createElement("label");
-  label.textContent = "API token";
-  label.htmlFor = "BL-SpicyToken";
-  const input = document.createElement("input");
-  input.id = "BL-SpicyToken";
-  input.type = "password";
-  input.autocomplete = "off";
-  input.spellcheck = false;
-  input.placeholder = "Paste your client token";
-  input.value = GetSpicyToken();
-  const status = document.createElement("p");
-  status.setAttribute("role", "status");
-  const save = document.createElement("button");
-  save.type = "submit";
-  save.textContent = "Save";
-  label.append(input);
-  content.append(title, label, save, status);
-  addHelp(label, input,
-    "Client key (sl_pk_…). Allow requests without Origin. Run node spicy-proxy.mjs start locally; stop/status manage the relay. Key stays on this device.",
-    "Empty (disabled)").classList.add("BL-TokenTile");
-  content.onsubmit = (event) => {
-    event.preventDefault();
-    try {
-      for (const [view, inputs] of languageInputs) {
-        if (presentationReadOnly) continue;
-        PresentationSettings.saveProfile(view, {
-          romanizationEnabled: inputs.enabled.checked,
-          japaneseForm: inputs.japaneseForm.value as "romaji" | "kana",
-          romanizedLanguages: Object.fromEntries(
-            PresentationLanguages.map(language => [language, inputs.languages[language].checked]),
-          ) as ReturnType<typeof PresentationSettings.getProfile>["romanizedLanguages"],
-        });
-      }
-      if (!timingReadOnly) {
-        TimingSettings.save(Object.fromEntries([...timingInputs].map(([scope, input]) =>
-          [scope, Number(input.value)])) as Record<"Shared" | PresentationView, number>);
-      }
-      SaveProviderSettings(input.value, {
-        fetchMode: fetchMode.value as "change" | "required",
-        sidebarEnabled: sidebar.checked,
-        providers: Object.fromEntries(
-          Providers.map((name) => [name, sourceInputs[name].checked]),
-        ) as typeof behavior.providers,
-      });
-      input.value = GetSpicyToken();
-      status.textContent = "Settings saved.";
-    } catch {
-      status.textContent = "Could not save settings on this device.";
+  const lyricsSection = document.createElement("section"); content.append(lyricsSection); heading(lyricsSection, "Lyrics");
+  for (const view of ["NowPlaying", "FullLyrics"] as const) {
+    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Fullscreen";
+    const section = document.createElement("section"); section.className = "BL-ViewSettings"; lyricsSection.append(section);
+    const title = heading(section, viewTitle, "h4"); title.id = `JEL-${view}-Heading`; section.setAttribute("aria-labelledby", title.id);
+    let sidebar: HTMLInputElement | undefined;
+    if (view === "NowPlaying") sidebar = toggle(section, "Enabled", "BL-SidebarEnabled", GetBehaviorSettings().sidebarEnabled, "Show lyrics in Now Playing. Off keeps your settings and collapses all options below.", "On");
+    const fields = document.createElement("fieldset"); fields.className = "BL-ViewOptions"; fields.id = `JEL-${view}-Options`; section.append(fields);
+    if (sidebar) {
+      sidebar.setAttribute("aria-label", "Now Playing enabled"); sidebar.setAttribute("aria-controls", fields.id);
+      const expansion = () => { fields.hidden = !sidebar!.checked; fields.disabled = !sidebar!.checked; sidebar!.setAttribute("aria-expanded", String(sidebar!.checked)); };
+      checkbox(sidebar, value => SaveBehaviorSettings({ ...GetBehaviorSettings(), sidebarEnabled: value }), () => GetBehaviorSettings().sidebarEnabled, expansion); expansion();
     }
-  };
-  (Spotify as any).PopupModal.display({
-    title: "Just Enough Lyrics Settings",
-    content,
-    isLarge: true,
-  });
-  // The host otherwise focuses the password field and scrolls past the first
-  // sections. Start at Behavior while keeping keyboard navigation available.
+    const delay = addTiming(view, fields); delay.setAttribute("aria-label", `${viewTitle} delay offset in seconds`);
+    if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
+    const gap = numeric(fields, "Gap dots after (s)", `JEL-${view}-GapThreshold`, () => PresentationSettings.getCues(view).threshold,
+      value => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), threshold: value }),
+      "Minimum real silence across all voices. 0 disables dots; 100 means 100 seconds. Very short gaps use static dots.", "2 s", 0, undefined, "0.1", presentationReadOnly);
+    gap.setAttribute("aria-label", `${viewTitle} gap dots threshold in seconds`);
+    const cueMotion = toggle(fields, "Dot motion", `JEL-${view}-CueMotion`, PresentationSettings.getCues(view).motion,
+      "Animated or static gap dots for this view, shared by Word and Line sources. Text presets never change this.", "On"); cueMotion.disabled = presentationReadOnly;
+    checkbox(cueMotion, motion => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), motion }), () => PresentationSettings.getCues(view).motion);
+    for (const sourceCase of SourceCases) {
+      const details = document.createElement("details"); details.className = "BL-CaseSettings"; details.id = `JEL-${view}-${sourceCase}-Settings`;
+      const summary = document.createElement("summary"); summary.textContent = `${sourceCase} sync`; details.append(summary); fields.append(details);
+      const body = document.createElement("fieldset"); body.className = "BL-GroupOptions"; body.disabled = presentationReadOnly; details.append(body);
+      const read = () => PresentationSettings.getRendering(view, sourceCase);
+      const prefix = `JEL-${view}-${sourceCase}-`;
+      const preset = select(body, "Text preset", prefix + "TextPreset", [["classic", "Classic"], ["minimal", "Minimal"], ["balanced", "Balanced"], ["custom", "Custom"]], read().preset,
+        "Editable text effects only. Gap dots and background are separate. The source timing selects this case, even if Word text is displayed as Line.", "Classic");
+      preset.setAttribute("aria-label", `${viewTitle} ${sourceCase} text preset`);
+      const effectInputs = new Map<keyof RenderingProfile, HTMLInputElement>();
+      const detail = sourceCase === "Word" ? select(body, "Text detail", prefix + "TextDetail", [["auto", "Auto"], ["line", "Line"], ["word", "Word"]], read().detail,
+        "Display this word-timed source as words or a whole line. This remains the Word-source case.", "Auto") : undefined;
+      const highlight = select(body, "Highlight", prefix + "TextHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], read().highlight,
+        "Whole segment changes at its start. Progressive follows available timing and freezes in gaps. Off keeps solid text.", "Classic");
+      highlight.setAttribute("aria-label", `${viewTitle} ${sourceCase} highlight`);
+      if (detail) detail.setAttribute("aria-label", `${viewTitle} Word text detail`);
+      for (const [key, text, help] of [
+        ["scale", "Scale", "Scale movement; whole-line detail uses its existing active scale."],
+        ["verticalMotion", "Vertical motion", "Word display detail only; whole-line detail stays on its baseline."],
+        ["glow", "Glow", "Animated text glow, independent of inactive blur."],
+        ["blur", "Inactive blur", "Blur vocals away from active voices."],
+        ["emphasis", "Letter emphasis", "Safe short runs in Word display detail, when another continuous effect is enabled."],
+      ] as const) {
+        if (sourceCase === "Line" && (key === "verticalMotion" || key === "emphasis")) continue;
+        const input = toggle(body, text, prefix + key, read()[key], help, "On"); effectInputs.set(key, input);
+        input.setAttribute("aria-label", `${viewTitle} ${sourceCase} ${text.toLowerCase()}`);
+        checkbox(input, value => PresentationSettings.saveRendering(view, sourceCase, { ...read(), [key]: value, preset: "custom" }), () => read()[key]);
+      }
+      const sync = () => { const current = read(); preset.value = current.preset; highlight.value = current.highlight; if (detail) detail.value = current.detail; for (const [key, input] of effectInputs) input.checked = current[key] as boolean; };
+      listen(preset, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, preset.value === "custom" ? { ...read(), preset: "custom" } : ApplyTextPreset(read(), preset.value as "classic" | "minimal" | "balanced")), sync); sync(); });
+      listen(highlight, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), highlight: highlight.value as RenderingProfile["highlight"], preset: "custom" }), sync); sync(); });
+      for (const input of effectInputs.values()) listen(input, "change", sync);
+      if (detail) listen(detail, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), detail: detail.value as RenderingProfile["detail"] }), sync); sync(); });
+    }
+    const group = document.createElement("div"); group.className = "BL-SettingGroup"; fields.append(group);
+    const readProfile = () => PresentationSettings.getProfile(view);
+    const enabled = toggle(group, "Alternate text", `JEL-${view}-RomanizationEnabled`, readProfile().romanizationEnabled,
+      "Show pinyin, Japanese romaji/kana or romaja. Off keeps original text and remembers your choices.", "Off"); enabled.disabled = presentationReadOnly;
+    enabled.setAttribute("aria-label", `${viewTitle} alternate text`);
+    enabled.closest(".BL-HelpRow")!.classList.add("BL-GroupHeader");
+    const options = document.createElement("fieldset"); options.className = "BL-GroupOptions"; options.id = `JEL-${view}-RomanizationOptions`; group.append(options);
+    enabled.setAttribute("aria-controls", options.id);
+    const expand = () => { options.hidden = !enabled.checked; options.disabled = presentationReadOnly || !enabled.checked; enabled.setAttribute("aria-expanded", String(enabled.checked)); };
+    checkbox(enabled, value => PresentationSettings.saveProfile(view, { ...readProfile(), romanizationEnabled: value }), () => readProfile().romanizationEnabled, expand); expand();
+    for (const language of PresentationLanguages) {
+      const input = toggle(options, language, `JEL-${view}-${language}`, readProfile().romanizedLanguages[language], "Use alternate text for this language in this view.", "Off");
+      input.disabled = presentationReadOnly; input.setAttribute("aria-label", `${viewTitle} ${language} alternate text`);
+      checkbox(input, value => { const current = readProfile(); PresentationSettings.saveProfile(view, { ...current, romanizedLanguages: { ...current.romanizedLanguages, [language]: value } }); }, () => readProfile().romanizedLanguages[language]);
+    }
+    const japanese = select(options, "Japanese text", `JEL-${view}-JapaneseForm`, [["romaji", "Romaji"], ["kana", "Kana"]], readProfile().japaneseForm,
+      "Primary Japanese readings. Original is shown while loading or if unavailable.", "Romaji"); japanese.disabled = presentationReadOnly;
+    listen(japanese, "change", () => apply(() => PresentationSettings.saveProfile(view, { ...readProfile(), japaneseForm: japanese.value as "romaji" | "kana" }), () => { japanese.value = readProfile().japaneseForm; }));
+    if (presentationReadOnly) heading(fields, "Presentation settings require a newer version.", "p");
+  }
+  heading(content, "Spicy");
+  const token = document.createElement("input"); token.id = "BL-SpicyToken"; token.type = "password"; token.autocomplete = "off"; token.spellcheck = false;
+  token.placeholder = "Paste your client token"; token.value = GetSpicyToken();
+  row(content, "API token", token, "Applies when editing finishes (blur or Enter). Empty disables this source. Key stays on this device; use the local relay.", "Empty (disabled)").classList.add("BL-TokenTile");
+  const commitToken = () => apply(() => SetSpicyToken(token.value), () => { token.value = GetSpicyToken(); });
+  listen(token, "change", commitToken);
+  listen(token, "keydown", event => { if ((event as KeyboardEvent).key === "Enter") { event.preventDefault(); commitToken(); } });
+  listen(token, "input", () => { status.textContent = "Token applies when editing finishes."; });
+  content.append(status);
+  (Spotify as any).PopupModal.display({ title: "Just Enough Lyrics Settings", content, isLarge: true });
   fetchMode.focus({ preventScroll: true });
-  const scrollContainer = content.closest(".spicetify-popup-content");
-  if (scrollContainer) scrollContainer.scrollTop = 0;
+  const scrollContainer = content.closest(".spicetify-popup-content"); if (scrollContainer) scrollContainer.scrollTop = 0;
 }
 
 export const ProviderControlsReady = OnSpotifyReady.then(() => {

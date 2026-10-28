@@ -24,6 +24,12 @@ here rather than sending the original author bugs from this build.
   Japanese primary Romaji/Kana, Chinese pinyin and Korean romaja. Original text
   appears immediately; conversion/alignment failures keep it readable. Dictionaries
   are bundled locally, and every real backing voice is eligible.
+- Four independent text-rendering cases: **Lyrics → Now Playing / Fullscreen →
+  Word sync / Line sync**. Word sources start expressive; Line sources start muted.
+  Actual source precision selects the case, even when Word text is displayed as Line.
+  Untimed lyrics stay plain without an extra configurable branch.
+- Editable text presets and independent effects; universal gap-dot threshold/motion
+  settings belong to each view and are never changed by a text preset.
 - Shared lyric delay and independent per-view offsets; positive means lyrics later.
 - Grapheme-safe emphasis and cross-span cluster handling, with conservative shaping
   units for joining scripts and original timing provenance retained.
@@ -36,7 +42,7 @@ No promise of unlimited requests or word timing for every track.
 
 ## Planned, not implemented
 
-- More individual visual/animation controls and font-size settings.
+- Detailed effect amounts/curves, background controls and font-size settings.
 - Furigana/ruby, translation and secondary-line layouts.
 - Exact 30-day positive caches, clear-all and clear-current-track controls.
 - Better alternate-name/edition matching and sidebar compatibility.
@@ -105,13 +111,25 @@ extension itself. Keep your existing theme; no Comfy-specific dependency is requ
 Open Just Enough Lyrics Settings from its topbar icon. For less background fetching,
 choose **When required** and disable **Now Playing sidebar lyrics**. An enabled
 sidebar requests lyrics on track changes even when the full page is closed.
-Text preferences are independent under **Now Playing** and **Full Lyrics**.
+Under **Lyrics**, each viewer has collapsible **Word sync** and **Line sync**
+settings. A Word source displayed as Line still uses its Word-source settings.
+**Text preset** copies editable text effects; changing an effect makes it Custom.
+Line sources use whole-line rendering and expose only supported effects. Turning
+Now Playing off collapses all its options while retaining their values. Fullscreen
+also covers the lyric page and cinema view.
+
+**Gap dots after (s)** and **Dot motion** are shared by both source cases in that
+viewer. Zero disables dots; positive values mean minimum real silence across all
+voices (100 means 100 seconds). Very short eligible gaps use static dots. Minimal
+is a text preset; it does not turn off independently enabled dots or backgrounds.
+
 Each view's **Alternate text** switch reveals its language choices and **Japanese
 text → Romaji / Kana**. Off shows Original and remembers those choices. Processing
 starts only for an active view requesting a supported language; matching work is
 shared, and closing/turning it off releases that view's request.
-Edits apply on **Save**. Question-mark help explains the controls, with Classic
-defaults at the bottom of each tooltip. The existing text button in a lyric view
+Settings apply immediately. Incomplete/invalid numbers keep the last valid value;
+credentials apply when editing finishes or Enter is pressed. Question-mark help
+explains controls, with Classic values at each tooltip's bottom. The existing text button in a lyric view
 changes only that view's language preference.
 **Behavior → Lyric delay (s)** applies to both views; **Delay offset (s)** adds a
 view-specific adjustment. Positive means later, negative means earlier.

@@ -26,6 +26,11 @@ export class LyricTimeline {
     this.starts = intervals.map(interval => ({ time: interval.start, id: interval.id })).sort((a, b) => a.time - b.time);
     this.ends = intervals.map(interval => ({ time: interval.end, id: interval.id })).sort((a, b) => a.time - b.time);
   }
+  isDue(time: number): boolean {
+    return this.previous === undefined || time < this.previous ||
+      (this.startIndex < this.starts.length && this.starts[this.startIndex].time <= time) ||
+      (this.endIndex < this.ends.length && this.ends[this.endIndex].time < time);
+  }
   evaluate(time: number, seek = false) {
     const changed = new Set<string>();
     if (seek || this.previous === undefined || time < this.previous) {

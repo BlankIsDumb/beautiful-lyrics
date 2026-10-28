@@ -32,7 +32,7 @@ export function CreateTimingSettings(storage: Pick<Storage, "getItem" | "setItem
       if (!changed.length) return;
       storage.setItem(key, JSON.stringify({ version: 1, offsets: updated }));
       values = updated;
-      // One draft Save publishes one batch, even if shared and local both change.
+      // One persistence operation publishes one batch, even if multiple scopes change.
       // Consumers can compare the effective sum before doing a seek-sized update.
       for (const listener of listeners) listener(changed);
     },

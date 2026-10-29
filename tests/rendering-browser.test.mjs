@@ -106,6 +106,18 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
       try{
         scroller.AutoScrolling=false;scroller.ScrollerObject.dispatchEvent(new Event('scroll'));
         const grace=[...timers].find(([,timer])=>timer.delay===750);check(!!grace,'actual scroll listener schedules existing750ms grace callback');
+        // Async annotation layout/typography uses the same grace, and repeated
+        // invalidations coalesce both geometry and one distance-blur refresh.
+        scroller.SetBlurEnabled(true);const annotationBlurBefore=counters.blurCalculations;
+        roots[0].style.minHeight='120px';scroller.RefreshAnnotationLayout();scroller.RefreshAnnotationLayout();
+        for(const callback of frames.values())callback();frames.clear();
+        check(scrollWrites===0&&scroller.AutoScrollBlocked&&scroller.PreserveManualGrace,'async annotation resize retains full existing grace after physical scrolling stops');
+        check(counters.blurCalculations===annotationBlurBefore+1,'annotation invalidations coalesce one blur refresh even if blur remains enabled');
+        const fontGeneration=scroller.AnnotationFontGeneration, fontMoves=scrollWrites;
+        scroller.AnnotationFontReady();
+        for(const callback of frames.values())callback();frames.clear();
+        check(scroller.AnnotationFontGeneration===fontGeneration+1&&scrollWrites===fontMoves&&scroller.AutoScrollBlocked&&scroller.PreserveManualGrace,'font fit arrival preserves manual grace after physical scrolling stops');
+        scroller.SetBlurEnabled(false);
         cue.SetSettings({threshold:0,motion:true},.5);const afterDisable={updates:counters.springUpdates,writes:counters.effectWrites,allocations:counters.springsAllocated};scroller.RefreshCueLayout();
         cue.Animate(.6,.1);check(!cue.RequiresContinuous()&&!cue.NeedsFrame()&&!cueRoot.querySelector('.InterludeDot')&&counters.springUpdates===afterDisable.updates&&counters.effectWrites===afterDisable.writes&&counters.springsAllocated===afterDisable.allocations,'zero threshold destroys animated cue state and further effect work');
         await Promise.resolve(); // Flush ActivityChanged's queued active reconciliation.

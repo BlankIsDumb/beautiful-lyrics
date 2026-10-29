@@ -469,3 +469,71 @@
 
 // Universal cue candidates keep stable slots, but disabled slots occupy no space.
 .VocalsGroup[hidden] { display: none; }
+
+// A voice block owns source + optional reading rows. It deliberately has no
+// opacity/filter/transform: the two rows have independent effect lifetimes.
+.VoiceBlock { display: flex; flex-direction: column; width: 95cqw; }
+.Lyrics:has(.AlignedOpposite) .VoiceBlock { width: 75cqw; }
+.Lyrics .VoiceBlock > .Vocals, .Lyrics .VoiceBlock > .RubyVocals { width: 100%; }
+.RubyVocals {
+  --lyrics-size: clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size));
+  // Align the last (source) baseline of complete units. A column-reverse ruby's
+  // first baseline can come from its reading/synthesized box and incorrectly
+  // raise adjacent plain kana by one entire source line-height.
+  display: flex; flex-wrap: wrap; align-items: last baseline; white-space: pre-wrap;
+  width: 95cqw; font-size: var(--lyrics-size); font-weight: 700;
+  // Flex units include the reading's real height. Keep the normal source line
+  // box and a small glyph/effect overhang reserve, rather than counting rt twice.
+  line-height: 1.1818181818;
+  padding-block: .1em;
+  &.Background { font-size: calc(var(--lyrics-size) * .75); font-weight: 500; }
+  // Column-reverse places rt above rb while the parent's last-baseline alignment
+  // keeps rb level with unannotated source fragments. Both contribute intrinsic
+  // width, so a complete unit wraps instead of stacking kana inside its reading.
+  ruby { display: inline-flex; flex-direction: column-reverse; align-items: center; max-width: 100%; }
+  rb { order: 0; }
+  rt { order: 0; width: max-content; max-width: none; white-space: pre; }
+  rb { display: inline-flex; align-items: baseline; }
+}
+.Lyrics:has(.AlignedOpposite) .RubyVocals { width: 75cqw; }
+.NaturallyAlignedLeft .AlignedOpposite .RubyVocals { justify-content: flex-end; }
+.NaturallyAlignedRight .AlignedOpposite .RubyVocals { justify-content: flex-start; }
+.Lyrics .RubyVocals .Vocals {
+  display: inline-flex; width: auto; flex-wrap: nowrap; contain: layout;
+  font-size: inherit !important; font-weight: inherit !important; margin: 0 !important;
+  .Line { display: inline; }
+}
+.Lyrics .AnnotationText.Vocals {
+  letter-spacing: var(--annotation-spacing, 0em);
+  opacity: var(--annotation-opacity, .8) !important;
+  font-weight: 500 !important;
+}
+.Lyrics .SecondaryText.Vocals {
+  font-size: calc(var(--lyrics-size) * var(--annotation-secondary-size, .6)) !important;
+  margin-block-start: var(--annotation-gap, .15em) !important;
+  &.Background { font-size: calc(var(--lyrics-size) * .75 * var(--annotation-secondary-size, .6)) !important; }
+}
+.Lyrics .RubyVocals .RubyReading.Vocals {
+  font-size: calc(1em * var(--annotation-ruby-size, .5) * var(--ruby-fit, 1)) !important;
+  display: block; line-height: 1.1; white-space: pre; flex-shrink: 0;
+}
+[data-annotation-align="start"] > .SecondaryText { justify-content: flex-start !important; text-align: start; }
+[data-annotation-align="center"] > .SecondaryText { justify-content: center !important; text-align: center; }
+[data-annotation-align="end"] > .SecondaryText { justify-content: flex-end !important; text-align: end; }
+[data-annotation-align="start"] .RubyVocals ruby, .RubyVocals[data-annotation-align="start"] ruby { ruby-align: start; }
+[data-annotation-align="center"] .RubyVocals ruby, .RubyVocals[data-annotation-align="center"] ruby { ruby-align: center; }
+[data-annotation-align="end"] .RubyReading { text-align: end; }
+
+// Spotify's global border-box reset otherwise subtracts animated span padding
+// from the measured glyph width and can split the native backing fragment た).
+// Isolate this fix to annotated fragments; Original-only Classic DOM/CSS stays.
+.Lyrics .RubyVocals .Syllable.ShapingRun.ExplicitSpacing {
+  box-sizing: content-box; white-space: pre; overflow-wrap: normal;
+  max-width: none; flex-shrink: 0;
+}
+.Lyrics .RubyVocals .RubyReading { writing-mode: horizontal-tb; }
+.Lyrics .SecondaryText.Vocals { margin-block-start: 0 !important; margin-block-end: var(--annotation-gap, .15em) !important; }
+
+[data-annotation-align="start"] .RubyVocals ruby, .RubyVocals[data-annotation-align="start"] ruby { align-items: flex-start; }
+[data-annotation-align="center"] .RubyVocals ruby, .RubyVocals[data-annotation-align="center"] ruby { align-items: center; }
+[data-annotation-align="end"] .RubyVocals ruby, .RubyVocals[data-annotation-align="end"] ruby { align-items: flex-end; }

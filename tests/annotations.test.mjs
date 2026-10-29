@@ -17,7 +17,7 @@ const load = async (entry, stubs = false) => {
 const { NormalizeLyrics } = await load('Extension/Source/Modules/LyricDocument.ts');
 const { LayoutVoice, BuildVoiceText, RunProgress } = await load('Extension/Source/Modules/TextLayout.ts');
 const { CreateAnnotationService } = await load('Extension/Source/Modules/AnnotationService.ts', true);
-const { AlignJapanese } = await load('Extension/Source/Modules/AnnotationConverters.ts', true);
+const { AlignJapanese, JapaneseAnalysis, FuriganaRanges } = await load('Extension/Source/Modules/AnnotationConverters.ts', true);
 const { TransformProviderLyrics } = await load('Extension/Spices/Spicetify/Services/Player/LyricUtilities.ts');
 const span = (Text, StartTime, EndTime, IsPartOfWord = true) => ({ Text, StartTime, EndTime, IsPartOfWord });
 const makeDocument = (spans, backing = [], key = 'same-key') => NormalizeLyrics({ Type: 'Syllable', StartTime: 0, EndTime: 20,
@@ -181,10 +181,17 @@ test('real local Japanese tokenizer readings align across punctuation and emoji 
   const source = voice([span('私は', 0, 1), span('猫です。', 1, 2, false), span('😀', 3, 4, false)]);
   const tokens = tokenizer.tokenize(BuildVoiceText(source).text);
   const kana = AlignJapanese(source, tokens, 'kana', reading => Kuroshiro.Util.kanaToHiragna(reading));
-  const romaji = AlignJapanese(source, tokens, 'romaji', reading => Kuroshiro.Util.kanaToRomaji(reading, 'hepburn'));
+  const romaji = AlignJapanese(source, tokens, 'romaji', (reading, form) => form === 'kana' ? Kuroshiro.Util.kanaToHiragna(reading) : Kuroshiro.Util.kanaToRomaji(reading, 'hepburn'));
   assert.match(kana.map(run => run.Text).join(''), /わたし.*ねこ/u);
   assert.match(romaji.map(run => run.Text).join(''), /watashi.*neko/u);
   assert.equal(kana.map(run => run.Text).join('').includes('😀'), true);
+  const exactSource=BuildVoiceText(source).text;
+  const readings=romaji.filter(run=>run.Reading).map(run=>run.Reading);
+  assert.deepEqual(readings.map(reading=>[exactSource.slice(reading.start,reading.end),reading.text]),[['私','わたし'],['猫','ねこ']]);
+  for(const run of romaji.filter(run=>run.Reading)) {
+    assert.equal(run.AnnotationDerived,true);assert.equal(run.Precision,'grouped');
+    assert.ok(run.SourceRanges.every(range=>range.start>=run.Reading.start&&range.end<=run.Reading.end));
+  }
 });
 
 test('effective options deduplicate absent languages and irrelevant Japanese form', async () => {
@@ -198,4 +205,27 @@ test('effective options deduplicate absent languages and irrelevant Japanese for
   lease = service.acquire(korean, { languages: ['Korean'], japaneseForm: 'romaji' }, 'kor'); await lease.promise; lease.release();
   lease = service.acquire(korean, { languages: ['Korean', 'Japanese'], japaneseForm: 'kana' }, 'kor'); await lease.promise; lease.release();
   assert.equal(calls, 2);
+});
+
+
+test('real Japanese dictionary: contextual pronouns, true name suffixes, kana particles and safe okurigana', async () => {
+  const { default: kuromoji } = await import('kuromoji');
+  const { default: imported } = await import('@sglkc/kuroshiro');
+  const tokenizer = await new Promise((resolve, reject) => kuromoji.builder({ dicPath: 'node_modules/kuromoji/dict' }).build((error, value) => error ? reject(error) : resolve(value)));
+  const util = imported.Util;
+  const convert = (reading, form) => form === 'kana' ? util.kanaToHiragna(reading) : util.kanaToRomaji(reading, 'hepburn');
+  const project = (text, form='kana') => AlignJapanese(voice([span(text,1,5)]), tokenizer.tokenize(JapaneseAnalysis(text).text), form, convert);
+  for (const text of ['君が僕に零した','あの夜君が僕に零した','(君が零した)','（君が零した）']) {
+    const runs=project(text); assert.equal(runs.find(run=>run.Reading?.start===text.indexOf('君')).Reading.text,'きみ',text);
+    assert.equal(runs.map(run=>run.Text).join('').includes('くん'),false,text);
+  }
+  for (const text of ['田中君が','山田君','(田中君が)','朝日君が']) assert.equal(project(text).find(run=>run.Reading?.start===text.indexOf('君')).Reading.text,'くん',text);
+  assert.equal(project('〇〇君').find(run=>run.Reading?.text==='きみ')?.Reading.text,'きみ','ambiguous placeholder retains analyzer reading');
+  assert.equal(project('君は僕へ').map(run=>run.Text).join(''),'きみはぼくへ');
+  assert.equal(project('君は僕へ','romaji').map(run=>run.Text).join(''),'kimi wa boku e');
+  const wrapped=project('(君が零した)'); assert.equal(wrapped[0].Text,'(');assert.equal(wrapped.at(-1).Text,')');
+  const koboshi=wrapped.find(run=>run.Text==='こぼし');assert.deepEqual(koboshi.Readings,[{text:'こぼ',start:3,end:4}]);
+  assert.deepEqual(FuriganaRanges('漢あ漢あ漢あ漢あ漢い','あ'.repeat(100),0,convert),[],'adversarial unmatched kana anchors terminate safely');
+  assert.deepEqual(FuriganaRanges('漢あ漢','ああああ',0,convert),[],'ambiguous anchors omit unsafe ruby');
+  assert.deepEqual(FuriganaRanges('漢字','かんじ',2,convert),[{text:'かんじ',start:2,end:4}]);
 });

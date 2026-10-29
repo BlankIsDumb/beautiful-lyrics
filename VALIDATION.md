@@ -1,5 +1,114 @@
 # Validation
 
+## Native review corrections — 5.1.0-local.16, completed 2026-10-29
+
+- Final local.16 full suite: **105/105 passed**, zero failures/skips. Independent
+  Original-only Classic comparison against accepted local.13: **1/1 passed**.
+  Build and embedded-dictionary checks passed. All four complete bundles and the
+  installed canonical file match SHA256
+  `47327F4002D45B5EC1527915A3522527717572D0DE8E8B11E3E145D02DDCC816`.
+  Transactional installation preserved the exact client-config hash and all six
+  checked Comfy/unrelated file hashes.
+- Running local.16 was confirmed in native Spotify. On 夏霞 at 129 s, AMLL supplied
+  309 genuine word timings. Measured lead and backing source fragments now have
+  identical baselines across annotated kanji, plain kana and the trailing `た)`.
+  Readings occupy one horizontal line; 君 reads `きみ`, and `こぼ` attaches to 零
+  while source `し` stays on the baseline. The narrow view wraps complete units.
+- Native Romaji Above produced 33 reading rows for 33 real voices, retaining
+  separate lead/backing roles and original text. Measured reading rows are above
+  their associated source rows; effective precision remains Word. Relevant native
+  controls show Row size and hide Ruby size for Above.
+- The final native Kana Replace check retained Word precision and separate
+  lead/backing vocals, with zero secondary/ruby rows. Row size and Ruby size both
+  have computed display `none`. The reversible probe restored the current
+  presentation payload byte-for-byte and restored the playlist view. It issued
+  no play/pause/seek calls; ongoing playback and the user's current Furigana choice
+  were preserved after the interrupted session. Temporary app probe state was
+  removed, and the desktop-control kernel was reset.
+- Installed local.15 native inspection found irrelevant Row size/Ruby size controls
+  still visible for Romaji/Replace. Their hidden flags were set, but authored
+  help-row flex display overrode the browser's hidden rule. A form-scoped hidden
+  display rule fixes this. The both-view UI matrix now checks computed display
+  and actual layout boxes for Replace/Above/Furigana/language Off, covering size,
+  alignment and reading-effect groups. The focused form regression passed 1/1.
+- Native local.15 furigana at 129 s showed a separate baseline-propagation defect:
+  annotated kanji sat 66.17035 px below plain kana in 56 px lead text and 49.62366 px
+  below in 42 px backing text. Readings were horizontal and the captured `た)`
+  fragment was internally one line; its previous wrapping defect was not the cause.
+- An isolated host-border-box fixture reproduced the lead shift as 66.171875 px.
+  Selecting the atomic units' last source baseline corrects the mismatch without
+  transforms, font changes, DOM restructuring or altered effect roots. Updated
+  tests compare every source glyph bottom within wide and wrapped normal rows,
+  with mixed kana/kanji lead plus short/long backing voices, preserved 56/42 px
+  fonts, .5/1 reading sizes and every annotation alignment. Existing horizontal
+  reading, intrinsic sizing, bounds, long-reading fit and timing checks remain.
+  The focused annotation regressions passed 2/2, followed by the final full suite
+  and native confirmation above. Ambiguous Japanese readings remain possible;
+  converted text retains mapped source intervals, not invented phoneme timing.
+
+## Conversion model and atomic furigana — 5.1.0-local.15, 2026-10-28
+
+This historical source checkpoint was subsequently built and installed as local.15.
+Its native findings and the verified local.16 corrections are recorded above;
+the passing isolated checks below did not detect the whole source-row baseline
+mismatch or the computed hidden-row display defect.
+
+- Parent independent full suite: **105/105 passed, zero failures/skips**. Exact
+  Original-only Classic comparison against frozen local.13: **1/1 passed**.
+  A final targeted rerun covers the last modal readability/adapter and Off-state
+  cleanup edits. Final rebuilt artifact checks and fresh native installation/
+  visual checks remain pending at this source checkpoint.
+
+- Schema7 conversion/placement choices are per language and view, with exact raw
+  schema6 recovery snapshots on first actual save. Migration precedence, failed
+  writes, future schemas, remembered placement, legacy adapters and independent
+  text/cue/reading settings are covered by tests.
+- Actual bundled Japanese dictionary fixtures cover both reported 君 contexts,
+  ASCII/fullwidth parentheses, person-name suffixes, orthographic は/へ particles,
+  source ranges and okurigana. This is constrained correction, not perfect lyric
+  interpretation; ambiguous alignment omits unsafe furigana.
+- Isolated Chromium uses the host global border-box reset and captured native
+  font stack/source grouping, including backing 42px `た)`. Assertions require
+  single-line horizontal rt, trailing character baseline, intrinsic unit sizing,
+  complete bounds, all alignments, large sizes, wide/narrow views, indivisible
+  reading fit, same-font-string invalidation and forced-Line progress parity.
+  Font availability depends on the machine; this does not certify native Spotify
+  pixels or every pronunciation. Fresh native visual validation remains separate.
+- Conversion controls apply immediately; disabled/hidden/disconnected controls
+  stay inert. Readings retain original source intervals; Above is above each real
+  voice. Coalesced font fitting preserves manual grace and releases its listener
+  when annotations are Off. No provider/credential/cache/background changes.
+
+## Secondary readings and ruby — 5.1.0-local.14, 2026-10-28
+
+- Source implementation: secondary rows and Japanese ruby per real voice, view
+  typography and source-case-specific inherited/custom reading effects. Schema6
+  preserves old primary/text/cue choices and defaults new rows/ruby Off. Native
+  event controls remain immediate with adjacent help and Classic footers.
+- Final full suite: **101/101 passed**, zero failures/skips. Source/store/real
+  Chromium regressions cover migrated/independent profiles and channels, pending primary leases
+  retained through secondary add/remove, style-only reuse, inactive-case no-op,
+  stale/disposed completion and unavailable-reading source fallback.
+- The actual-component fixture checks lead plus two real backing voices, exact
+  source spaces/punctuation/combining marks/emoji, grouped gap progress, one-span
+  line-source ruby with internal safe token boundaries, computed independent
+  highlight/scale/blur, full voice scroll bounds, and reading glyph bounds within
+  scoped ruby/group reserves at wide and narrow widths. All-Off effects allocate
+  no springs or effect writes; disabling removes rows and detached click listeners.
+  Existing resize batches preserve the 750ms manual grace and coalesce blur work.
+- Final source review accepted all fixes. Exact comparison against accepted `.13`
+  Classic passed **1/1** on the final source. These are isolated synthetic browser
+  results, not real-song comparative playback or native client font certification.
+- Transactional local installation completed after the user resumed the install
+  request. The installed canonical file and all four generated artifacts match
+  SHA256 `861149E3316FCC4B0DAEDDDEB2432B7496CC93C4CD008EE32FC92C2B4B8829F2`.
+  The exact client-config hash and all six checked unrelated/theme file hashes
+  were preserved. A rollback backup was retained by the installer.
+- Runtime reload, physical native settings inspection and real-song verification
+  remain pending. Computer Use remained stopped, so no native `.14` runtime/UI
+  result is claimed. Broader containment/clipping and oversized-word layout remain
+  later work.
+
 ## Four text cases / immediate settings — 5.1.0-local.13, 2026-10-28
 
 - Implemented, source-reviewed and applied locally: four independent source-selected

@@ -255,3 +255,8 @@
     .BL-HelpRow { margin: 0; border-radius: 0; background: none; }
   }
 }
+
+// The form assigns flex/block display to help rows, details and fieldsets.
+// Those author rules outrank the browser's [hidden] default, so relevance flags
+// must explicitly remove their boxes even under a host/theme display reset.
+.BL-Settings [hidden] { display: none !important; }

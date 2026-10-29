@@ -27,6 +27,8 @@ interface SyncedVocals extends BaseVocals {
 	SetBlur(blurDistance: number): void
 	NeedsFrame(): boolean
 	IsActive(): boolean
+	HasAnnotations?(): boolean
+	MeasureAnnotations?(fontGeneration?: number): void
 	GetScrollTarget?(): { Element: HTMLElement; StartTime: number }
 }
 

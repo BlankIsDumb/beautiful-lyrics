@@ -1,3 +1,4 @@
+import { EffectiveConversion } from "../AnnotationSettings.ts";
 // Import Types
 import { type TransformedLyrics } from "@Spices/Spicetify/Services/Player/mod.ts"
 
@@ -46,9 +47,9 @@ export default class LyricsRenderer implements Giveable {
         const candidates = DeriveCueCandidates(lyricDocument)
         const gaps = new Map(candidates.map(cue => [cue.start, cue.gapSeconds]))
         const transformedLyrics = { ...ProjectClassic(lyricDocument, candidates), NaturalAlignment: sourceLyrics.NaturalAlignment }
-        const bindings = new Map<string, { base: readonly DisplayRun[]; current: readonly DisplayRun[]; apply: (runs: readonly DisplayRun[]) => void }>()
-        const bind = (voice: (typeof lyricDocument.groups)[number]["voices"][number], apply: (runs: readonly DisplayRun[]) => void, base = LayoutVoice(voice)) => {
-            bindings.set(voice.id, { base, current: base, apply })
+        const bindings = new Map<string, { voice: (typeof lyricDocument.groups)[number]["voices"][number]; base: readonly DisplayRun[]; current: readonly DisplayRun[]; vocal: VocalController }>()
+        const bind = (voice: (typeof lyricDocument.groups)[number]["voices"][number], vocal: VocalController, base = LayoutVoice(voice)) => {
+            bindings.set(voice.id, { voice, base, current: base, vocal })
         }
     // Attribution belongs to every rendering surface, including the sidebar.
     if (transformedLyrics.Attribution) {
@@ -106,7 +107,7 @@ export default class LyricsRenderer implements Giveable {
                 for (const voice of group.voices) {
                     const base = LayoutVoice(voice)
                     const vocal = this.Maid.Give(new VocalController(groupContainer, lyricDocument, voice, rendering, counters, base))
-                    bind(voice, runs => vocal.SetProjection(runs, lyricTime()), base)
+                    bind(voice, vocal, base)
                     groupVocals.push(vocal); vocals.push(vocal); visuals.set(voice.id, vocal)
                     if (lyricDocument.type !== "Static") {
                         addInterval(voice.id, voice.start, voice.end)
@@ -163,7 +164,7 @@ export default class LyricsRenderer implements Giveable {
             updatePrecision()
             const time = lyricTime()
             for (const vocal of vocals) vocal.SetRendering(rendering, time)
-            scroller.SetBlurEnabled(rendering.blur)
+            scroller.SetBlurEnabled(vocals.some(vocal => vocal.HasBlur()))
             scheduler.refresh()
         }))
 
@@ -176,33 +177,69 @@ export default class LyricsRenderer implements Giveable {
             scheduler.refresh()
         }))
 
-        let generation = 0
-        let release: (() => void) | undefined
-        const apply = (result?: ReadonlyMap<string, readonly DisplayRun[]>) => {
+        const leases = new Map<string, { key: string; release: () => void; result?: ReadonlyMap<string, readonly DisplayRun[]> }>()
+        let requestKey = ""
+        const applyAnnotations = () => {
+            const profile = PresentationSettings.getProfile(view)
+            let changed = false
             for (const [id, binding] of bindings) {
-                const runs = result?.get(id) || binding.base
-                if (runs === binding.current) continue
-                binding.current = runs
-                binding.apply(runs)
+                const language = VoiceLanguage(binding.voice, sourceLyrics.Language)
+                const conversion = EffectiveConversion(profile.conversions, language);
+                const projected = conversion ? leases.get(`${language}:${conversion.form}`)?.result?.get(id) : undefined;
+                const successful = projected?.some(run => run.AnnotationDerived) ? projected : undefined;
+                const runs = conversion?.placement === "replace" && successful ? successful : binding.base;
+                if (runs !== binding.current) { binding.current = runs; binding.vocal.SetProjection(runs, lyricTime()); changed = true }
+                const secondary = conversion?.placement === "above" ? successful : undefined;
+                const ruby = conversion?.placement === "attached" ? successful : undefined;
+                changed = binding.vocal.SetAnnotations(profile.annotations, secondary, ruby?.some(run => run.Reading) ? ruby : undefined, lyricTime()) || changed
             }
+            scroller.SetBlurEnabled(vocals.some(vocal => vocal.HasBlur()))
+            if (changed) { scroller.RefreshAnnotationLayout(); scheduler.refresh() }
         }
         const request = () => {
-            const current = ++generation
-            release?.(); release = undefined
-            apply() // Original always remains available while new work is pending.
             const profile = PresentationSettings.getProfile(view)
-            const languages = profile.romanizationEnabled ? (["Chinese", "Japanese", "Korean"] as const).filter(language => availableLanguages.has(language) && profile.romanizedLanguages[language]) : []
-            if (!languages.length) return
-            const lease = AnnotationService.acquire(lyricDocument, { languages, japaneseForm: languages.includes("Japanese") ? profile.japaneseForm : "romaji" }, sourceLyrics.Language)
-            release = lease.release
-            void lease.promise.then(result => {
-                if (current !== generation || this.Maid.IsDestroyed()) return
-                apply(result)
-            })
+            const demand = new Map<string, Set<"Chinese" | "Japanese" | "Korean">>()
+            const require = (language: "Chinese" | "Japanese" | "Korean", form: "romaji" | "kana") => {
+                if (!availableLanguages.has(language)) return
+                const key = `${language}:${form}`
+                if (!demand.has(key)) demand.set(key, new Set())
+                demand.get(key)!.add(language)
+            }
+            for (const language of ["Chinese", "Japanese", "Korean"] as const) {
+                const conversion = EffectiveConversion(profile.conversions, language);
+                if (conversion) require(language, conversion.form);
+            }
+            const key = JSON.stringify([...demand].sort().map(([form, languages]) => [form, [...languages].sort()]))
+            if (key === requestKey) { applyAnnotations(); return }
+            requestKey = key
+            // Reconcile language/form leases independently. A mixed-song language
+            // toggle must not cancel another language's unchanged pending job.
+            const keys = new Map([...demand].map(([form, languages]) => [form, JSON.stringify([...languages].sort())]))
+            for (const [form, entry] of leases) if (entry.key !== keys.get(form)) { entry.release(); leases.delete(form) }
+            for (const [form, languages] of demand) {
+                if (leases.has(form)) continue
+                const lease = AnnotationService.acquire(lyricDocument, { languages: [...languages], japaneseForm: form.split(":")[1] as "romaji" | "kana" }, sourceLyrics.Language)
+                const entry = { key: keys.get(form)!, release: lease.release, result: undefined as ReadonlyMap<string, readonly DisplayRun[]> | undefined }
+                leases.set(form, entry)
+                void lease.promise.then(result => {
+                    if (leases.get(form) !== entry || this.Maid.IsDestroyed()) return
+                    entry.result = result; applyAnnotations()
+                })
+            }
+            applyAnnotations()
         }
-        this.Maid.Give(() => { generation++; release?.() })
+        this.Maid.Give(() => { for (const lease of leases.values()) lease.release(); leases.clear() })
         this.Maid.Give(PresentationSettings.subscribe((changedView, languages) => {
             if (changedView === view && languages.some(language => availableLanguages.has(language))) request()
+        }))
+        let annotations = PresentationSettings.getAnnotations(view)
+        this.Maid.Give(PresentationSettings.subscribeAnnotations(changedView => {
+            if (changedView !== view) return
+            const next = PresentationSettings.getAnnotations(view)
+            const caseChanged = sourceCase && JSON.stringify(next.cases[sourceCase]) !== JSON.stringify(annotations.cases[sourceCase])
+            const viewChanged = JSON.stringify({ ...next, cases: undefined }) !== JSON.stringify({ ...annotations, cases: undefined })
+            annotations = next
+            if (caseChanged || viewChanged) request()
         }))
         request()
 

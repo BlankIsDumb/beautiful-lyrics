@@ -180,17 +180,18 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
   }`;
   const stubs = {
     'clock-stub': 'export const PlayerLyricClock={};',
-    'annotation-stub': 'export const VoiceLanguage=v=>/[ぁ-んァ-ン]/u.test(v.spans.map(s=>s.Text).join(\"\"))?\"Japanese\":undefined;export const AnnotationService={acquire(...args){if(!globalThis.__timingHarness.acquire)throw Error(\"Original must not request annotations\");return globalThis.__timingHarness.acquire(...args)}};',
+    'annotation-stub': 'export const VoiceLanguage=v=>/[ぁ-んァ-ン]/u.test(v.spans.map(s=>s.Text).join(\"\"))?\"Japanese\":/[一-鿿]/u.test(v.spans.map(s=>s.Text).join(""))?"Chinese":undefined;export const AnnotationService={acquire(...args){if(!globalThis.__timingHarness.acquire)throw Error(\"Original must not request annotations\");return globalThis.__timingHarness.acquire(...args)}};',
     'scheduler-stub': `export const IsScheduled=()=>false; export const Cancel=()=>{};
       export function OnPreRender(callback){const set=globalThis.__timingHarness.pending;set.add(callback);return ()=>set.delete(callback)}`,
     'scroller-stub': `export class LyricsScroller {
       forced=[]; ended=[]; constructor(){globalThis.__timingHarness.scrollers.push(this)}
-      SetBlurEnabled(){} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
+      SetBlurEnabled(){} RefreshAnnotationLayout(){this.annotationRefreshes=(this.annotationRefreshes||0)+1} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
     }`,
     'controller-stub': `export class VocalController {
       calls=[];frames=0;renderChanges=0;RequestedTimeSkip={Connect:callback=>{this.click=callback}};
       constructor(parent,document,voice){this.text=voice.spans.map(span=>span.Text).join('');globalThis.__timingHarness.visuals.push(this)}
       SetProjection(runs){this.text=runs.map(run=>run.Text).join('');this.projection=runs}
+      SetAnnotations(settings,secondary,ruby){this.annotations=settings;this.secondary=secondary;this.ruby=ruby;this.annotationChanges=(this.annotationChanges||0)+1} HasBlur(){return this.rendering?.blur??true}
       SetRendering(profile){this.rendering=profile;this.renderChanges++} RequiresContinuous(){return true}
       Animate(...args){this.calls.push(args);if(this.frames>0)this.frames--}
       NeedsFrame(){return this.frames>0} Destroy(){this.destroyed=true}
@@ -311,11 +312,23 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     PresentationSettings.saveProfile('NowPlaying', { ...PresentationSettings.getProfile('NowPlaying'), japaneseForm: 'kana' });
     assert.equal(jobs[0].released, true);
     assert.equal(jobs.length, 3);
-    const mapped = (job, text) => new Map([[job.document.groups[0].voices[0].id, [{ Text: text }]]]);
+    const mapped = (job, text) => new Map([[job.document.groups[0].voices[0].id, [{ Text: text, AnnotationDerived:true, Reading:{text:"かな",start:0,end:2} }]]]);
     jobs[0].resolve(mapped(jobs[0], 'stale romaji')); await Promise.resolve();
     assert.equal(nowVocal.text, 'かな');
     jobs[1].resolve(mapped(jobs[1], 'full romaji')); jobs[2].resolve(mapped(jobs[2], 'now kana')); await Promise.resolve();
     assert.equal(nowVocal.text, 'now kana'); assert.equal(fullVocal.text, 'full romaji');
+
+    // Placement changes reuse the existing result/lease and preserve real voice
+    // identity. Above is a distinct projection of the same conversion job.
+    const prior=jobs.length, currentConversion=PresentationSettings.getConversions('NowPlaying');
+    currentConversion.languages.Japanese.placement='above';PresentationSettings.saveConversions('NowPlaying',currentConversion);
+    assert.equal(jobs.length,prior);assert.equal(jobs[2].released,false);assert.equal(nowVocal.text,'かな');assert.equal(nowVocal.secondary[0].Text,'now kana');
+    currentConversion.languages.Japanese.placement='replace';PresentationSettings.saveConversions('NowPlaying',currentConversion);
+    assert.equal(jobs.length,prior);assert.equal(jobs[2].released,false);assert.equal(nowVocal.text,'now kana');assert.equal(nowVocal.secondary,undefined);
+    const acquired=jobs.length,annoChanges=nowVocal.annotationChanges;
+    const inactive=PresentationSettings.getAnnotations('NowPlaying');inactive.cases.Word.inherit=false;inactive.cases.Word.effects.glow=false;
+    PresentationSettings.saveAnnotations('NowPlaying',inactive);
+    assert.equal(jobs.length,acquired);assert.equal(nowVocal.annotationChanges,annoChanges);
     const beforeRender=jobs.length, currentLease=jobs[2];
     PresentationSettings.saveRendering('NowPlaying', 'Word',{...PresentationSettings.getProfile('NowPlaying').renderingCases.Word,highlight:'off',glow:false});
     assert.equal(jobs.length,beforeRender);assert.equal(currentLease.released,false);
@@ -344,6 +357,26 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     const replacementVocal = harness.visuals.at(-1);
     assert.equal(replacementVocal.text, 'かに');
     replacement.Destroy(); fullRenderer.Destroy();
+    const fresh=new Renderer(new Element(),japanese,false,'NowPlaying',clock),freshVocal=harness.visuals.at(-1);
+    const pendingPrimaryJob=jobs.at(-1),pendingCount=jobs.length;
+    const pendingChoice=PresentationSettings.getConversions('NowPlaying');pendingChoice.languages.Japanese.placement='above';PresentationSettings.saveConversions('NowPlaying',pendingChoice);
+    assert.equal(jobs.length,pendingCount);assert.equal(pendingPrimaryJob.released,false);
+    pendingChoice.languages.Japanese.kind='furigana';PresentationSettings.saveConversions('NowPlaying',pendingChoice);
+    assert.equal(jobs.length,pendingCount);assert.equal(pendingPrimaryJob.released,false,'kana/furigana reuse the same pending conversion');
+    pendingPrimaryJob.resolve(mapped(pendingPrimaryJob,'retained conversion'));await Promise.resolve();assert.equal(freshVocal.text,'かな');assert.equal(freshVocal.ruby[0].Text,'retained conversion');assert.equal(freshVocal.secondary,undefined);
+    pendingChoice.languages.Japanese.kind='kana';PresentationSettings.saveConversions('NowPlaying',pendingChoice);
+    assert.equal(freshVocal.secondary[0].Text,'retained conversion');assert.equal(freshVocal.ruby,undefined);assert.equal(jobs.length,pendingCount);
+    const beforeStyle=jobs.length;PresentationSettings.saveAnnotations('NowPlaying',{...PresentationSettings.getAnnotations('NowPlaying'),secondarySize:.9});assert.equal(jobs.length,beforeStyle);
+    fresh.Destroy();assert.equal(pendingPrimaryJob.released,true);
+    // Mixed-language demand keeps the unchanged Japanese job pending while
+    // Chinese appears/disappears, and keeps Chinese when Japanese form changes.
+    const mixedChoice=PresentationSettings.getConversions('NowPlaying');mixedChoice.enabled=true;mixedChoice.languages.Japanese={enabled:true,kind:'romaji',placement:'replace'};mixedChoice.languages.Chinese.enabled=false;PresentationSettings.saveConversions('NowPlaying',mixedChoice);
+    const mixed=new Renderer(new Element(),{...japanese,Language:undefined,Content:[...japanese.Content,{Type:'Vocal',Text:'漢字',StartTime:0,EndTime:5}]},false,'NowPlaying',clock);
+    const mixedJapanese=jobs.at(-1),mixedBefore=jobs.length;
+    PresentationSettings.setRomanized('NowPlaying','Chinese',true);const mixedChinese=jobs.at(-1);assert.equal(jobs.length,mixedBefore+1);assert.equal(mixedJapanese.released,false);
+    const mixedNext=PresentationSettings.getConversions('NowPlaying');mixedNext.languages.Japanese.kind='kana';PresentationSettings.saveConversions('NowPlaying',mixedNext);assert.equal(mixedJapanese.released,true);assert.equal(mixedChinese.released,false);
+    const mixedKana=jobs.at(-1);PresentationSettings.setRomanized('NowPlaying','Chinese',false);assert.equal(mixedChinese.released,true);assert.equal(mixedKana.released,false);mixed.Destroy();assert.equal(mixedKana.released,true);
+
     assert.equal(consumers.size, 0);
 
   } finally {

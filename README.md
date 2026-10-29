@@ -8,6 +8,11 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
+Current local build: **5.1.0-local.16**. It corrects conversion-control
+visibility and mixed kana/kanji furigana baseline defects found in the installed
+local.15 build. Build, regression tests and native Windows Spotify checks passed;
+see VALIDATION.md for the evidence and its limits.
+
 ## What works now
 
 - Word/syllable, line-synced, and plain-text lyrics, depending on available data.
@@ -21,9 +26,12 @@ here rather than sending the original author bugs from this build.
 - Shared skip debounce: first change starts immediately; rapid skips settle for
   800 ms before another lookup. Provider-specific cooldowns still apply.
 - Demand-driven alternate text with separate Now Playing and Full Lyrics choices:
-  Japanese primary Romaji/Kana, Chinese pinyin and Korean romaja. Original text
+  Japanese Romaji/Kana/Furigana, Chinese pinyin and Korean romaja. Original text
   appears immediately; conversion/alignment failures keep it readable. Dictionaries
   are bundled locally, and every real backing voice is eligible.
+- Optional above readings and attached Japanese furigana for each real voice, with per-view
+  size, spacing, opacity and alignment. Reading effects inherit the current text
+  case or use independent Word/Line overrides. Off stops their work.
 - Four independent text-rendering cases: **Lyrics → Now Playing / Fullscreen →
   Word sync / Line sync**. Word sources start expressive; Line sources start muted.
   Actual source precision selects the case, even when Word text is displayed as Line.
@@ -43,7 +51,7 @@ No promise of unlimited requests or word timing for every track.
 ## Planned, not implemented
 
 - Detailed effect amounts/curves, background controls and font-size settings.
-- Furigana/ruby, translation and secondary-line layouts.
+- Translation and further layout/context controls.
 - Exact 30-day positive caches, clear-all and clear-current-track controls.
 - Better alternate-name/edition matching and sidebar compatibility.
 - Performance measurements before taking a chainsaw to the animations.
@@ -123,10 +131,12 @@ viewer. Zero disables dots; positive values mean minimum real silence across all
 voices (100 means 100 seconds). Very short eligible gaps use static dots. Minimal
 is a text preset; it does not turn off independently enabled dots or backgrounds.
 
-Each view's **Alternate text** switch reveals its language choices and **Japanese
-text → Romaji / Kana**. Off shows Original and remembers those choices. Processing
-starts only for an active view requesting a supported language; matching work is
-shared, and closing/turning it off releases that view's request.
+Each view has one **Conversions** group: enable a language, choose its conversion,
+then choose **Replace** or **Above**. Japanese supports **Romaji**, orthographic
+**Kana**, and **Furigana** attached above kanji. Furigana preserves the original;
+switching back remembers the previous placement. Chinese uses pinyin and Korean
+uses romaja. Off shows Original and remembers the choices. Conversion starts only
+for an active view requesting that language; shared work is released per view.
 Settings apply immediately. Incomplete/invalid numbers keep the last valid value;
 credentials apply when editing finishes or Enter is pressed. Question-mark help
 explains controls, with Classic values at each tooltip's bottom. The existing text button in a lyric view
@@ -147,7 +157,10 @@ can change. A 404 can simply mean a source has nothing for that recording.
 
 Caches currently have inherited expiry rules, not the planned exact 30-day policy.
 Cold Japanese conversion loads the local dictionary; uncertain source alignment
-falls back to Original. Synthetic/native UI checks do not certify every song,
+falls back to Original. Furigana attaches only to safely aligned kanji ranges, leaving okurigana on the
+original baseline. Ambiguous readings are omitted. Above keeps the original
+voice below its reading. Failed conversions add no duplicate source row. Readings retain
+grouped source intervals and real gaps, not newly measured phoneme timing. Synthetic/native UI checks do not certify every song,
 script, font or client platform. See [LOCAL.md](LOCAL.md) for details and
 [VALIDATION.md](VALIDATION.md) for what was actually checked.
 

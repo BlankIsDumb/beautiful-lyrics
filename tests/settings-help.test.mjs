@@ -72,7 +72,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
       check(!form.querySelector('button[type=submit]'),'no Save button');
       check([...form.querySelectorAll('h3')].some(h=>h.textContent==='Lyrics'),'Lyrics hierarchy');
-      check(form.querySelectorAll('details.BL-CaseSettings').length===4,'four native collapsible source cases');
+      check(form.querySelectorAll('.BL-ViewOptions > details.BL-CaseSettings[id$="-Settings"]').length===4,'four native collapsible source cases');
       for(const view of ['NowPlaying','FullLyrics']){
         check(!form.querySelector('#JEL-'+view+'-Line-TextDetail')&&!form.querySelector('#JEL-'+view+'-Line-verticalMotion')&&!form.querySelector('#JEL-'+view+'-Line-emphasis'),'Line case omits unsupported word capabilities');
         check(form.querySelector('#JEL-'+view+'-CueMotion')&&!form.querySelector('#JEL-'+view+'-Word-cueAnimation'),'cue options view-wide only');
@@ -110,8 +110,46 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       check(JSON.stringify([...data])===stable,'partial/negative threshold never persisted');gap.dispatchEvent(new FocusEvent('blur'));check(gap.value==='0','invalid blur restores committed value');
       type(full,'1.5');check(TimingSettings.get('FullLyrics')===1.5&&TimingSettings.get('Shared')===.25&&TimingSettings.get('NowPlaying')===-.5,'offset applies only its scope');
       const savedOffset=JSON.stringify([...data]);type(full,'');type(full,'31');check(savedOffset===JSON.stringify([...data]),'blank/out-of-range offset ignored');full.dispatchEvent(new FocusEvent('blur'));check(full.value==='1.5','bad offset edit restored');
-      const jp=form.querySelector('#JEL-FullLyrics-JapaneseForm');jp.value='kana';change(jp);
-      check(PresentationSettings.getProfile('FullLyrics').japaneseForm==='kana'&&PresentationSettings.getRendering('FullLyrics','Word').glow,'language change immediate preserves text cases');
+      const jp=form.querySelector('#JEL-FullLyrics-Japanese-Conversion');jp.value='kana';change(jp);
+      check(PresentationSettings.getConversions('FullLyrics').languages.Japanese.kind==='kana'&&PresentationSettings.getRendering('FullLyrics','Word').glow,'conversion preserves text cases');
+      let annotationEvents=0;PresentationSettings.subscribeAnnotations(()=>annotationEvents++);
+      const placement=form.querySelector('#JEL-FullLyrics-Japanese-Placement');placement.value='above';change(placement);
+      const rowSize=form.querySelector('#JEL-FullLyrics-Reading-secondarySize');type(rowSize,'.9');
+      check(PresentationSettings.getAnnotations('FullLyrics').secondarySize===.9&&PresentationSettings.getConversions('FullLyrics').languages.Japanese.placement==='above','above and size apply immediately');
+      jp.value='furigana';change(jp);check(placement.disabled&&placement.value==='attached','furigana forces attached');
+      const beforeHiddenStyle=JSON.stringify([...data]);type(rowSize,'1.1');check(beforeHiddenStyle===JSON.stringify([...data]),'hidden row style is disabled');
+      jp.value='romaji';change(jp);check(placement.value==='above'&&!placement.disabled,'format restores remembered row placement');
+      jp.value='furigana';change(jp);
+      for(const view of ['NowPlaying','FullLyrics']) {
+        const conversion=form.querySelector('#JEL-'+view+'-Japanese-Conversion'), place=form.querySelector('#JEL-'+view+'-Japanese-Placement');
+        const alignment=form.querySelector('#JEL-'+view+'-ReadingAlignment');
+        // Test actual layout, not only the hidden flag: author display:flex on
+        // HelpRow previously overrode the browser's [hidden] default in Spotify.
+        form.querySelectorAll('details').forEach(details=>details.open=true);
+        const row=form.querySelector('#JEL-'+view+'-Reading-secondarySize').closest('.BL-HelpRow');
+        const ruby=form.querySelector('#JEL-'+view+'-Reading-rubySize').closest('.BL-HelpRow');
+        const alignRow=alignment.closest('.BL-HelpRow');
+        const readingEffects=form.querySelector('#JEL-'+view+'-Word-ReadingInherit').closest('details');
+        const visible=element=>getComputedStyle(element).display!=='none'&&element.getClientRects().length>0;
+        const checkVisibility=(above,attached)=>{
+          check(visible(row)===above&&visible(ruby)===attached,'computed reading size visibility '+view);
+          check(visible(alignRow)===(above||attached)&&visible(readingEffects)===(above||attached),'computed alignment/effect visibility '+view);
+          for(const element of [row,ruby,alignRow,readingEffects])if(element.hidden)check(getComputedStyle(element).display==='none'&&element.getClientRects().length===0,'hidden relevance has no layout box '+view);
+        };
+        for(const kind of ['romaji','kana'])for(const value of ['replace','above']) {
+          conversion.value=kind;change(conversion);place.value=value;change(place);
+          check(PresentationSettings.getConversions(view).languages.Japanese.kind===kind&&PresentationSettings.getConversions(view).languages.Japanese.placement===value,'conversion x placement saves '+view);
+          check(alignment.disabled===(value==='replace'),'alignment availability follows placement '+view);
+          const effect=form.querySelector('#JEL-'+view+'-Word-ReadingInherit');check(effect.matches(':disabled')===(value==='replace'),'reading effects availability follows placement '+view);checkVisibility(value==='above',false);
+        }
+        conversion.value='furigana';change(conversion);check(place.disabled&&place.value==='attached','attached matrix '+view);checkVisibility(false,true);
+        const toggle=form.querySelector('#JEL-'+view+'-Japanese');toggle.click();check(alignment.disabled,'disabled language hides annotation styling '+view);checkVisibility(false,false);toggle.click();checkVisibility(false,true);
+        for(const language of ['Chinese','Korean']) {const input=form.querySelector('#JEL-'+view+'-'+language);input.click();const choice=PresentationSettings.getConversions(view).languages[language];check(choice.kind===(language==='Chinese'?'pinyin':'romaja'),'language-specific kind');input.click();}
+      }
+      const inherit=form.querySelector('#JEL-FullLyrics-Word-ReadingInherit');inherit.click();
+      const readingGlow=form.querySelector('#JEL-FullLyrics-Word-Reading-glow');readingGlow.click();
+      check(!PresentationSettings.getAnnotations('FullLyrics').cases.Word.inherit&&!PresentationSettings.getAnnotations('FullLyrics').cases.Word.effects.glow&&PresentationSettings.getAnnotations('FullLyrics').cases.Line.inherit,'reading effects are sourcecase scoped');
+      check(annotationEvents===3,'reading events use a separate immediate channel');
       check(sourceEvents===0&&demandEvents===0,'text/cue/language/timing do not invalidate providers');
       const token=form.querySelector('#BL-SpicyToken');type(token,'fixture_new_key');check(sourceEvents===0,'partial credential input does not reload');
       const fetch=form.querySelector('#BL-FetchMode');fetch.value='required';change(fetch);

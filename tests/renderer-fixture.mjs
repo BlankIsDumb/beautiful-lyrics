@@ -12,6 +12,7 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false) {
     export {CueController} from './Extension/Source/Modules/LyricsRenderer/CueController.ts';
     export {RenderScheduler} from './Extension/Source/Modules/LyricsRenderer/RenderScheduler.ts';
     export * from './Extension/Source/RenderingSettings.ts';
+    export * from './Extension/Source/AnnotationSettings.ts';
     export {JoinDisplayRuns,ResolveDetail} from './Extension/Source/Modules/RenderProjection.ts';
     export {default as Current} from './Extension/Source/Modules/LyricsRenderer/Components/SyllableVocals.ts';
     export {LayoutSyllables,LayoutVoice,BuildVoiceText} from './Extension/Source/Modules/TextLayout.ts';

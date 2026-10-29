@@ -1,5 +1,13 @@
 # Just Enough Lyrics local build notes
 
+Current local build: **5.1.0-local.16**; built, installed and verified in Windows
+Spotify. Installed local.15 exposed two presentation
+defects: authored flex display overrode hidden conversion style rows, and atomic
+ruby's first-baseline propagation placed annotated kanji below plain kana. The
+fix enforces hidden display inside the settings form and aligns the last
+source baseline of each complete ruby/plain unit. Intrinsic reading width,
+horizontal viewport fit and independent per-piece effects are preserved.
+
 ## Runtime and sources
 The root npm build produces one self-contained browser extension. Spotify transport
 uses the signed-in client's Cosmos service; it never sends Spotify credentials to
@@ -36,7 +44,7 @@ The settings modal uses centered headings, tiles and keyboard-accessible switche
 Now Playing and Full Lyrics have versioned independent language preferences.
 Each view's Alternate text master switch gates its remembered language choices;
 the settings modal nests those choices inside a connected collapsible card.
-Presentation schema 5 reads schemas 1–4. Each view owns independent Word/Line
+Presentation schema 6 reads schemas 1–5. Each view owns independent Word/Line
 text cases plus universal cue settings, while language/master/Japanese form and
 delay remain view-wide. Untouched Classic/Auto v4 text adopts expressive Word and
 muted Line defaults; edited/non-Classic presets or detail choices are cloned into
@@ -69,11 +77,43 @@ cue child/springs/continuous work, layout margins or blur-distance contribution.
 Minimal stops text-effect work; universal cue motion and background remain separate.
 The existing clock/transport is unchanged, not a whole-app idle claim.
 
-Japanese primary text can use contextual Romaji or Kana readings. Token surfaces
-are matched sequentially to source ranges, preserving gaps and all backing voices;
-uncertain alignment or conversion errors retain Original. Mapped readings keep
-their original interval union and freeze through source gaps, without invented
-phoneme timings. Ruby, secondary rows and translation remain later work.
+Schema7 stores one enabled conversion and placement per language in each view.
+Japanese Romaji/Kana may replace the main text or appear above the original;
+Furigana always remains attached above kanji, remembering the last row placement.
+Chinese pinyin and Korean romaja use the same Replace/Above choices. Conversion
+Off retains preferences while releasing that view's work. Schema6 is read lazily:
+the exact raw payload is retained under `JustEnoughLyrics/Presentation/Migration/schema6`
+before the first actual save. Per-language migration prefers effective primary
+replacement, then Japanese ruby, then the former secondary as Above. Mixed old
+choices cannot all be active in the single-conversion model; the snapshot retains
+them for recovery. Text cases, cue settings and reading appearance are preserved.
+
+Japanese tokenization normalizes ASCII parentheses for analysis only, with source
+boundary mapping restoring the original punctuation. A constrained temporal-noun
+pronoun correction addresses the reproduced 君 context; names and ambiguous
+placeholders are not globally rewritten. Kana retains written particles while
+Romaji uses pronunciation. Unique kana-anchor alignment attaches readings to
+kanji, preserving okurigana and grouped compounds. Bounded ambiguous alignment
+omits unsafe ruby rather than inventing character readings or phoneme timing.
+
+Each source case can inherit its text effects or independently configure reading
+highlight, scale, motion, glow and inactive blur. Character emphasis is disabled
+for mapped readings. Per-view relative row/ruby sizes, row gap, letter spacing,
+opacity and alignment reuse completed conversion results. Changing the inactive
+case does no rendering work. Adding another requested form retains an unchanged
+pending primary lease/result; closing or disabling releases obsolete demand.
+Ruby bases and readings have separate effect roots under a neutral wrapper, so
+one cannot multiply the other's opacity/filter/scale. Safe source character
+clipping retains each original timing interval; it never invents token timestamps.
+Above/furigana layout uses the existing coalesced group resize measurement and
+full combined voice scroll bounds. Async rows and style changes preserve the
+existing manual-scroll grace; no additional observer or frame loop was added.
+Ruby units contribute their reading's intrinsic width and height; complete units
+wrap normally. Annotated fragments isolate the host border-box reset and keep
+readings horizontal. A reading wider than its whole voice receives a uniform font
+fit while its requested size stays saved. This uses the existing coalesced layout
+batch, with one font-completion listener only while readings are present. It is
+not a general clipping/overflow fix.
 
 Safe provider boundaries retain their timing granularity. Cross-span graphemes
 coalesce where necessary; Thai does not split marks into separately animated

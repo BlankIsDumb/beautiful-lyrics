@@ -10,6 +10,10 @@ export type DisplayRun = SyllableMetadata & {
   Precision: "source" | "grouped";
   SafeLetters: boolean;
   ExplicitSpacing?: boolean;
+  // Successful conversion is explicit: service fallbacks contain source runs,
+  // which must never masquerade as a second translated/reading row.
+  AnnotationDerived?: true;
+  Reading?: Readonly<{ text: string; start: number; end: number }>;
 };
 export type VoiceText = Readonly<{ text: string; ranges: readonly SourceRange[] }>;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });

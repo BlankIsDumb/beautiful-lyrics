@@ -124,6 +124,7 @@ export function OpenProviderSettings() {
     const cueMotion = toggle(fields, "Dot motion", `JEL-${view}-CueMotion`, PresentationSettings.getCues(view).motion,
       "Animated or static gap dots for this view, shared by Word and Line sources. Text presets never change this.", "On"); cueMotion.disabled = presentationReadOnly;
     checkbox(cueMotion, motion => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), motion }), () => PresentationSettings.getCues(view).motion);
+    const readingGroups: HTMLDetailsElement[] = [];
     for (const sourceCase of SourceCases) {
       const details = document.createElement("details"); details.className = "BL-CaseSettings"; details.id = `JEL-${view}-${sourceCase}-Settings`;
       const summary = document.createElement("summary"); summary.textContent = `${sourceCase} sync`; details.append(summary); fields.append(details);
@@ -157,25 +158,97 @@ export function OpenProviderSettings() {
       listen(highlight, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), highlight: highlight.value as RenderingProfile["highlight"], preset: "custom" }), sync); sync(); });
       for (const input of effectInputs.values()) listen(input, "change", sync);
       if (detail) listen(detail, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), detail: detail.value as RenderingProfile["detail"] }), sync); sync(); });
+      const readingGroup = document.createElement("details"); readingGroup.className = "BL-CaseSettings";
+      const readingTitle = document.createElement("summary"); readingGroups.push(readingGroup);
+      readingTitle.textContent = "Reading effects"; readingGroup.append(readingTitle); body.append(readingGroup);
+      const readingFields = document.createElement("fieldset"); readingFields.className = "BL-GroupOptions"; readingGroup.append(readingFields);
+      const readAnnotations = () => PresentationSettings.getAnnotations(view);
+      const readCase = () => readAnnotations().cases[sourceCase];
+      const writeCase = (value: ReturnType<typeof readCase>) => {
+        const current = readAnnotations(); PresentationSettings.saveAnnotations(view, { ...current, cases: { ...current.cases, [sourceCase]: value } });
+      };
+      const inherit = toggle(readingFields, "Use text effects", prefix + "ReadingInherit", readCase().inherit,
+        "Secondary text and ruby use this source case's text effects. Off enables independent reading effects below. Readings use grouped source timing, never invented phoneme timing.", "On");
+      const custom = document.createElement("fieldset"); custom.className = "BL-GroupOptions"; readingFields.append(custom);
+      const readingExpand = () => { custom.hidden = inherit.checked; custom.disabled = inherit.checked; };
+      checkbox(inherit, value => writeCase({ ...readCase(), inherit: value }), () => readCase().inherit, readingExpand); readingExpand();
+      const readingHighlight = select(custom, "Highlight", prefix + "ReadingHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], readCase().effects.highlight,
+        "Reading highlight for this source case only. Grouped progress freezes in real source gaps.", "Use text effects");
+      listen(readingHighlight, "change", () => apply(() => writeCase({ ...readCase(), effects: { ...readCase().effects, highlight: readingHighlight.value as RenderingProfile["highlight"], preset: "custom" } }), () => { readingHighlight.value = readCase().effects.highlight; }));
+      for (const [key, text] of [["scale", "Scale"], ["verticalMotion", "Vertical motion"], ["glow", "Glow"], ["blur", "Inactive blur"]] as const) {
+        if (sourceCase === "Line" && key === "verticalMotion") continue;
+        const input = toggle(custom, text, prefix + "Reading-" + key, readCase().effects[key],
+          "Independent reading effect for this source case. Whole-line detail has no vertical motion. Off stops its effect work.", "Use text effects");
+        checkbox(input, value => writeCase({ ...readCase(), effects: { ...readCase().effects, [key]: value, preset: "custom" } }), () => readCase().effects[key]);
+      }
     }
-    const group = document.createElement("div"); group.className = "BL-SettingGroup"; fields.append(group);
-    const readProfile = () => PresentationSettings.getProfile(view);
-    const enabled = toggle(group, "Alternate text", `JEL-${view}-RomanizationEnabled`, readProfile().romanizationEnabled,
-      "Show pinyin, Japanese romaji/kana or romaja. Off keeps original text and remembers your choices.", "Off"); enabled.disabled = presentationReadOnly;
-    enabled.setAttribute("aria-label", `${viewTitle} alternate text`);
-    enabled.closest(".BL-HelpRow")!.classList.add("BL-GroupHeader");
-    const options = document.createElement("fieldset"); options.className = "BL-GroupOptions"; options.id = `JEL-${view}-RomanizationOptions`; group.append(options);
-    enabled.setAttribute("aria-controls", options.id);
-    const expand = () => { options.hidden = !enabled.checked; options.disabled = presentationReadOnly || !enabled.checked; enabled.setAttribute("aria-expanded", String(enabled.checked)); };
-    checkbox(enabled, value => PresentationSettings.saveProfile(view, { ...readProfile(), romanizationEnabled: value }), () => readProfile().romanizationEnabled, expand); expand();
+    const placementSyncs: (() => void)[] = [];
+    const styleRows = new Map<string, HTMLElement>();
+    const readConversions = () => PresentationSettings.getConversions(view);
+    const refreshStyles = () => {
+      const conversions = readConversions();
+      const choices = Object.values(conversions.languages).filter(choice => choice.enabled);
+      const attached = choices.some(choice => choice.kind === "furigana");
+      const above = choices.some(choice => choice.kind !== "furigana" && choice.placement === "above");
+      // Effects affect reading roots only. Keep the saved case settings while
+      // hiding/disabling them for Replace-only or conversion Off configurations.
+      for (const details of readingGroups) {
+        details.hidden = !conversions.enabled || !(attached || above);
+        details.querySelector("fieldset")!.disabled = details.hidden;
+      }
+      for (const [key, control] of styleRows) {
+        let visible = attached || above;
+        if (key === "rubySize") visible = attached;
+        else if (key === "secondarySize" || key === "gap") visible = above;
+        control.hidden = !visible;
+        for (const input of control.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select")) input.disabled = !visible;
+      }
+    };
+    const annotationDetails = document.createElement("details"); annotationDetails.className = "BL-CaseSettings";
+    const annotationTitle = document.createElement("summary"); annotationTitle.textContent = "Conversions"; annotationDetails.append(annotationTitle); fields.append(annotationDetails);
+    const group = annotationDetails;
+    const writeConversions = (value: ReturnType<typeof readConversions>) => PresentationSettings.saveConversions(view, value);
+    const enabled = toggle(group, "Enabled", `JEL-${view}-ConversionsEnabled`, readConversions().enabled,
+      "Convert supported languages in this view. Off displays original lyrics and stops this view's conversion work; choices are remembered.", "Off");
+    enabled.disabled = presentationReadOnly;
+    const options = document.createElement("fieldset"); options.className = "BL-GroupOptions"; group.append(options);
+    const expand = () => { options.hidden = !enabled.checked; options.disabled = presentationReadOnly || !enabled.checked; refreshStyles(); };
+    checkbox(enabled, value => writeConversions({ ...readConversions(), enabled: value }), () => readConversions().enabled, expand); expand();
     for (const language of PresentationLanguages) {
-      const input = toggle(options, language, `JEL-${view}-${language}`, readProfile().romanizedLanguages[language], "Use alternate text for this language in this view.", "Off");
-      input.disabled = presentationReadOnly; input.setAttribute("aria-label", `${viewTitle} ${language} alternate text`);
-      checkbox(input, value => { const current = readProfile(); PresentationSettings.saveProfile(view, { ...current, romanizedLanguages: { ...current.romanizedLanguages, [language]: value } }); }, () => readProfile().romanizedLanguages[language]);
+      const readChoice = () => readConversions().languages[language];
+      const writeChoice = (patch: Partial<ReturnType<typeof readChoice>>) => { const current = readConversions(); writeConversions({ ...current, languages: { ...current.languages, [language]: { ...current.languages[language], ...patch } } }); };
+      const input = toggle(options, language, `JEL-${view}-${language}`, readChoice().enabled, "Enable this language in this view. Unsupported text remains original.", "Off");
+      input.setAttribute("aria-label", `${viewTitle} ${language} conversion`);
+      const languageFields = document.createElement("fieldset"); languageFields.className = "BL-GroupOptions"; options.append(languageFields);
+      const languageExpand = () => { languageFields.hidden = !input.checked; languageFields.disabled = !input.checked; refreshStyles(); };
+      checkbox(input, value => writeChoice({ enabled: value }), () => readChoice().enabled, languageExpand); languageExpand();
+      const kinds: [string, string][] = language === "Japanese" ? [["romaji", "Romaji"], ["kana", "Kana"], ["furigana", "Furigana"]] : language === "Chinese" ? [["pinyin", "Pinyin"]] : [["romaja", "Romaja"]];
+      const kind = select(languageFields, "Conversion", `JEL-${view}-${language}-Conversion`, kinds, readChoice().kind,
+        language === "Japanese" ? "Kana keeps written kana and particles. Romaji uses pronunciation. Furigana keeps original text with readings attached above kanji." : "Phonetic reading for this language; original text remains while loading or if unavailable.", language === "Japanese" ? "Romaji" : kinds[0][1]);
+      const placements: [string, string][] = [["replace", "Replace"], ["above", "Above"]];
+      if (language === "Japanese") placements.push(["attached", "Above kanji (attached)"]);
+      const placement = select(languageFields, "Placement", `JEL-${view}-${language}-Placement`, placements, readChoice().placement,
+        "Replace changes the displayed main text. Above adds a reading above each real voice. Furigana is always attached to its kanji and cannot replace the original; the previous row placement is remembered.", "Replace");
+      const syncPlacement = () => { const attached = readChoice().kind === "furigana"; placement.value = attached ? "attached" : readChoice().placement; for (const option of placement.options) option.disabled = attached ? option.value !== "attached" : option.value === "attached"; placement.disabled = attached; refreshStyles(); };
+      listen(kind, "change", () => { apply(() => writeChoice({ kind: kind.value as ReturnType<typeof readChoice>["kind"] }), () => { kind.value = readChoice().kind; }); syncPlacement(); });
+      listen(placement, "change", () => { apply(() => writeChoice({ placement: placement.value as "replace" | "above" }), syncPlacement); syncPlacement(); });
+      // Registered below after the shared style rows exist; there is no polling
+      // watcher and detached controls are still protected by apply().
+      placementSyncs.push(syncPlacement);
     }
-    const japanese = select(options, "Japanese text", `JEL-${view}-JapaneseForm`, [["romaji", "Romaji"], ["kana", "Kana"]], readProfile().japaneseForm,
-      "Primary Japanese readings. Original is shown while loading or if unavailable.", "Romaji"); japanese.disabled = presentationReadOnly;
-    listen(japanese, "change", () => apply(() => PresentationSettings.saveProfile(view, { ...readProfile(), japaneseForm: japanese.value as "romaji" | "kana" }), () => { japanese.value = readProfile().japaneseForm; }));
+    const annotationFields = document.createElement("fieldset"); annotationFields.className = "BL-GroupOptions"; options.append(annotationFields);
+    const readAnnotations = () => PresentationSettings.getAnnotations(view);
+    for (const [key, text, minimum, maximum, fallback] of [["secondarySize", "Row size", .25, 1.5, ".6"], ["rubySize", "Ruby size", .25, 1, ".5"], ["gap", "Row gap", 0, 2, ".15 em"], ["spacing", "Letter spacing", -.1, .5, "0 em"], ["opacity", "Opacity", 0, 1, ".8"]] as const) {
+      const styleInput = numeric(annotationFields, text, `JEL-${view}-Reading-${key}`, () => readAnnotations()[key],
+        value => PresentationSettings.saveAnnotations(view, { ...readAnnotations(), [key]: value }),
+        key.endsWith("Size") ? "Relative to this voice's primary font size. Updates layout without requesting new readings." : "Reading style for this view. Spacing and gap use the reading's font size; opacity ranges from 0 to 1. Style changes reuse existing readings.", fallback, minimum, maximum, "0.05");
+      styleRows.set(key, styleInput.closest(".BL-HelpRow") as HTMLElement);
+    }
+    const alignment = select(annotationFields, "Alignment", `JEL-${view}-ReadingAlignment`, [["inherit", "Follow voice"], ["start", "Start"], ["center", "Center"], ["end", "End"]], readAnnotations().alignment,
+      "Secondary row alignment within its voice block; ruby alignment within each original source range. Start and End follow the lyric direction.", "Follow voice");
+    listen(alignment, "change", () => apply(() => PresentationSettings.saveAnnotations(view, { ...readAnnotations(), alignment: alignment.value as "inherit" | "start" | "center" | "end" }), () => { alignment.value = readAnnotations().alignment; }));
+    styleRows.set("alignment", alignment.closest(".BL-HelpRow") as HTMLElement);
+    placementSyncs.forEach(sync => sync());
     if (presentationReadOnly) heading(fields, "Presentation settings require a newer version.", "p");
   }
   heading(content, "Spicy");

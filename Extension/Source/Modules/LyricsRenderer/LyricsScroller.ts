@@ -61,6 +61,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	private MoveQueued = false
 	private LayoutQueued = false
     private PreserveManualGrace = false
+    private AnnotationBlurQueued = false
 
 	// Constructor
 	public constructor(
@@ -99,7 +100,9 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		// transforms on animated spans do not trigger ResizeObserver.
 		for (const group of vocalGroups) resizeObserver.observe(group.GroupContainer)
 
-		// Immediately update our heights
+        this.Maid.Give(() => document.fonts?.removeEventListener("loadingdone", this.AnnotationFontReady));
+
+        // Immediately update our heights
 		this.UpdateLyricHeights()
 
 		// Synced lyrics have more complex interactions so we don't need to apply these to Static lyrics
@@ -119,6 +122,24 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         this.PreserveManualGrace = true
         this.QueueLayoutMeasure()
     }
+    // Async rows and typography changes share the same native resize batch and
+    // existing 750ms user grace. No new timer or observer is needed.
+    private AnnotationFontGeneration = 0
+    private AnnotationFontWatching = false
+    private AnnotationFontReady = () => { this.AnnotationFontGeneration++; this.RefreshAnnotationLayout() }
+    public RefreshAnnotationLayout() {
+        // One global font listener while this view actually has readings. Font
+        // generation invalidates fits even when the named font stack is unchanged.
+        const watching = this.VocalGroups.some(group => group.Vocals.some(vocal => (vocal as SyncedVocals).HasAnnotations?.()))
+        if (watching !== this.AnnotationFontWatching) {
+            this.AnnotationFontWatching = watching
+            if (watching) document.fonts?.addEventListener("loadingdone", this.AnnotationFontReady)
+            else document.fonts?.removeEventListener("loadingdone", this.AnnotationFontReady)
+        }
+        this.PreserveManualGrace = true
+        this.AnnotationBlurQueued = true
+        this.QueueLayoutMeasure()
+    }
     private QueueLayoutMeasure() {
         if (this.LayoutQueued) return
         this.LayoutQueued = true
@@ -127,6 +148,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             const preserve = this.PreserveManualGrace
             if (!this.AutoScrollBlocked) this.PreserveManualGrace = false
             this.UpdateLyricHeights()
+            if (this.AnnotationBlurQueued) { this.AnnotationBlurQueued = false; this.DetermineLyricBlur() }
             if (this.LyricsAreSynced && !(preserve && this.AutoScrollBlocked)) this.MoveToActiveLyrics()
         }), "MeasureLyrics")
     }
@@ -208,7 +230,8 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		// Now update our heights
 		let totalHeight = 0
 		for (const vocalGroup of this.VocalGroups) {
-			const groupHeight = GetTotalElementHeight(vocalGroup.GroupContainer)
+			for (const vocal of vocalGroup.Vocals) (vocal as SyncedVocals).MeasureAnnotations?.(this.AnnotationFontGeneration)
+            const groupHeight = GetTotalElementHeight(vocalGroup.GroupContainer)
 
 			this.GroupDimensions.push(
 				{

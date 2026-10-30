@@ -229,3 +229,46 @@ test('real Japanese dictionary: contextual pronouns, true name suffixes, kana pa
   assert.deepEqual(FuriganaRanges('漢あ漢','ああああ',0,convert),[],'ambiguous anchors omit unsafe ruby');
   assert.deepEqual(FuriganaRanges('漢字','かんじ',2,convert),[{text:'かんじ',start:2,end:4}]);
 });
+
+
+test('unknown written kana converts without changing tokens, source ranges, intervals or non-kana fallback', async () => {
+  const {default:kuromoji}=await import('kuromoji');
+  const {default:Kuroshiro}=await import('@sglkc/kuroshiro');
+  const tokenizer=await new Promise((resolve,reject)=>kuromoji.builder({dicPath:path.resolve('node_modules/kuromoji/dict')}).build((error,value)=>error?reject(error):resolve(value)));
+  const convert=(reading,form)=>form==='kana'?Kuroshiro.Util.kanaToHiragna(reading):Kuroshiro.Util.kanaToRomaji(reading,'hepburn');
+  for(const [text,expected] of [['ツライ','tsurai'],['ホップステップジャンプ','hoppusuteppujampu'],['ソロプレイ','soropurei']]) {
+    // Real unknown dictionary output spans multiple genuine source intervals,
+    // including a silent gap. Conversion must retain their exact interval union.
+    const source=voice([span(text.slice(0,1),1,2),span(text.slice(1),4,5)]);
+    const tokens=tokenizer.tokenize(JapaneseAnalysis(BuildVoiceText(source).text).text),beforeTokens=JSON.stringify(tokens),beforeSource=JSON.stringify(source);
+    assert.equal(tokens.some(token=>token.surface_form===text&&!token.reading&&!token.pronunciation),true,'actual UNKNOWN: '+text);
+    const runs=AlignJapanese(source,tokens,'romaji',convert),kana=AlignJapanese(source,tokens,'kana',convert);
+    assert.equal(runs.map(run=>run.Text).join(''),expected);assert.equal(kana.map(run=>run.Text).join(''),text.replace(/[ァ-ヶ]/gu,c=>String.fromCharCode(c.charCodeAt(0)-0x60)));
+    assert.deepEqual(runs[0].SourceRanges,LayoutVoice(source).flatMap(run=>run.SourceRanges));
+    assert.equal(RunProgress(2,runs[0].Intervals,runs[0].TimingDuration),.5);
+    assert.equal(RunProgress(3,runs[0].Intervals,runs[0].TimingDuration),.5,'real source gap freezes mapped progress');
+    assert.equal(RunProgress(5,runs[0].Intervals,runs[0].TimingDuration),1);
+    assert.equal(JSON.stringify(tokens),beforeTokens);assert.equal(JSON.stringify(source),beforeSource);assert.equal(runs.some(run=>run.Reading),false,'kana fallback invents no kanji ruby');
+  }
+  for(const text of ['カタカナ','コンピューター','君は僕へ','English 😀。','龘','ソロプレイー','ソロプレイはお仕舞いなんだってば']) {
+    const source=voice([span(text,1,5)]),tokens=tokenizer.tokenize(JapaneseAnalysis(text).text);
+    const result=AlignJapanese(source,tokens,'romaji',convert).map(run=>run.Text).join('');
+    if(text==='君は僕へ')assert.equal(result,'kimi wa boku e');
+    else if(text==='ソロプレイはお仕舞いなんだってば')assert.equal(result,'soropurei wa o shimai na n datte ba');
+    else if(text==='English 😀。'||text==='龘')assert.equal(result,text);
+    else assert.equal(result,convert(text,'romaji'));
+  }
+  for(const [text,expected] of [['カ\u3099','ga'],['か\u3099','ga'],['カー','kā'],['ヵ','ka'],['ヶ','ke'],['ゕ','ゕ'],['ゖ','ゖ'],['ゔ','ゔ'],['ヴ','vu'],['ｶﾞ','ｶﾞ'],['ヷ','ヷ'],['ㇰ','ㇰ'],['ー','ー'],['\u3099','\u3099']]) {
+    const surface=text,wanted=expected;
+    const source=voice(surface.length>1?[span(surface.slice(0,1),1,2),span(surface.slice(1),4,5)]:[span(surface,1,5)]),token={surface_form:surface};
+    assert.equal(AlignJapanese(source,[token],'romaji',convert)[0].Text,wanted,'conservative fallback: '+text);
+    assert.equal(token.reading,undefined);assert.equal(BuildVoiceText(source).text,surface);
+  }
+  // Real tokenizer splits decomposed dakuten inside a grapheme. Preserve the
+  // preexisting safe rejection rather than forcing an unsafe source boundary.
+  const decomposed=voice([span('カ\u3099',1,5)]);
+  const exact=BuildVoiceText(decomposed).text;
+  assert.throws(()=>AlignJapanese(decomposed,tokenizer.tokenize(exact),'romaji',convert),/Unsafe token cluster boundary/);
+  const known=voice([span('ツライ',1,5)]);
+  assert.equal(AlignJapanese(known,[{surface_form:'ツライ',reading:'ヨミ',pronunciation:'ハツオン'}],'romaji',convert)[0].Text,'hatsuon','existing dictionary pronunciation remains authoritative');
+});

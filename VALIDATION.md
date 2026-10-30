@@ -1,5 +1,39 @@
 # Validation
 
+## Romaji and reading opacity — 5.1.0-local.20, 2026-10-30
+
+- Restored local.16 / `5fd80ad` is the baseline. Only the two requested corrections
+  were reapplied: written-kana Romaji fallback and independent reading opacity.
+  The later ruby animation/layout candidates and Thai emphasis are outside this build.
+- Full suite: **107/107 passed**, no failures/skips. Standalone Original Classic
+  comparison with accepted local.13: **1/1 passed**. Independent real-dictionary
+  comparison with `5fd80ad`: **9 cases passed**, preserving all non-text run
+  metadata, tokens, source and Kana mappings. Complete decomposed kana input uses
+  a private NFC copy; unsafe tokenizer boundaries still fall back safely.
+- Independent Chromium opacity check: **108 scenarios / 444 roots passed** across
+  source/reading roles, timing and real forced hover. The tracked regression also
+  covers inherited/custom policies, all highlight choices, opacity 0/.3/1, Word,
+  true/forced Line, profile changes and independently enabled blur. Hover preserves
+  the selected opacity; reading Highlight Off remains uniform. Original/Replace
+  behavior is preserved. These are controlled fixtures, not native Spotify proof.
+- Fresh build succeeded: **27.1 MiB, 9 stylesheets**. All four generated aliases
+  passed embedded-dictionary checks and have SHA256
+  `1DE798C1BC4C138C79675A58CB0DA74BC95B0AA8A75F327A7FF4B326A85521EB`.
+  The installation-turn sandboxed rebuilds hit dictionary-integrity failures with
+  Node20 and Node24 before replacing outputs. The unchanged build passed outside
+  the sandbox with bundled Node24 and reproduced this exact hash. The intermittent
+  failure's cause remains unproven; no build-system or dependency edits were made.
+- Installed manually at the user's request, with backups of the previous active
+  source/runtime files. Both Spicetify extension directories and Spotify's loaded
+  extension file match the local.20 hash above. The existing installer had updated
+  the default Local directory while named resolution preferred a stale Roaming
+  copy. The user stopped installer work; all attempted installer edits were undone.
+- After restarting Spotify, native DevTools executed
+  `globalThis.JustEnoughLyrics?.version` and returned `5.1.0-local.20`. Temporary
+  DevTools was closed. Client config plus five checked Comfy/unrelated files retain
+  exact pre-install hashes. No play/pause/seek or preference changes were issued.
+  Manual visual/option-combination checks remain for the user. No commit or push.
+
 ## Native review corrections — 5.1.0-local.16, completed 2026-10-29
 
 - Final local.16 full suite: **105/105 passed**, zero failures/skips. Independent

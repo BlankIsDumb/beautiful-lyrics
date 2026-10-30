@@ -68,6 +68,15 @@ export function AlignJapanese(voice: LyricVoice, tokens: readonly JapaneseToken[
     if (!ranges.length && /\S/u.test(token.surface_form)) throw new Error("Token has no source range");
     let orthographic = token.reading;
     let phonetic = token.pronunciation || orthographic;
+    if (form === "romaji" && !phonetic) {
+      // UNKNOWN dictionary entries can omit both readings even for written kana.
+      // Compose dakuten only in this private conversion input: offsets/surfaces
+      // and analyzer tokens remain exact. The utility supports these fullwidth
+      // kana (excluding unsupported ゔ/ゕ/ゖ); other widths/extended kana
+      // and unknown kanji stay unguessed.
+      const writtenKana = surface.normalize("NFC");
+      if (/^[ぁ-んァ-ヶー]+$/u.test(writtenKana) && /[ぁ-んァ-ヶ]/u.test(writtenKana)) phonetic = writtenKana;
+    }
     const next = tokens[tokenIndex + 1];
     // Restrict the known temporal-noun suffix error to pronoun grammar. A name
     // suffix or unknown placeholder is not evidence for a global 君 replacement.

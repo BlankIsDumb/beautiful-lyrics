@@ -8,9 +8,11 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local build: **5.1.0-local.16**. It corrects conversion-control
-visibility and mixed kana/kanji furigana baseline defects found in the installed
-local.15 build. Build, regression tests and native Windows Spotify checks passed;
+Current local build: **5.1.0-local.20**. Based on the restored local.16 checkpoint,
+it converts unknown written-kana tokens in Romaji mode and makes reading opacity
+respect its own highlight policy, including hover. Regression tests, independent
+browser checks and the local build passed. Installed manually at the user's
+request; native Spotify confirms local.20. Manual visual checks are pending;
 see VALIDATION.md for the evidence and its limits.
 
 ## What works now

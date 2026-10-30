@@ -5,7 +5,7 @@ export type AnnotationLanguage = "Chinese" | "Japanese" | "Korean";
 export type AnnotationOptions = Readonly<{ languages: readonly AnnotationLanguage[]; japaneseForm: "romaji" | "kana" }>;
 export type AnnotationResult = ReadonlyMap<string, readonly DisplayRun[]>;
 export type VoiceConverter = (voice: LyricVoice, language: AnnotationLanguage, options: AnnotationOptions, signal: AbortSignal) => Promise<readonly DisplayRun[]>;
-const converterVersion = "source-ranges-3-conversions-v2";
+const converterVersion = "source-ranges-4-written-kana";
 export const VoiceLanguage = (voice: LyricVoice, primary?: string): AnnotationLanguage | undefined => {
   const text = voice.spans.map(span => span.Text).join("");
   if (/[ぁ-んァ-ン]/u.test(text) || (primary === "jpn" && /\p{Script=Han}/u.test(text))) return "Japanese";

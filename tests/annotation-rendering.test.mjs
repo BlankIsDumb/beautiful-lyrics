@@ -184,3 +184,112 @@ test('host border-box native backing tail and large atomic ruby retain horizonta
     const result=await runFocusedFixture(chrome,file,path.join(directory,'profile'));assert.equal(result,'RUBY_NATIVE_FIXTURE_PASS',result);
   }finally{assert.ok(directory.startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(directory).startsWith('jel-ruby-native-'));await rm(directory,{recursive:true,force:true,maxRetries:3})}
 });
+
+
+test('reading opacity multiplies its own role/highlight policy across timing, real hover and independent profiles', {skip:!chrome},async()=>{
+  const {code,css}=await buildVocalFixture();
+  const script=`(()=>{${code}
+    const {VocalController,NormalizeLyrics,NormalizeAnnotations,AlignJapanese,ClassicRendering}=fixtureModule;
+    const check=(ok,message)=>{if(!ok)throw Error(message)},owned=[],cases=[];
+    const lyrics=document.createElement('div');lyrics.className='Lyrics';document.body.append(lyrics);
+    const part={StartTime:1,EndTime:4,Syllables:[{Text:'漢字',StartTime:1,EndTime:2,IsPartOfWord:true},{Text:'かな',StartTime:3,EndTime:4,IsPartOfWord:false}]};
+    const makeDoc=line=>NormalizeLyrics({Type:'Syllable',StartTime:1,EndTime:4,Source:{HasWordSync:!line},Content:[{Type:'Vocal',Lead:part,Background:[part]}]});
+    const docs={Word:makeDoc(false),Line:makeDoc(true)};
+    check(docs.Word.precision==='word'&&docs.Line.precision==='line','real source precision cases');
+    const profile=(highlight,detail='auto',blur=false)=>({...ClassicRendering,highlight,detail,blur,scale:false,verticalMotion:false,glow:false,emphasis:false});
+    const tokens=[{surface_form:'漢字',reading:'カンジ'},{surface_form:'かな',reading:'カナ'}];
+    const convert=(reading,form)=>form==='kana'?({カンジ:'かんじ',カナ:'かな'}[reading]||reading):({カンジ:'kanji',カナ:'kana'}[reading]||reading);
+    // The production Above/Replace adapters must both consume the absent-reading
+    // fallback. Actual dictionary + utility behavior is covered in the pure test;
+    // this small converter map isolates the real component projection wiring.
+    for(const mode of ['above','replace']){
+      const part={StartTime:1,EndTime:5,Syllables:[{Text:'ツ',StartTime:1,EndTime:2,IsPartOfWord:true},{Text:'ライ',StartTime:4,EndTime:5,IsPartOfWord:true}]};
+      const document=NormalizeLyrics({Type:'Syllable',StartTime:1,EndTime:5,Content:[{Type:'Vocal',Lead:part,Background:[part]}]});
+      const group=globalThis.document.createElement('button');group.className='VocalsGroup';lyrics.append(group);
+      for(const voice of document.groups[0].voices){
+        const controller=new VocalController(group,document,voice,profile('off'));owned.push(controller);
+        const runs=AlignJapanese(voice,[{surface_form:'ツライ'}],'romaji',reading=>reading==='ツライ'?'tsurai':reading);
+        if(mode==='above')controller.SetAnnotations(NormalizeAnnotations(),runs,undefined,0);else controller.SetProjection(runs,0);
+      }
+      const displayed=[...group.querySelectorAll(mode==='above'?'.SecondaryText':'.Vocals')];
+      check(displayed.length===2&&displayed.every(node=>node.textContent==='tsurai'),'unknown kana fallback reaches '+mode+' for lead/backing');
+      group.remove();
+    }
+    const policies=[...['classic','progressive','segment','off'].map(highlight=>({primary:highlight,inherit:true,reading:highlight})),...['classic','progressive','segment'].map(reading=>({primary:'off',inherit:false,reading})),{primary:'classic',inherit:false,reading:'off'}];
+    const addCase=(mode,precision,policy,opacity)=>{
+      const document=precision==='Line'?docs.Line:docs.Word;
+      const primary=profile(policy.primary,precision==='ForcedLine'?'line':'auto');
+      const group=globalThis.document.createElement('button');group.className='VocalsGroup';lyrics.append(group);
+      const entry={mode,precision,policy,opacity,primary,group,controllers:[]};
+      for(const voice of document.groups[0].voices){
+        const controller=new VocalController(group,document,voice,primary);owned.push(controller);entry.controllers.push(controller);
+        const projected=AlignJapanese(voice,tokens,mode.includes('romaji')?'romaji':'kana',convert);
+        const settings=NormalizeAnnotations({opacity});
+        if(!policy.inherit)for(const sourceCase of ['Word','Line'])settings.cases[sourceCase]={inherit:false,effects:profile(policy.reading,'auto',true)};
+        if(mode==='furigana')controller.SetAnnotations(settings,undefined,projected,0);
+        else if(mode.startsWith('above'))controller.SetAnnotations(settings,projected,undefined,0);
+        else if(mode.startsWith('replace'))controller.SetProjection(projected,0);
+        controller.Animate(0,0,true);controller.SetBlur(2);
+      }
+      cases.push(entry);
+    };
+    for(const precision of ['Word','ForcedLine','Line']){
+      for(const mode of ['furigana','above-kana','above-romaji'])for(const opacity of [0,.3,1])for(const policy of policies)addCase(mode,precision,policy,opacity);
+      // Ordinary Original/Replace retain their existing alpha and hover policy.
+      for(const mode of ['original','replace-kana','replace-romaji'])for(const highlight of ['classic','off'])addCase(mode,precision,{primary:highlight,inherit:true,reading:highlight},.3);
+    }
+    const factor=(role,state,highlight,hover)=>{
+      if(highlight==='off'||hover||state==='active')return role==='lead'?1:.8;
+      if(state==='idle')return role==='lead'?.51:.51*.53921568627;
+      return role==='lead'?.497:.497*.6690140845;
+    };
+    const near=(actual,expected,message)=>check(Math.abs(actual-expected)<.00001,message+' expected '+expected+' got '+actual);
+    const validate=(state,hover)=>{
+      for(const entry of cases){
+        const context=[entry.mode,entry.precision,entry.policy.primary,entry.policy.reading,entry.opacity,state,hover].join('/');
+        check(entry.group.matches(':hover')===hover,'real CSS hover matching '+context);
+        for(const node of entry.group.querySelectorAll('.Vocals')){
+          const reading=node.classList.contains('AnnotationText'),role=node.classList.contains('Background')?'backing':'lead';
+          const highlight=reading?entry.policy.reading:entry.policy.primary;
+          const style=getComputedStyle(node),expected=factor(role,state,highlight,hover)*(reading?entry.opacity:1);
+          near(Number(style.opacity),expected,'own opacity '+role+'/'+context);
+          check(node.getAttribute('data-jel-highlight')===highlight,'independent profile attribute '+context);
+          let effective=1;for(let parent=node;parent;parent=parent.parentElement)effective*=Number(getComputedStyle(parent).opacity);
+          near(effective,expected,'neutral wrapper does not multiply primary opacity '+context);
+          if(reading&&highlight==='off'&&!entry.policy.inherit){check(node.getAttribute('data-jel-blur')==='on'&&style.filter===(hover&&role==='lead'?'blur(0px)':'blur(2px)'),'independent blur remains enabled; existing lead-hover blur clearing is preserved '+context);check(getComputedStyle(node.querySelector('.Synced')).backgroundImage==='none','Highlight Off solid paint '+context);}
+        }
+      }
+    };
+    globalThis.opacityFixture={take(state,time,hover){for(const entry of cases)entry.controllers.forEach(controller=>controller.Animate(time,0,true));validate(state,hover)},switchProfiles(){
+      for(const entry of cases){
+        const before=[...entry.group.querySelectorAll('.Synced')];
+        entry.policy={...entry.policy,primary:entry.policy.primary==='off'?'classic':'off'};
+        if(entry.policy.inherit)entry.policy.reading=entry.policy.primary;
+        entry.primary={...entry.primary,highlight:entry.policy.primary};entry.controllers.forEach(controller=>controller.SetRendering(entry.primary,0));
+        check([...entry.group.querySelectorAll('.Synced')].every((node,index)=>node===before[index]),'profile switch retains text nodes '+entry.mode);
+      }
+      validate('idle',false);
+    },finish(){owned.forEach(controller=>controller.Destroy());jelTestComplete('READING_OPACITY_PASS')}};
+  })();`;
+  const directory=path.resolve(await mkdtemp(path.join(tmpdir(),'jel-opacity-')));
+  try{
+    const file=path.join(directory,'fixture.html');
+    // Remove transition interpolation only in this fixture, so each computed
+    // style assertion checks its exact state target rather than wall-clock easing.
+    await writeFile(file,`<!doctype html><body><style>*{box-sizing:border-box}${css}.Lyrics{width:700px;height:auto;--minimum-lyrics-size:24px;--maximum-lyrics-size:24px}.Vocals{transition:none!important}</style><script>${script.replaceAll('</script','<\/script')}</script>`);
+    const result=await runFocusedFixture(chrome,file,path.join(directory,'profile'),async command=>{
+      const evaluate=async expression=>{const result=await command('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description||result.exceptionDetails.text);return result.result?.value};
+      await evaluate('new Promise((resolve,reject)=>{let count=0;function ready(){if(globalThis.opacityFixture)return resolve(true);if(++count>120)return reject(Error("opacity fixture not initialized"));requestAnimationFrame(ready)}ready()})');
+      await command('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0});
+      await command('DOM.enable');await command('CSS.enable');
+      const {root}=await command('DOM.getDocument');const {nodeIds}=await command('DOM.querySelectorAll',{nodeId:root.nodeId,selector:'.VocalsGroup'});
+      for(const [state,time] of [['idle',0],['active',1.5],['sung',5]])await evaluate(`opacityFixture.take(${JSON.stringify(state)},${time},false)`);
+      await Promise.all(nodeIds.map(nodeId=>command('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:['hover']})));
+      for(const [state,time] of [['idle',0],['active',1.5],['sung',5]])await evaluate(`opacityFixture.take(${JSON.stringify(state)},${time},true)`);
+      await Promise.all(nodeIds.map(nodeId=>command('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:[]})));
+      await evaluate('opacityFixture.switchProfiles()');await evaluate('opacityFixture.take("active",1.5,false)');await evaluate('opacityFixture.take("sung",5,false)');
+      await evaluate('opacityFixture.finish()');
+    });
+    assert.equal(result,'READING_OPACITY_PASS',result);
+  }finally{assert.ok(directory.startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(directory).startsWith('jel-opacity-'));await rm(directory,{recursive:true,force:true,maxRetries:3})}
+});

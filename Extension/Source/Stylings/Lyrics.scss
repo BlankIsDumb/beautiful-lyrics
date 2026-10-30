@@ -505,7 +505,6 @@
 }
 .Lyrics .AnnotationText.Vocals {
   letter-spacing: var(--annotation-spacing, 0em);
-  opacity: var(--annotation-opacity, .8) !important;
   font-weight: 500 !important;
 }
 .Lyrics .SecondaryText.Vocals {
@@ -537,3 +536,27 @@
 [data-annotation-align="start"] .RubyVocals ruby, .RubyVocals[data-annotation-align="start"] ruby { align-items: flex-start; }
 [data-annotation-align="center"] .RubyVocals ruby, .RubyVocals[data-annotation-align="center"] ruby { align-items: center; }
 [data-annotation-align="end"] .RubyVocals ruby, .RubyVocals[data-annotation-align="end"] ruby { align-items: flex-end; }
+
+// Reading opacity scales this root's OWN effective highlight/voice policy.
+// Neutral row/ruby owners never multiply primary alpha into the reading. Keep
+// this annotation-only selector stronger than the legacy group-hover opacity
+// rule, so hover cannot turn a configured .3 (or zero) into full opacity.
+.Lyrics .VocalsGroup .AnnotationText.Vocals:is(.Lead, .Background) {
+  opacity: calc(var(--annotation-opacity, .8) * var(--annotation-state-opacity)) !important;
+}
+.Lyrics .AnnotationText.Vocals {
+  --annotation-state-opacity: var(--vocal-idle-opacity);
+  &.Background { --annotation-state-opacity: var(--background-idle-opacity); }
+  &.Sung {
+    --annotation-state-opacity: var(--vocal-sung-opacity);
+    &.Background { --annotation-state-opacity: var(--background-sung-opacity); }
+  }
+  &.Active, &[data-jel-highlight="off"] {
+    --annotation-state-opacity: var(--vocal-active-opacity);
+    &.Background { --annotation-state-opacity: var(--background-active-opacity); }
+  }
+}
+.Lyrics .VocalsGroup:is(button):hover .AnnotationText.Vocals:not([data-jel-highlight="off"]) {
+  --annotation-state-opacity: var(--vocal-active-opacity);
+  &.Background { --annotation-state-opacity: var(--background-active-opacity); }
+}

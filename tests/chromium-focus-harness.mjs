@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 // OS focus is nondeterministic when Node launches several browser tests at once.
 // The page still uses real element.focus()/trusted native focus events; no fake
 // FocusEvent is dispatched. A pipe works on supported Node20 without WebSocket.
-export async function runFocusedFixture(chrome, file, profile) {
+export async function runFocusedFixture(chrome, file, profile, hook) {
   const child = spawn(chrome, ['--headless=new', '--disable-gpu', '--disable-background-networking',
     '--no-first-run', '--no-default-browser-check', '--remote-debugging-pipe', '--user-data-dir=' + profile, 'about:blank'],
   {stdio:['ignore','ignore','pipe','pipe','pipe'],windowsHide:true});
@@ -63,6 +63,8 @@ export async function runFocusedFixture(chrome, file, profile) {
     // leave an unhandled pending completion promise during cleanup.
     const observed=completed.then(value=>({value}),error=>({error}));
     await send('Page.navigate',{url:pathToFileURL(file).href},sessionId);
+    // Optional owned-target protocol hook for tests needing real pseudo states.
+    if(hook) await hook((method,params={})=>send(method,params,sessionId));
     const result=await observed;
     if(result.error)throw result.error;
     return result.value;

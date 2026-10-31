@@ -97,15 +97,16 @@ test('grouped union progress preserves overlap, real gaps and zero-duration even
   assert.equal(RunProgress(2, point.Intervals, point.TimingDuration), 1);
 });
 
-test('Japanese sequential mapping clips ranges, preserves punctuation/surrogates/gaps and groups timing honestly', () => {
+test('Japanese token splits reconcile canonical owners and preserve punctuation, clusters and real gaps', () => {
   const source = voice([span('猫と', 0, 1), span('犬', 3, 4, false), span('😀。', 5, 6, false)]);
   const tokens = [{ surface_form: '猫', reading: 'ネコ', word_position: 99 }, { surface_form: 'と', reading: 'ト', word_position: 1 },
     { surface_form: '犬', reading: 'イヌ' }, { surface_form: ' ' }, { surface_form: '😀' }, { surface_form: '。' }];
   const output = AlignJapanese(source, tokens, 'kana', reading => ({ ネコ: 'ねこ', ト: 'と', イヌ: 'いぬ' })[reading]);
   assert.equal(output.map(run => run.Text).join(''), 'ねこといぬ 😀。');
-  assert.deepEqual(output[0].SourceRanges.map(r => [r.start, r.end]), [[0, 1]]);
-  assert.deepEqual(output[1].SourceRanges.map(r => [r.start, r.end]), [[1, 2]]);
-  assert.equal(output.every(run => run.SourceRanges.length > 0 && run.Precision === 'grouped' && !run.SafeLetters), true);
+  assert.deepEqual(output[0].SourceRanges.map(r => [r.start, r.end]), [[0, 2]]);
+  assert.equal(output.length, 3, 'token fragments share one continuous source-owner paint box');
+  assert.equal(output.every(run => run.SourceRanges.length > 0 && run.Precision === 'grouped' && run.SafeLetters), true);
+  assert.deepEqual(output.map(run => run.SourceOwners), LayoutVoice(source).map(run => run.SourceOwners));
   const crossing = AlignJapanese(voice([span('漢', 0, 1), span('字', 3, 4)]), [{ surface_form: '漢字', reading: 'カンジ' }], 'romaji', () => 'kanji');
   assert.equal(crossing[0].SourceRanges.length, 2);
   assert.equal(RunProgress(2, crossing[0].Intervals, crossing[0].TimingDuration), .5);
@@ -190,7 +191,7 @@ test('real local Japanese tokenizer readings align across punctuation and emoji 
   assert.deepEqual(readings.map(reading=>[exactSource.slice(reading.start,reading.end),reading.text]),[['私','わたし'],['猫','ねこ']]);
   for(const run of romaji.filter(run=>run.Reading)) {
     assert.equal(run.AnnotationDerived,true);assert.equal(run.Precision,'grouped');
-    assert.ok(run.SourceRanges.every(range=>range.start>=run.Reading.start&&range.end<=run.Reading.end));
+    assert.ok(run.SourceRanges.some(range=>range.start<=run.Reading.start&&range.end>=run.Reading.end));
   }
 });
 
@@ -215,16 +216,17 @@ test('real Japanese dictionary: contextual pronouns, true name suffixes, kana pa
   const util = imported.Util;
   const convert = (reading, form) => form === 'kana' ? util.kanaToHiragna(reading) : util.kanaToRomaji(reading, 'hepburn');
   const project = (text, form='kana') => AlignJapanese(voice([span(text,1,5)]), tokenizer.tokenize(JapaneseAnalysis(text).text), form, convert);
+  const readings = runs => runs.flatMap(run => run.Readings || []);
   for (const text of ['君が僕に零した','あの夜君が僕に零した','(君が零した)','（君が零した）']) {
-    const runs=project(text); assert.equal(runs.find(run=>run.Reading?.start===text.indexOf('君')).Reading.text,'きみ',text);
+    const runs=project(text); assert.equal(readings(runs).find(reading=>reading.start===text.indexOf('君')).text,'きみ',text);
     assert.equal(runs.map(run=>run.Text).join('').includes('くん'),false,text);
   }
-  for (const text of ['田中君が','山田君','(田中君が)','朝日君が']) assert.equal(project(text).find(run=>run.Reading?.start===text.indexOf('君')).Reading.text,'くん',text);
-  assert.equal(project('〇〇君').find(run=>run.Reading?.text==='きみ')?.Reading.text,'きみ','ambiguous placeholder retains analyzer reading');
+  for (const text of ['田中君が','山田君','(田中君が)','朝日君が']) assert.equal(readings(project(text)).find(reading=>reading.start===text.indexOf('君')).text,'くん',text);
+  assert.equal(readings(project('〇〇君')).find(reading=>reading.text==='きみ')?.text,'きみ','ambiguous placeholder retains analyzer reading');
   assert.equal(project('君は僕へ').map(run=>run.Text).join(''),'きみはぼくへ');
   assert.equal(project('君は僕へ','romaji').map(run=>run.Text).join(''),'kimi wa boku e');
-  const wrapped=project('(君が零した)'); assert.equal(wrapped[0].Text,'(');assert.equal(wrapped.at(-1).Text,')');
-  const koboshi=wrapped.find(run=>run.Text==='こぼし');assert.deepEqual(koboshi.Readings,[{text:'こぼ',start:3,end:4}]);
+  const wrapped=project('(君が零した)'); assert.equal(wrapped.map(run=>run.Text).join(''),'(きみがこぼした)');
+  assert.ok(readings(wrapped).some(reading=>reading.text==='こぼ'&&reading.start===3&&reading.end===4));
   assert.deepEqual(FuriganaRanges('漢あ漢あ漢あ漢あ漢い','あ'.repeat(100),0,convert),[],'adversarial unmatched kana anchors terminate safely');
   assert.deepEqual(FuriganaRanges('漢あ漢','ああああ',0,convert),[],'ambiguous anchors omit unsafe ruby');
   assert.deepEqual(FuriganaRanges('漢字','かんじ',2,convert),[{text:'かんじ',start:2,end:4}]);

@@ -1,6 +1,6 @@
 import type { LyricVoice } from "./LyricDocument.ts";
 import type { AnnotationLanguage, AnnotationOptions } from "./AnnotationService.ts";
-import { BuildVoiceText, CreateDisplayRun, LayoutVoice, type DisplayRun } from "./TextLayout.ts";
+import { BuildVoiceText, CreateDisplayRun, LayoutVoice, SafeLetterAnimation, type DisplayRun } from "./TextLayout.ts";
 
 export type JapaneseToken = { surface_form: string; reading?: string; pronunciation?: string; pos?: string; pos_detail_1?: string; pos_detail_2?: string; pos_detail_3?: string };
 // The analyzer and dictionary are shared across options/jobs. Failed startup can
@@ -97,9 +97,6 @@ export function AlignJapanese(voice: LyricVoice, tokens: readonly JapaneseToken[
       run.Readings = FuriganaRanges(surface, convert(orthographic, "kana"), start, text => convert(text, "kana"));
       run.Reading = run.Readings[0];
     }
-    // A reading inherits a token's source interval union, not fabricated phoneme
-    // timings. No independent character emphasis on annotation mappings.
-    run.SafeLetters = false;
     run.Precision = "grouped";
     if (form === "romaji" && output.length && !pendingGap && !gap && /\S$/u.test(output[output.length - 1].Text) && /^\p{Letter}/u.test(text)) output[output.length - 1].Text += " ";
     output.push(run);
@@ -111,7 +108,38 @@ export function AlignJapanese(voice: LyricVoice, tokens: readonly JapaneseToken[
   if (output.length) output[output.length - 1].Text += pendingGap + tail;
   else if (source.text.trim()) throw new Error("No tokens");
   else return LayoutVoice(voice);
-  return output;
+  return ReconcileSourceOwners(voice, output);
+}
+
+// Token boundaries describe spelling, not acoustic events. Connected overlaps
+// reconcile split tokens back to ONE source paint box. A token crossing owners
+// cannot be split honestly, so retain its complete display and exact interval
+// union as an explicit grouped fallback. No proportional timestamps are made.
+export function ReconcileSourceOwners(voice: LyricVoice, tokens: readonly DisplayRun[]): readonly DisplayRun[] {
+  const owners = LayoutVoice(voice), result: DisplayRun[] = [];
+  const bySpan = new Map(owners.flatMap((owner, index) => owner.SourceRanges.map(range => [range.spanId, index] as const)));
+  const tokenOwners = tokens.map(token => token.SourceRanges.map(range => bySpan.get(range.spanId)!).filter(index => index !== undefined));
+  let first = 0;
+  while (first < tokens.length) {
+    let last = first, ownerEnd = -1;
+    const ownerStart = Math.min(...tokenOwners[first]);
+    if (!Number.isFinite(ownerStart)) throw Error("Conversion has no source owner");
+    for (let index = first; index <= last; index++) {
+      ownerEnd = Math.max(ownerEnd, ...tokenOwners[index]);
+      // Sequential tokenization makes connected components contiguous. Extend
+      // through all remaining tokens touching an owner already in this component.
+      while (last + 1 < tokens.length && tokenOwners[last + 1].some(owner => owner >= ownerStart && owner <= ownerEnd)) last++;
+    }
+    const selected = owners.slice(ownerStart, ownerEnd + 1), pieces = tokens.slice(first, last + 1);
+    const run = CreateDisplayRun(pieces.map(piece => piece.Text).join(""), selected.flatMap(owner => owner.SourceRanges), false);
+    run.SourceOwners = selected.flatMap(owner => owner.SourceOwners || []);
+    run.AnnotationDerived = true; run.ExplicitSpacing = true;
+    run.Precision = "grouped";
+    run.Readings = pieces.flatMap(piece => piece.Readings || (piece.Reading ? [piece.Reading] : []));
+    run.Reading = run.Readings[0];
+    result.push(run); first = last + 1;
+  }
+  return result;
 }
 
 export async function ConvertVoice(voice: LyricVoice, language: AnnotationLanguage, options: AnnotationOptions, signal: AbortSignal): Promise<readonly DisplayRun[]> {
@@ -144,7 +172,7 @@ export async function ConvertVoice(voice: LyricVoice, language: AnnotationLangua
       text = aromanize(original.Text, "RevisedRomanizationTransliteration");
     }
     if (signal.aborted) return [];
-    result.push({ ...original, Text: text, SafeLetters: false, Precision: "grouped", AnnotationDerived: true });
+    result.push({ ...original, Text: text, SafeLetters: SafeLetterAnimation(text), Precision: "grouped", AnnotationDerived: true });
   }
   return result;
 }

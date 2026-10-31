@@ -106,7 +106,7 @@ export default class LyricsRenderer implements Giveable {
                 groupStarts.push(Math.min(...group.voices.map(voice => voice.sourceInterval?.start ?? voice.start)))
                 for (const voice of group.voices) {
                     const base = LayoutVoice(voice)
-                    const vocal = this.Maid.Give(new VocalController(groupContainer, lyricDocument, voice, rendering, counters, base))
+                    const vocal = this.Maid.Give(new VocalController(groupContainer, lyricDocument, voice, rendering, counters, base, () => lyricTime()))
                     bind(voice, vocal, base)
                     groupVocals.push(vocal); vocals.push(vocal); visuals.set(voice.id, vocal)
                     if (lyricDocument.type !== "Static") {
@@ -164,6 +164,7 @@ export default class LyricsRenderer implements Giveable {
             updatePrecision()
             const time = lyricTime()
             for (const vocal of vocals) vocal.SetRendering(rendering, time)
+            if (vocals.some(vocal => vocal.HasAnnotations())) scroller.RefreshAnnotationLayout()
             scroller.SetBlurEnabled(vocals.some(vocal => vocal.HasBlur()))
             scheduler.refresh()
         }))

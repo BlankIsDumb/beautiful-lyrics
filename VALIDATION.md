@@ -1,5 +1,126 @@
 # Validation
 
+## Ruby visual-row spacing — 5.1.0-local.22, 2026-10-31
+
+- Replaces uniform wrapped Line/Static leading with one reusable empty layout
+  exclusion inside the existing source paint owner. Only actual annotated visual
+  rows receive additional clearance; first-row padding and existing blank-line
+  space are handled separately. Original source text nodes, animation ownership,
+  source timing and springs remain intact. The Word layout and paint-containment
+  policy are unchanged.
+- Independent density checks compare against untouched Original typography:
+  **432 cases**, covering first-only/interior/sparse/dense readings, explicit and
+  blank BR rows, fonts 18/29.6/42/56 px, actual wrap-threshold changes, both
+  directions/opposite alignment, true Line, forced Line and Static sources.
+  No candidate leading is copied into the density reference.
+- Fractional neutral-owner width participates in the layout cache key. A real
+  same-layer 343.4→343.7 px resize crosses a wrap while rounded `clientWidth`
+  remains identical. Focused checks also cover warm primary position/velocity,
+  spacer reuse, font/profile/source invalidation, unsafe/failure cleanup, Off and
+  disposal. Prior conversion, opacity, actual primary-paint and batched-layout
+  regressions pass in the focused runs. No per-frame geometry is introduced.
+- **Glyph clipping is unfixed and deferred by explicit user instruction.** The
+  user reports it across viewers. Clipping investigation stopped; this spacing
+  patch does not claim a cause or relax paint containment. The build is applied;
+  user manual testing is next.
+- Final suite: **112/112**, zero failures/skips, including the 432-case density
+  matrix. Independent accepted local.13 Original Classic gate: **1/1**; opacity:
+  **108 scenarios / 396 roots**.
+- Paired GPU Line/forced-Line/Static comparison: 80 voices / 320 readings,
+  10 cases (five profiles × two versions). Playback geometry reads remain zero;
+  local.22 active animation JS p95 is at most **0.2 ms**. Classic rendered
+  frame-gap p95 is **16.6–19.2 ms** for local.22 versus **20.7–22.5 ms** for .21.
+  Explicit full-song layout maxima increase to **47.3–100 ms** versus
+  **31.7–48.7 ms**; both versions produce 13 batches and zero extra idle batches.
+  Mount/toggle timings are noisy. This is a measured tradeoff, not free performance
+  or proof of native Spotify FPS. Cleanup after GC returns to eight nodes / one
+  listener for both versions.
+- A broader current 32-configuration run plus a full-view case with real
+  converters passes structural invariants, with zero playback geometry and zero
+  settled work. Wall times were worse even for
+  unchanged Above paths compared with an earlier run; machine/load variation
+  prevents treating that unpaired difference as a causal performance result.
+- Build: **27.1 MiB / 9 stylesheets**, dictionary guards pass and canonical
+  `node --check` passes. All four aliases and all three installed copies match
+  SHA256 `A271DEED4250811CEC174A437BDC0D9D134D7AC81EC94552DC6C1B2796EA67E4`.
+  Config plus five checked Comfy/unrelated files remain unchanged. A staged,
+  hash-verified apply and rollback backup are recorded in private evidence.
+- Spotify restart was issued. The final native version-console attempt was
+  interrupted before execution, so **no mounted local.22 API proof or native
+  visual pass is claimed**. Source/build/apply are complete; manual validation and
+  the deferred clipping report remain open. Based on beta `b21c976`;
+  no push. The local.21 results below are historical.
+
+## Shared conversion animation — 5.1.0-local.21, 2026-10-31
+
+- Based on `b21c976` / local.20. Japanese Romaji/Kana fragments reconcile to
+  canonical source animation owners; Chinese Pinyin and Korean Romaja retain
+  their existing source units. Truly ambiguous merged tokens keep a complete
+  grouped interval union, including real gaps/overlaps/points. No phoneme times
+  are invented. Converter identity is `source-ranges-5-source-owners`.
+- Reading arrival/removal no longer snaps primary springs. Compatible replacement
+  owners retain numeric position/velocity; hidden canonical effects advance and
+  settle through grouped fallback. Safe selected emphasis works for converted
+  text and inherited/custom Word readings. Disabled/disposing effects release
+  their mounted and cached resources. The opacity and written-kana fixes survive.
+- Attached readings now occupy a neutral layer over intact primary DOM. Their
+  width does not widen source spacing. Compact clearance, safe overhang/fit,
+  cached natural metrics and whole-song measurement barriers replace fragmented
+  source renderers. Width/font/emphasis changes invalidate the right metrics;
+  playback does no geometry, alignment or conversion work.
+- Final suite: **111/111**, zero failures/skips. Independent accepted local.13
+  Original Classic gate: **1/1**. Independent opacity/highlight/hover matrix:
+  **108 scenarios / 396 roots**. Tests include actual primary PNG equality,
+  numeric spring continuity, async/toggles/seeks, source gaps/points/overlap,
+  real Pinyin/Romaja and Japanese dictionary outputs, Word/forced-Line/true-Line/
+  Static, lead/backing, narrow/aligned text, overhang/density/fit, font/cache
+  invalidation, cleanup and no disabled-effect work.
+- Broad serial performance comparison: **64 configurations**, 80 voices each,
+  real local converters/controllers/scheduler/scroller, synthetic provider times.
+  Separate-process cold converter checks avoid warmed-library comparisons.
+  Minimal allocates no letters/springs and does no effect work. Steady paused/
+  idle work stops; playback geometry/clone reads are zero. After churn and GC,
+  DOM nodes and event listeners return to the empty-fixture baseline (7 and 1).
+- Rendered software/GPU A/B found whole-song converted-letter `will-change`
+  hints amplified the restored emphasis cost. Removing only those hints reduced
+  Above-row 95th-percentile frame gaps from about 46–50 ms to 22–24 ms in the
+  controlled comparison; effects and timing remain enabled. Original hints are
+  unchanged. No-scroller/no-glow controls did not remove that cost.
+- Final GPU-enabled broad run: selected converted Classic animation JS p95 at
+  most **1.8 ms**; representative sidebar rendered frame-gap p95 **24.4 ms Above**
+  and **20.5 ms ruby**, versus **14.4/9.5 ms** for the old build, which suppressed
+  converted emphasis. Full-view ruby p95 **12.1 ms** versus **8.6 ms**. These are
+  controlled samples, not a claim of native Spotify FPS or zero added cost.
+  Full-song Classic mount/seek/toggle/resize spikes still exist; enabling genuine
+  additional animation has a measurable cost. Matched no-emphasis cases remain
+  cheaper and do not show the discarded layout-thrashing pattern.
+- Fixed/responsive-font scroller traces, 80 voices / 400 readings: maximum Word
+  layout batches **7.6/10.1 ms**; Line **18.1/17.1 ms**. The burst produces **21/25
+  layouts** and zero extra idle batches. Line retains a bounded extra pass and
+  uniform wrapped leading. This does not certify every physical monitor/DPI move.
+- Build: **27.1 MiB / 9 stylesheets**, dictionary guards pass for all 12 buffers in
+  all four generated aliases, and the canonical bundle passes syntax checking.
+  All four SHA256 values are
+  `0CD890692DEA2D4618CE6B0C0989116D11A2C21FBF18D23F332DD8626DD83DC2`.
+  All three installed copies match. The active source is the Roaming Spicetify
+  directory; installation used staged/hash-verified files and a rollback backup.
+- Native DevTools confirms **5.1.0-local.21**. The current line-synced track mounts
+  40 groups / 165 readings; no word timing is claimed for it. Summer Haze / 夏霞
+  mounts genuine AMLL word data with **309 distinct timings**, **315 primary
+  runs**, and **85 readings**. The reported phrase at approximately 129 s displays
+  attached readings and intact source/backing text at narrow and maximized widths.
+  Playback samples are diagnostic only: startup/window-focus/accessibility
+  capture can affect their frame gaps. Controlled regression/performance results
+  and native observations are deliberately separate.
+- Native presentation storage remained byte-for-byte unchanged. Config plus five
+  checked Comfy/unrelated files retain their pre-install hashes. Playback changed
+  during verification, so the latest playing track and playlist view were kept
+  instead of restoring the older saved selection. Probe globals were removed,
+  observers disconnected, and the temporary DevTools window was verified closed.
+- Thai emphasis, broader effect/glow clipping, and background changes remain
+  outside this pass. Native Chinese/Korean song playback and the user's physical
+  monitor-switch shortcut remain unverified. No commit or push.
+
 ## Romaji and reading opacity — 5.1.0-local.20, 2026-10-30
 
 - Restored local.16 / `5fd80ad` is the baseline. Only the two requested corrections

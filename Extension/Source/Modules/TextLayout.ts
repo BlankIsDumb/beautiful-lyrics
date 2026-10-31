@@ -9,11 +9,18 @@ export type DisplayRun = SyllableMetadata & {
   TimingDuration: number;
   Precision: "source" | "grouped";
   SafeLetters: boolean;
+  // Stable source owners are independent of dictionary tokens and display text.
+  // Several owners may share a genuinely ambiguous grouped display mapping.
+  SourceOwners?: readonly Readonly<{ key: string; text: string; duration: number }>[];
+  // A reading fragment is a view into a shared visual sweep, never a new
+  // acoustic interval. Layout updates these fractions from natural glyph widths.
+  VisualRange?: { start: number; end: number };
   ExplicitSpacing?: boolean;
   // Successful conversion is explicit: service fallbacks contain source runs,
   // which must never masquerade as a second translated/reading row.
   AnnotationDerived?: true;
   Reading?: Readonly<{ text: string; start: number; end: number }>;
+  Readings?: readonly Readonly<{ text: string; start: number; end: number }>[];
 };
 export type VoiceText = Readonly<{ text: string; ranges: readonly SourceRange[] }>;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -65,8 +72,13 @@ export function CreateDisplayRun(text: string, ranges: readonly SourceRange[], p
     SourceRanges: ranges, Intervals: intervals,
     TimingDuration: intervals.reduce((sum, interval) => sum + interval.end - interval.start, 0),
     Precision: ranges.length > 1 ? "grouped" : "source", SafeLetters: SafeLetterAnimation(text),
+    SourceOwners: [{ key: SourceOwnerKey(ranges), text, duration: intervals.reduce((sum, interval) => sum + interval.end - interval.start, 0) }],
   };
 }
+
+export const SourceOwnerKey = (ranges: readonly SourceRange[]) => JSON.stringify(ranges.map(range => [range.spanId, range.startTime, range.endTime]));
+export const VisualProgress = (progress: number, range?: DisplayRun["VisualRange"]) => range
+  ? Math.max(0, Math.min(1, (progress - range.start) / Math.max(Number.EPSILON, range.end - range.start))) : progress;
 
 // No allocations, sort, layout reads or fabricated character timings per frame.
 // Progress through a grouped unit freezes in true source gaps and counts overlap

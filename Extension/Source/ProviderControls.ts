@@ -181,6 +181,11 @@ export function OpenProviderSettings() {
           "Independent reading effect for this source case. Whole-line detail has no vertical motion. Off stops its effect work.", "Use text effects");
         checkbox(input, value => writeCase({ ...readCase(), effects: { ...readCase().effects, [key]: value, preset: "custom" } }), () => readCase().effects[key]);
       }
+      if (sourceCase === "Word") {
+        const emphasis = toggle(custom, "Letter emphasis", prefix + "Reading-emphasis", readCase().effects.emphasis,
+          "Visual grapheme easing over the original source progress, where shaping and mapping are safe. This is not measured phoneme timing. Off allocates no reading letters.", "Use text effects");
+        checkbox(emphasis, value => writeCase({ ...readCase(), effects: { ...readCase().effects, emphasis: value, preset: "custom" } }), () => readCase().effects.emphasis);
+      }
     }
     const placementSyncs: (() => void)[] = [];
     const styleRows = new Map<string, HTMLElement>();

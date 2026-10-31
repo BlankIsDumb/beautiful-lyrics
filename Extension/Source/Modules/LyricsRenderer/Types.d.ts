@@ -1,4 +1,5 @@
 // Packages
+import type { AnnotationLayoutJob } from "./AnnotationLayout.ts"
 import type { TextSprings } from "./RenderEffects.ts"
 import { Event } from "@Universal/Modules/Signal.ts"
 
@@ -28,6 +29,7 @@ interface SyncedVocals extends BaseVocals {
 	NeedsFrame(): boolean
 	IsActive(): boolean
 	HasAnnotations?(): boolean
+	PrepareAnnotations?(fontGeneration?: number): AnnotationLayoutJob | undefined
 	MeasureAnnotations?(fontGeneration?: number): void
 	GetScrollTarget?(): { Element: HTMLElement; StartTime: number }
 }

@@ -12,7 +12,7 @@ const chrome = process.env.CHROME_BIN || ['C:/Program Files/Google/Chrome/Applic
 test('real vocal DOM preserves clusters, source granularity, narrow annotation wrapping and content lifetime', { skip: !chrome }, async () => {
   const { code, css } = await buildVocalFixture();
   const script = `(() => {${code}
-    const {Current,LayoutSyllables,NormalizeLyrics,AlignJapanese}=fixtureModule;
+    const {Current,LayoutSyllables,NormalizeLyrics,AlignJapanese,ClassicRendering}=fixtureModule;
     const check=(ok,message)=>{if(!ok)throw Error(message)};
     const spans=texts=>texts.map((Text,index)=>({Text,StartTime:index*2,EndTime:index*2+1.5,IsPartOfWord:true}));
     const instances=[];
@@ -80,6 +80,15 @@ test('real vocal DOM preserves clusters, source granularity, narrow annotation w
         check(identity.scrollWidth<=identity.clientWidth+1,'narrow260px no horizontal overflow '+form);
         check(identity.getBoundingClientRect().height>30,'annotation wraps '+form);
         for(const element of identity.querySelectorAll('.ExplicitSpacing'))check(getComputedStyle(element,'::after').content==='none','no duplicate CSS spacing '+form);
+        for(const font of [18,32])for(const direction of ['Left','Right'])for(const opposite of [false,true])for(const scale of [false,true]){
+          const lyrics=fixture.group.parentElement;lyrics.className='Lyrics NaturallyAligned'+direction;
+          fixture.group.classList.toggle('AlignedOpposite',opposite);
+          lyrics.style.setProperty('--minimum-lyrics-size',font+'px');lyrics.style.setProperty('--maximum-lyrics-size',font+'px');
+          identity.setAttribute('data-jel-scale',scale?'on':'off');
+          fixture.vocal.SetRendering({...ClassicRendering,scale});fixture.vocal.Animate(4,0,true);
+          check(identity.scrollWidth<=identity.clientWidth+1,'converted owner scale envelope stays inside narrow row '+[form,font,direction,opposite,scale]);
+          if(!scale)check([...identity.children].every(node=>getComputedStyle(node).maxWidth==='100%'),'Scale Off retains full wrap width');
+        }
       }
       identity.click();check(clicks===1,'seek signal survives projection replacement without duplicate listener');
       fixture.vocal.Destroy();check(!identity.isConnected,'Destroy releases retained voice container');

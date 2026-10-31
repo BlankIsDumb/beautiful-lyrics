@@ -8,12 +8,17 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local build: **5.1.0-local.20**. Based on the restored local.16 checkpoint,
-it converts unknown written-kana tokens in Romaji mode and makes reading opacity
-respect its own highlight policy, including hover. Regression tests, independent
-browser checks and the local build passed. Installed manually at the user's
-request; native Spotify confirms local.20. Manual visual checks are pending;
-see VALIDATION.md for the evidence and its limits.
+Current local build: **5.1.0-local.22**. The spacing follow-up reserves ruby
+clearance only before annotated visual rows; unannotated rows retain Original
+leading. Source text, animation owners and moving springs remain intact. The
+conversion/emphasis, written-kana and independent reading-opacity fixes remain.
+
+Built and applied; all four build aliases and three installed copies have matching
+hashes. The full 112-test suite and independent 432-case density matrix pass.
+Native appearance and the mounted version API still need confirmation; manual
+testing is next. Reported glyph clipping across viewers is **unfixed and explicitly
+deferred**. See VALIDATION.md for measured costs and limits; this is not a claim
+that the entire follow-up is complete.
 
 ## What works now
 
@@ -56,7 +61,7 @@ No promise of unlimited requests or word timing for every track.
 - Translation and further layout/context controls.
 - Exact 30-day positive caches, clear-all and clear-current-track controls.
 - Better alternate-name/edition matching and sidebar compatibility.
-- Performance measurements before taking a chainsaw to the animations.
+- Further background/effect profiling before larger optimization work.
 
 ## Build
 

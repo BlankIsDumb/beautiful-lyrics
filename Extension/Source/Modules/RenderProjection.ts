@@ -26,5 +26,8 @@ export function LineProjection(voice: LyricVoice, runs: readonly DisplayRun[]): 
   line.StartTime = voice.start; line.EndTime = voice.end;
   line.SafeLetters = false;
   line.Precision = "grouped";
+  // Attached fragments share an existing visual coordinate even in forced Line
+  // detail. Coarsening its source clock must not restart each reading at zero.
+  if (runs.length === 1) line.VisualRange = runs[0].VisualRange;
   return line;
 }

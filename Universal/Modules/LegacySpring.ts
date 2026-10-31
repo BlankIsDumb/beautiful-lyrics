@@ -104,6 +104,16 @@ class Spring {
 		this.Sleeping = true
 	}
 
+	// A display projection can change its glyph count without changing its source
+	// clock. Seed newly shaped visual slots from a compatible spring, including
+	// momentum; Set() would silently snap a moving effect to its target.
+	public CopyStateFrom(source: Spring) {
+		this.Position = source.Position
+		this.Final = source.Final
+		this.Velocity = source.Velocity
+		this.Sleeping = source.Sleeping
+	}
+
 	public SetFrequency(value: number) {
 		// Make sure we were passed a valid Spring
 		if ((this.DampingRatio * value) < 0) {

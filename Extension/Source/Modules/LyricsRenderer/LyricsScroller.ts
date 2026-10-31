@@ -1,3 +1,4 @@
+import { RunAnnotationLayout } from "./AnnotationLayout.ts"
 import type { RenderingCounters } from "../../RenderingSettings.ts"
 // NPM
 import "../../Simplebar/style.css"
@@ -227,10 +228,20 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		// Clear our heights
 		this.GroupDimensions = []
 
+        // Prepare keys before any writes; then every annotated voice crosses
+        // each measurement barrier together, before any group-height reads.
+        const jobs = []
+        for (const group of this.VocalGroups) for (const vocal of group.Vocals) {
+            const synced = vocal as SyncedVocals
+            if (synced.PrepareAnnotations) {
+                const job = synced.PrepareAnnotations(this.AnnotationFontGeneration)
+                if (job) jobs.push(job)
+            } else synced.MeasureAnnotations?.(this.AnnotationFontGeneration)
+        }
+        RunAnnotationLayout(jobs)
 		// Now update our heights
 		let totalHeight = 0
 		for (const vocalGroup of this.VocalGroups) {
-			for (const vocal of vocalGroup.Vocals) (vocal as SyncedVocals).MeasureAnnotations?.(this.AnnotationFontGeneration)
             const groupHeight = GetTotalElementHeight(vocalGroup.GroupContainer)
 
 			this.GroupDimensions.push(

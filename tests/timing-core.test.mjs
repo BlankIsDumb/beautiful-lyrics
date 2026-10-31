@@ -193,6 +193,7 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       SetProjection(runs){this.text=runs.map(run=>run.Text).join('');this.projection=runs}
       SetAnnotations(settings,secondary,ruby){this.annotations=settings;this.secondary=secondary;this.ruby=ruby;this.annotationChanges=(this.annotationChanges||0)+1} HasBlur(){return this.rendering?.blur??true}
       SetRendering(profile){this.rendering=profile;this.renderChanges++} RequiresContinuous(){return true}
+      HasAnnotations(){return !!(this.secondary||this.ruby)}
       Animate(...args){this.calls.push(args);if(this.frames>0)this.frames--}
       NeedsFrame(){return this.frames>0} Destroy(){this.destroyed=true}
     }`,

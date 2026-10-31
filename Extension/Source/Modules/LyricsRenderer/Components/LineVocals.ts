@@ -1,6 +1,6 @@
 import { ClassicRendering, type RenderingProfile } from "../../../RenderingSettings.ts"
 import { ClearDisabledEffects, EffectProperty, TrackedSpring, type VocalRenderOptions } from "../RenderEffects.ts"
-import { RunProgress, type DisplayRun } from "../../TextLayout.ts"
+import { RunProgress, VisualProgress, type DisplayRun } from "../../TextLayout.ts"
 import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
@@ -53,6 +53,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
     private Profile: RenderingProfile;
     private Options: VocalRenderOptions;
     private Projection?: DisplayRun;
+    private Reconciling = false;
 
 	private State: LyricState = "Idle"
 	private IsSleeping: boolean = true
@@ -174,7 +175,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	public Animate(songTimestamp: number, deltaTime: number, isImmediate?: true) {
 		// Determine our relative time elements
 		const relativeTime = (songTimestamp - this.StartTime)
-		const timeScale = this.Projection ? RunProgress(songTimestamp, this.Projection.Intervals, this.Projection.TimingDuration) : timingProgress(relativeTime, 0, this.Duration)
+		const timeScale = this.Projection ? VisualProgress(RunProgress(songTimestamp, this.Projection.Intervals, this.Projection.TimingDuration), this.Projection.VisualRange) : timingProgress(relativeTime, 0, this.Duration)
 
 		// Determine if we should update our visual-states
 		const pastStart = (relativeTime >= 0), beforeEnd = (relativeTime <= this.Duration)
@@ -185,7 +186,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 					: "Idle"
 		)
 		const stateChanged = (stateNow != this.State)
-		const shouldUpdateVisualState = (stateChanged || isActive || isImmediate)
+		const shouldUpdateVisualState = (stateChanged || isActive || isImmediate || this.Reconciling)
 
 		// Update our state
 		if (stateChanged) {
@@ -234,6 +235,10 @@ export default class LineVocals implements SyncedVocals, Giveable {
         ClearDisabledEffects(this.Span, profile, this.Options.counters)
     }
     public RequiresContinuous() { return this.Profile.highlight === "classic" || this.Profile.highlight === "progressive" || this.Profile.glow }
+    public Reconcile(time: number) {
+        this.Reconciling = true
+        try { this.Animate(time, 0) } finally { this.Reconciling = false }
+    }
 
 
 	public ForceState(state: boolean) {

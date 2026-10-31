@@ -12,7 +12,7 @@ const number = (value: unknown, fallback: number, min: number, max: number) =>
 export function NormalizeAnnotations(value?: Partial<AnnotationProfile>): AnnotationProfile {
   const effects = (sourceCase: SourceCase): AnnotationEffects => ({
     inherit: value?.cases?.[sourceCase]?.inherit !== false,
-    effects: { ...NormalizeRendering(value?.cases?.[sourceCase]?.effects, sourceCase === "Line" ? ApplyTextPreset({ ...ClassicRendering }, "balanced") : ClassicRendering), emphasis: false, preset: "custom" },
+    effects: { ...NormalizeRendering(value?.cases?.[sourceCase]?.effects, sourceCase === "Line" ? ApplyTextPreset({ ...ClassicRendering }, "balanced") : ClassicRendering), preset: "custom" },
   });
   return {
     secondary: value?.secondary === "romaji" || value?.secondary === "kana" ? value.secondary : "off",
@@ -23,12 +23,12 @@ export function NormalizeAnnotations(value?: Partial<AnnotationProfile>): Annota
     cases: { Word: effects("Word"), Line: effects("Line") },
   };
 }
-// Annotation progress is a mapping of source intervals, never acoustic letter
-// timing. Inherited and custom effects both keep character emphasis disabled.
+// Grapheme easing is a selected visual effect over source progress, never
+// measured phoneme timing. Shaping/mapping safety belongs to each display run.
 export function AnnotationRendering(settings: AnnotationProfile, sourceCase: SourceCase | undefined,
   primary: RenderingProfile = { ...ClassicRendering }): RenderingProfile {
   const selected = sourceCase && settings.cases[sourceCase];
-  return { ...(selected && !selected.inherit ? selected.effects : primary), detail: primary.detail, emphasis: false };
+  return { ...(selected && !selected.inherit ? selected.effects : primary), detail: primary.detail };
 }
 
 // One conversion per language; placement is remembered even while Furigana

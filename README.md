@@ -8,17 +8,11 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local build: **5.1.0-local.22**. The spacing follow-up reserves ruby
-clearance only before annotated visual rows; unannotated rows retain Original
-leading. Source text, animation owners and moving springs remain intact. The
-conversion/emphasis, written-kana and independent reading-opacity fixes remain.
-
-Built and applied; all four build aliases and three installed copies have matching
-hashes. The full 112-test suite and independent 432-case density matrix pass.
-Native appearance and the mounted version API still need confirmation; manual
-testing is next. Reported glyph clipping across viewers is **unfixed and explicitly
-deferred**. See VALIDATION.md for measured costs and limits; this is not a claim
-that the entire follow-up is complete.
+Current local version: **5.1.0-local.23**. Pass 6 adds shared lyric font-family
+selection and per-view responsive typography, context and following controls.
+Oversized timed segments wrap while retaining their original timing and animation
+owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
+Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
 
 ## What works now
 
@@ -46,6 +40,15 @@ that the entire follow-up is complete.
 - Editable text presets and independent effects; universal gap-dot threshold/motion
   settings belong to each view and are never changed by a text preset.
 - Shared lyric delay and independent per-view offsets; positive means lyrics later.
+- One lyric font family, with an empty value following Spotify/theme fonts.
+  Independent Now Playing/Fullscreen primary-size multipliers retain responsive
+  sizing and show current CSS pixels; backing ratio, weights, source leading,
+  group spacing and inset are adjustable. Word/Line effects remain independent.
+- Source-group context before/after the entire active block; manual browsing and
+  Auto-follow Off reveal the whole song. Context-filtered visual work stops.
+- Classic/instant/native-smooth following, a preferred 45% readable-viewport
+  anchor, and Classic/after-delay resume. Off leaves external seeks stationary;
+  explicit lyric clicks still seek and recenter once.
 - Grapheme-safe emphasis and cross-span cluster handling, with conservative shaping
   units for joining scripts and original timing provenance retained.
 - Local-file lyric lookup through metadata-capable sources.
@@ -57,8 +60,8 @@ No promise of unlimited requests or word timing for every track.
 
 ## Planned, not implemented
 
-- Detailed effect amounts/curves, background controls and font-size settings.
-- Translation and further layout/context controls.
+- Detailed effect amounts/curves and background controls.
+- Translation and further presentation controls.
 - Exact 30-day positive caches, clear-all and clear-current-track controls.
 - Better alternate-name/edition matching and sidebar compatibility.
 - Further background/effect profiling before larger optimization work.

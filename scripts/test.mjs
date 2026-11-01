@@ -7,6 +7,9 @@ import { spawnSync } from 'node:child_process';
 const directory = new URL('../tests/', import.meta.url);
 const files = readdirSync(directory).filter(name => name.endsWith('.test.mjs'))
   .map(name => fileURLToPath(new URL(name, directory)));
-const result = spawnSync(process.execPath, ['--test', ...files], { stdio: 'inherit' });
+// Browser files each own a Chromium process. Running all of them together on
+// Windows can starve real-time grace checks and exceed browser cleanup deadlines.
+// Serialize files so `npm test` exercises the same workload reproducibly.
+const result = spawnSync(process.execPath, ['--test', '--test-concurrency=1', ...files], { stdio: 'inherit' });
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;

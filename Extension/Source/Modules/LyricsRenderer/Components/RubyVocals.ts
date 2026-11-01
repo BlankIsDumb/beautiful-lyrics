@@ -40,6 +40,7 @@ export class RubyVocals {
   private mapped = false;
   private lineElement?: HTMLElement;
   private lineSpacer?: HTMLSpanElement;
+  private wrappedSpacers = new Map<HTMLElement, HTMLSpanElement>();
   private mapping?: ReturnType<RubyVocals['sourceOffsets']>;
   private metricsKey = "";
   private reserved = new Set<HTMLElement>();
@@ -105,6 +106,10 @@ export class RubyVocals {
   }
   HasReadings() { return this.entries.length > 0; }
   private clearLineLayout(remove = false) {
+    for (const [item, spacer] of this.wrappedSpacers) {
+      if (remove) spacer.remove(); else spacer.hidden = true;
+    }
+    if (remove) this.wrappedSpacers.clear();
     this.lineElement?.classList.remove("RubyLineLayout");
     if (remove) {
       this.lineSpacer?.remove(); this.lineSpacer = undefined; this.lineElement = undefined;
@@ -245,10 +250,10 @@ export class RubyVocals {
     const style = getComputedStyle(this.primaryRoot), ownerStyle = getComputedStyle(this.Element);
     // Natural reading dimensions depend on typography/font completion, not
     // source wrapping. A width-only pass reuses them without reveal/read cycles.
-    const metricKey = [fontGeneration, style.font, ownerStyle.getPropertyValue("--annotation-ruby-size"),
+    const metricKey = [fontGeneration, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, ownerStyle.getPropertyValue("--annotation-ruby-size"),
       ownerStyle.getPropertyValue("--annotation-spacing"), this.entries[0].root.dataset.jelScale, this.readingEmphasis].join("|");
     const alignment = this.Element.closest<HTMLElement>("[data-annotation-align]")?.dataset.annotationAlign;
-    const key = [metricKey, width, fractionalWidth, alignment,
+    const key = [metricKey, style.lineHeight, width, fractionalWidth, alignment,
       this.profile.detail, this.profile.emphasis].join("|");
     if (key === this.fitKey) return;
     this.mapSource();
@@ -270,6 +275,7 @@ export class RubyVocals {
     const sourceRects=new Map<ReadingEntry,{left:number;right:number;top:number;bottom:number}[]>();
     const line = isLine ? this.primaryRoot.querySelector<HTMLElement>(".Line, .Static") : undefined;
     let sourceRows: SourceRow[] = [], lineHeight = 0, lineContentHeight = 0, lineContentWidth = 0, lineContentTop = 0;
+    const wrappedRows = new Map<HTMLElement, { rows: SourceRow[]; top: number; height: number; width: number; step: number }>();
     const makeBoxes = () => {
       boxes=[];
       for(const entry of this.entries){
@@ -308,7 +314,7 @@ export class RubyVocals {
         // Measure natural source rows with the previous exclusion removed. All
         // voices cross this write barrier before any source geometry is read.
         // The existing text nodes, gradient owner and springs remain untouched.
-        if (isLine) this.clearLineLayout();
+        this.clearLineLayout();
         if(freshMetrics)for(const entry of this.entries){
           if(entry.host.hidden)entry.host.hidden=false;
           if(entry.root.style.getPropertyValue("--ruby-fit")!=="1")entry.root.style.setProperty("--ruby-fit","1");
@@ -320,6 +326,23 @@ export class RubyVocals {
           this.updateVisualRanges();
         }
         readBoxes();
+        if (!isLine && !unsupportedTransform) {
+          // Only genuinely wrapped canonical owners need interior clearance.
+          // Collect all geometry in the existing read barrier, never playback.
+          const owner = this.Element.getBoundingClientRect();
+          for (const item of this.primaryRoot.querySelectorAll<HTMLElement>(".WrappedPainter")) {
+            const bounds=frame(item.getBoundingClientRect(),item), step=parseFloat(getComputedStyle(item).lineHeight);
+            const range=globalThis.document.createRange();range.selectNodeContents(item.querySelector(".SourcePaint")!);
+            const rows: SourceRow[]=[];
+            for(const rect of [...range.getClientRects()].filter(rect=>rect.width>0&&rect.height>0).map(rect=>frame(rect,item))) {
+              const top=rect.top-owner.top,bottom=rect.bottom-owner.top;
+              const row=rows.find(row=>Math.abs(row.top-top)<2);
+              if(row)row.bottom=Math.max(row.bottom,bottom);else rows.push({top,bottom,index:0});
+            }
+            rows.sort((a,b)=>a.top-b.top).forEach((row,index)=>row.index=index);
+            if(rows.length>1&&step>0)wrappedRows.set(item,{rows,top:bounds.top-owner.top,height:bounds.height,width:bounds.width,step});
+          }
+        }
         for (const box of boxes.sort((a,b)=>a.top-b.top||a.left-b.left)) {
           const row = rows.find(row=>Math.abs(row[0].bottom-box.bottom)<2);
           if (row) row.push(box); else rows.push([box]);
@@ -420,6 +443,10 @@ export class RubyVocals {
           const desired=new Map<HTMLElement,number>();
           for(const box of visible){
             const first=box.entry.pieces?.[0];if(!first)continue;
+            const wrapped=[...wrappedRows].find(([owner])=>owner.contains(first.parent));
+            // Interior readings get their own row band below. Charging the
+            // whole Word as well would add space above an unannotated first row.
+            if(wrapped && box.top>wrapped[1].rows[0].top+2)continue;
             let item=first.parent;while(item.parentElement!==this.primaryRoot&&item.parentElement)item=item.parentElement;
             desired.set(item,Math.max(desired.get(item)||0,factors.get(box.entry)!));
           }
@@ -428,6 +455,33 @@ export class RubyVocals {
             const margin=factor===undefined?"":`calc(1em * var(--annotation-ruby-size, .5) * ${factor*visualScale*1.1} + .04em + 2px)`;
             if((this.marginKeys.get(item)||"")!==margin){item.style.marginBlockStart=margin;this.marginKeys.set(item,margin);reserveChanged=true;}
             if(factor!==undefined)this.reserved.add(item);else this.reserved.delete(item);
+          }
+          for(const [item,layout] of wrappedRows) {
+            const wanted=new Map<number,number>();
+            for(const box of visible) {
+              if(!box.entry.pieces?.some(piece=>item.contains(piece.parent)))continue;
+              const row=layout.rows.reduce((best,row)=>Math.abs(row.top-box.top)<Math.abs(best.top-box.top)?row:best);
+              wanted.set(row.index,Math.max(wanted.get(row.index)||0,clearance(box)));
+            }
+            const bands:{top:number;bottom:number}[]=[];let extra=0;
+            for(const row of layout.rows) {
+              if(!row.index)continue; // Existing Word margin reserves the first row.
+              const desired=wanted.get(row.index);if(desired===undefined)continue;
+              const free=Math.max(0,row.top-layout.rows[row.index-1].bottom),band=Math.max(0,desired-free);
+              if(!band)continue;
+              const naturalTop=row.index*layout.step,top=Math.ceil(naturalTop+extra)+1,bottom=top+Math.ceil(band);
+              bands.push({top,bottom});extra=bottom-naturalTop;
+            }
+            if(!bands.length)continue;
+            let spacer=this.wrappedSpacers.get(item);
+            if(!spacer){spacer=globalThis.document.createElement("span");spacer.className="RubyLineSpacer";spacer.setAttribute("aria-hidden","true");item.prepend(spacer);this.wrappedSpacers.set(item,spacer);}
+            const polygon=["0px 0px"];
+            for(const band of bands)polygon.push(`0px ${band.top}px`,`${layout.width}px ${band.top}px`,`${layout.width}px ${band.bottom}px`,`0px ${band.bottom}px`);
+            polygon.push(`0px ${layout.height+extra}px`);
+            spacer.style.height=`${layout.height+extra}px`;spacer.style.shapeOutside=`polygon(${polygon.join(",")})`;spacer.hidden=false;
+            // An empty exclusion moves complete browser rows; source nodes,
+            // shaping, timing and the single gradient/spring owner survive.
+            reserveChanged=true;
           }
         }
         for(const entry of this.entries)if(factors.has(entry)){

@@ -24,14 +24,19 @@ import { PresentationSettings, PresentationLanguages, type PresentationView } fr
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
 import { ApplyTextPreset, NormalizeRendering, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp } from "./SettingsHelp.ts";
+import { NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
+import { CreateTypographyPreview, TypographyMeasured } from "./Modules/LyricsRenderer/TypographyPreview.ts";
 import "./Stylings/ProviderControls.scss";
 
 export function OpenProviderSettings() {
   const content = document.createElement("form");
   content.className = "BL-Settings";
   const lifetime = new AbortController();
+  let disposeTypography: (() => void) | undefined;
+  const sizeOutputs = new Map<PresentationView, {primary: HTMLOutputElement; backing: HTMLOutputElement}>();
   const addHelp = CreateSettingsHelp(content, () => {
     lifetime.abort();
+    disposeTypography?.();
     for (const control of content.querySelectorAll<HTMLInputElement>("input,select,button")) control.disabled = true;
   });
   // No draft-wide Save and no broad observer: every native event has this exact
@@ -103,6 +108,13 @@ export function OpenProviderSettings() {
     checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
   }
   const lyricsSection = document.createElement("section"); content.append(lyricsSection); heading(lyricsSection, "Lyrics");
+  const family=document.createElement("input");family.id="JEL-FontFamily";family.type="text";family.value=PresentationSettings.getFontFamily();family.placeholder="Spotify / theme font";family.disabled=presentationReadOnly;
+  row(lyricsSection,"Lyric font family",family,"One local CSS font-family list for both viewers, including readings. Empty follows Spotify and your theme (including Comfy). No font downloads; a family must already be available.","Spotify / theme font");
+  listen(family,"change",()=>{
+    const next=NormalizeFontFamily(family.value);
+    if(next!==family.value.trim()||(next&&!CSS.supports("font-family",next))){family.setAttribute("aria-invalid","true");status.textContent="Enter a valid local font-family list; the previous font is still active.";return;}
+    family.removeAttribute("aria-invalid");apply(()=>PresentationSettings.saveFontFamily(next),()=>{family.value=PresentationSettings.getFontFamily()});
+  });
   for (const view of ["NowPlaying", "FullLyrics"] as const) {
     const viewTitle = view === "NowPlaying" ? "Now Playing" : "Fullscreen";
     const section = document.createElement("section"); section.className = "BL-ViewSettings"; lyricsSection.append(section);
@@ -112,11 +124,55 @@ export function OpenProviderSettings() {
     const fields = document.createElement("fieldset"); fields.className = "BL-ViewOptions"; fields.id = `JEL-${view}-Options`; section.append(fields);
     if (sidebar) {
       sidebar.setAttribute("aria-label", "Now Playing enabled"); sidebar.setAttribute("aria-controls", fields.id);
-      const expansion = () => { fields.hidden = !sidebar!.checked; fields.disabled = !sidebar!.checked; sidebar!.setAttribute("aria-expanded", String(sidebar!.checked)); };
+      const expansion = () => { fields.hidden = !sidebar!.checked; fields.disabled = !sidebar!.checked; sidebar!.setAttribute("aria-expanded", String(sidebar!.checked)); TypographyMeasured(); };
       checkbox(sidebar, value => SaveBehaviorSettings({ ...GetBehaviorSettings(), sidebarEnabled: value }), () => GetBehaviorSettings().sidebarEnabled, expansion); expansion();
     }
     const delay = addTiming(view, fields); delay.setAttribute("aria-label", `${viewTitle} delay offset in seconds`);
     if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
+    const layoutRead=()=>PresentationSettings.getLayout(view);
+    const layoutWrite=<K extends keyof LayoutProfile>(key: K,value: LayoutProfile[K])=>PresentationSettings.saveLayout(view,{...layoutRead(),[key]:value});
+    const layoutInputs=new Map<keyof LayoutProfile, HTMLInputElement|HTMLSelectElement>();
+    const layoutSection=(title: string,category: LayoutCategory)=>{
+      const details=document.createElement("details"),summary=document.createElement("summary"),body=document.createElement("fieldset");
+      details.className="BL-CaseSettings";summary.textContent=title;body.className="BL-GroupOptions";body.disabled=presentationReadOnly;
+      details.append(summary,body);fields.append(details);
+      const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?"Reset scrolling (45% anchor)":`Classic ${title.toLowerCase()}`;body.append(reset);
+      listen(reset,"click",()=>{apply(()=>PresentationSettings.resetLayout(view,category));for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}});
+      return body;
+    };
+    const layoutNumber=(parent: HTMLElement,key: keyof LayoutProfile,label: string,min: number,max: number,step: string,help: string,classic: string)=>{
+      const input=numeric(parent,label,`JEL-${view}-Layout-${key}`,()=>layoutRead()[key] as number,value=>layoutWrite(key,value),help,classic,min,max,step,presentationReadOnly);layoutInputs.set(key,input);return input;
+    };
+    const nullable=(parent:HTMLElement,key:"groupGap"|"inset"|"before"|"after"|"anchor",label:string,min:number,max:number,step:string,empty:string,help:string,classic:string)=>{
+      const input=document.createElement("input");input.type="number";input.id=`JEL-${view}-Layout-${key}`;input.min=String(min);input.max=String(max);input.step=step;input.placeholder=empty;input.value=layoutRead()[key]===null?"":String(layoutRead()[key]);input.setAttribute("aria-label",label);
+      row(parent,label,input,help,classic);layoutInputs.set(key,input);
+      listen(input,"input",()=>{
+        if(input.value===""&&!input.validity.badInput){input.removeAttribute("aria-invalid");apply(()=>layoutWrite(key,null));return;}
+        if(!input.validity.valid||!Number.isFinite(input.valueAsNumber)){input.setAttribute("aria-invalid","true");status.textContent="Enter a valid number; the previous value is still active.";return;}
+        input.removeAttribute("aria-invalid");apply(()=>layoutWrite(key,input.valueAsNumber));
+      });
+      listen(input,"blur",()=>{if(input.getAttribute("aria-invalid")){const value=layoutRead()[key];input.value=value===null?"":String(value);input.removeAttribute("aria-invalid")}});return input;
+    };
+    const typography=layoutSection("Typography","typography");
+    const primary=layoutNumber(typography,"primaryRatio","Primary size (×)",.5,2,"0.05","Multiplier .5–2 over this viewer's complete responsive default, after its clamp resolves. Word and Line share this layout; CSS px below resolve at the current column size.","1×");
+    const primaryOutput=document.createElement("output");primaryOutput.htmlFor=primary.id;primaryOutput.setAttribute("aria-label",`${viewTitle} resolved primary CSS pixels`);primary.closest(".BL-HelpRow")!.append(primaryOutput);
+    const backing=layoutNumber(typography,"backingRatio","Backing size (× primary)",.5,1,"0.05","Backing voices use .5–1 of the resolved primary size. Independent of primary scaling and reading size.",".75×");
+    const backingOutput=document.createElement("output");backingOutput.htmlFor=backing.id;backingOutput.setAttribute("aria-label",`${viewTitle} resolved backing CSS pixels`);backing.closest(".BL-HelpRow")!.append(backingOutput);sizeOutputs.set(view,{primary:primaryOutput,backing:backingOutput});
+    layoutNumber(typography,"leadWeight","Lead weight",100,900,"100","CSS weight 100–900, in 100 steps. The selected font must support the weight; the browser may synthesize or choose the nearest face.","700");
+    layoutNumber(typography,"backingWeight","Backing weight",100,900,"100","Independent CSS backing weight, 100–900. Actual appearance depends on the available font faces.","500");
+    layoutNumber(typography,"leading","Source line height",1,2.5,"any","Ratio 1–2.5 of the source font size between wrapped source rows. Does not change the independent reading row gap.","1.1818181818");
+    nullable(typography,"groupGap","Between groups (em)",0,2,"0.05","Classic","Total gap 0–2 primary-source em between logical source groups. Reading rows and wrapped rows do not become groups. Empty preserves the responsive Classic margins.","Responsive 1cqw on each side");
+    nullable(typography,"inset","Horizontal inset (CSS px)",0,128,"1","Classic","Requested inset per side, 0–128 CSS px inside the available lyric column. Effective inset clamps to leave four primary em where space permits; saved request remains unchanged. Fullscreen artwork keeps its reserved column. Empty keeps Classic.","Surface default");
+    const contextFields=layoutSection("Context","context");
+    nullable(contextFields,"before","Groups before",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole source-group count before the earliest active group. Empty = All. Concurrent activity and all intervening source groups form one block; cues/readings/wrapped rows do not count.","All");
+    nullable(contextFields,"after","Groups after",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole groups after the latest active group. Empty = All. Manual browsing and Auto-follow Off reveal All while remembering these counts. Untimed text always shows All.","All");
+    const scrolling=layoutSection("Scrolling","scrolling");
+    const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Off shows the entire song and never follows playback/external seeks. Explicit lyric clicks still seek and recenter once. Untimed text never follows.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);
+    const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"Native smooth uses the browser's duration and cancels on manual scroll input. Independent of the manual-resume policy.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
+    nullable(scrolling,"anchor","Anchor (% from top)",0,100,"1","Classic","Preferred active center, 0–100% from the top of the readable viewport. Default 45% leaves room below. Active voices stay visible together when they fit; newer wins otherwise. Empty uses the legacy Classic surface position.","Legacy surface position (empty); new default45%");
+    const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic conditionally returns when active lyrics are in reach. After delay returns after the last actual manual scrolling, even offscreen; activity/annotations cannot end it early. Silence defers until a real target.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
+    layoutNumber(scrolling,"resumeDelay","Resume delay (s)",0,30,"0.05","Seconds 0–30 from the last actual manual scrolling. One owned timeout; more scrolling extends it. Auto-follow Off cancels it.",".75 s");
+    if(SongLyrics?.Type==="Static") { contextFields.disabled=true;scrolling.disabled=true;heading(contextFields,"Untimed lyrics show the entire song; following is unavailable.","p") }
     const gap = numeric(fields, "Gap dots after (s)", `JEL-${view}-GapThreshold`, () => PresentationSettings.getCues(view).threshold,
       value => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), threshold: value }),
       "Minimum real silence across all voices. 0 disables dots; 100 means 100 seconds. Very short gaps use static dots.", "2 s", 0, undefined, "0.1", presentationReadOnly);
@@ -266,6 +322,7 @@ export function OpenProviderSettings() {
   listen(token, "input", () => { status.textContent = "Token applies when editing finishes."; });
   content.append(status);
   (Spotify as any).PopupModal.display({ title: "Just Enough Lyrics Settings", content, isLarge: true });
+  disposeTypography=CreateTypographyPreview(content,sizeOutputs);
   fetchMode.focus({ preventScroll: true });
   const scrollContainer = content.closest(".spicetify-popup-content"); if (scrollContainer) scrollContainer.scrollTop = 0;
 }

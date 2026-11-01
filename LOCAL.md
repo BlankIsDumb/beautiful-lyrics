@@ -1,12 +1,35 @@
 # Just Enough Lyrics local build notes
 
-Current local build: **5.1.0-local.16**; built, installed and verified in Windows
-Spotify. Installed local.15 exposed two presentation
-defects: authored flex display overrode hidden conversion style rows, and atomic
-ruby's first-baseline propagation placed annotated kanji below plain kana. The
-fix enforces hidden display inside the settings form and aligns the last
-source baseline of each complete ruby/plain unit. Intrinsic reading width,
-horizontal viewport fit and independent per-piece effects are preserved.
+Current local version: **5.1.0-local.23**. See [VALIDATION.md](VALIDATION.md) for
+build/install evidence and remaining native checks. Pass 6 typography, context and
+following controls live under Lyrics → Now Playing / Fullscreen. Fullscreen,
+cinema and the ordinary lyrics page share the Fullscreen layout profile.
+
+## Typography, context and following
+
+The lyric font family is shared; empty follows Spotify or the active theme.
+Primary size is a per-view .5–2 multiplier over the complete responsive default,
+initially 1×. Backing size is .5–1 of primary, initially .75×. Both controls show
+current CSS pixels; resizing never saves a pixel snapshot. Weight, source leading,
+group gap and column inset have their units/ranges explained by the help buttons.
+Inset retains fullscreen artwork space and clamps to leave four primary em where
+possible, without rewriting the saved request.
+
+Context counts logical source groups. All active groups and every group between
+them form one block, with before/after counts outside it. Readings, backing rows,
+wrapped rows and gap dots do not consume counts. Silence retains the preceding
+context; before the first vocal it uses the first group. Context hiding preserves
+scroll extents and suspends excluded visual work. Manual browsing and Auto-follow
+Off reveal the entire song while remembering counts.
+
+Auto-follow Off leaves playback/external seeks stationary. Clicking lyrics still
+seeks/recenters once, including paused clicks and asynchronous Spotify seeks.
+Following supports Classic, instant and native smooth transitions; manual input
+cancels smooth movement. The default preferred anchor is 45% from the readable
+viewport top; empty selects legacy Classic positioning. Active voices stay visible
+together when possible; newer takes priority when the block cannot fit. Classic
+resume is initially selected; After delay resumes after the last manual input,
+waiting for a target during silence. Typography reflow preserves browsing position.
 
 ## Runtime and sources
 The root npm build produces one self-contained browser extension. Spotify transport
@@ -44,7 +67,7 @@ The settings modal uses centered headings, tiles and keyboard-accessible switche
 Now Playing and Full Lyrics have versioned independent language preferences.
 Each view's Alternate text master switch gates its remembered language choices;
 the settings modal nests those choices inside a connected collapsible card.
-Presentation schema 6 reads schemas 1–5. Each view owns independent Word/Line
+Presentation schema 8 reads schemas 1–7. Each view owns independent Word/Line
 text cases plus universal cue settings, while language/master/Japanese form and
 delay remain view-wide. Untouched Classic/Auto v4 text adopts expressive Word and
 muted Line defaults; edited/non-Classic presets or detail choices are cloned into
@@ -77,13 +100,14 @@ cue child/springs/continuous work, layout margins or blur-distance contribution.
 Minimal stops text-effect work; universal cue motion and background remain separate.
 The existing clock/transport is unchanged, not a whole-app idle claim.
 
-Schema7 stores one enabled conversion and placement per language in each view.
+The conversion model introduced in schema7 stores one enabled conversion and
+placement per language in each view.
 Japanese Romaji/Kana may replace the main text or appear above the original;
 Furigana always remains attached above kanji, remembering the last row placement.
 Chinese pinyin and Korean romaja use the same Replace/Above choices. Conversion
-Off retains preferences while releasing that view's work. Schema6 is read lazily:
+Off retains preferences while releasing that view's work. Schemas6/7 are read lazily:
 the exact raw payload is retained under `JustEnoughLyrics/Presentation/Migration/schema6`
-before the first actual save. Per-language migration prefers effective primary
+or `schema7` before the first actual save. Per-language migration prefers effective primary
 replacement, then Japanese ruby, then the former secondary as Above. Mixed old
 choices cannot all be active in the single-conversion model; the snapshot retains
 them for recovery. Text cases, cue settings and reading appearance are preserved.
@@ -112,7 +136,8 @@ Ruby units contribute their reading's intrinsic width and height; complete units
 wrap normally. Annotated fragments isolate the host border-box reset and keep
 readings horizontal. A reading wider than its whole voice receives a uniform font
 fit while its requested size stays saved. This uses the existing coalesced layout
-batch, with one font-completion listener only while readings are present. It is
+batch. One renderer-owned font-completion listener invalidates source wrapping
+and reading layout, including source-only custom fonts, and disconnects on disposal. It is
 not a general clipping/overflow fix.
 
 Safe provider boundaries retain their timing granularity. Cross-span graphemes

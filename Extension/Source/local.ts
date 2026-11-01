@@ -15,7 +15,7 @@ const player = await import('@Spices/Spicetify/Services/Player/mod.ts');
 // Never expose provider credentials here.
 const api = {
   name: 'Just Enough Lyrics',
-  version: '5.1.0-local.22',
+  version: '5.1.0-local.23',
   status: () => ({
     track: player.Song?.Uri,
     lyricsLoaded: player.HaveSongLyricsLoaded,

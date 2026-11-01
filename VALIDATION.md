@@ -1,5 +1,82 @@
 # Validation
 
+## Pass 6 layout/context/following — 5.1.0-local.23, 2026-11-01
+
+Post-test audit: user rejected the implemented stable-if-visible normal-follow
+policy and clarified that every new line should reach a fixed anchor. That
+correction is not implemented yet. Prior121 passing tests did not assert this
+behavior; the shared scroller fixture also omitted Simplebar CSS. An audit-only
+fixture with full production styles confirms the drift and first/last scroll-space
+constraints. Outward inset is a separate pending clarification/correction. Results
+below remain historical evidence for local.23, not proof of the corrected behavior.
+
+- Implemented global lyric family (blank follows theme), per-view responsive
+  primary/backing ratios and current CSS-pixel readouts, weights/leading/gap/inset,
+  logical active-span context, stopped context-filtered visual work and configurable
+  following/resume. Existing four Word/Line effect cases remain independent.
+- Oversized source owners wrap with one timing/animation owner. A conditional
+  sliced painter preserves one continuous gradient across rows; ordinary owners
+  retain their original paint box. Wrapped reading rows reuse bounded layout
+  exclusions, preserving unannotated first-row leading. Width/font changes and
+  readings Off release stale wrapping/reservation state in the existing layout batch.
+- **Full root `npm test`: 121/121 pass, zero failures/skips.** Includes corrected
+  432-case ruby density, real typography/preview geometry, trusted manual wheel
+  cancellation, asynchronous Spotify seek acknowledgement, paused clicks, delay
+  edits after silence, browsing reflow, Unicode/gap/seek/reading ownership and
+  cleanup. Test files run serially because concurrent owned Chromium processes
+  caused resource/cleanup failures on this Windows machine.
+- Two fixture assumptions were corrected rather than changing production policy:
+  wrapping makes the former 18px overflow case renderable, so unavailable geometry
+  now uses a genuinely zero-width surface; the manual-grace test selects its owned
+  timer rather than another scroller's exactly-750ms timer. Deterministic sub-ms
+  progression reproduces the old incorrect timer selection.
+- Independent frozen-local.22 comparisons: **12/12 exact nonwrapped PNGs**, with
+  equal text/geometry/animation state; **1/1 Classic cadence/geometry** gate.
+  Wrapped paint also has an actual-pixel repeated-gradient negative control.
+- Real mounted renderer/Simplebar synthetic-transport workload, 160 groups:
+  default Word counters match local.22 (120 ticks, 119 continuous updates, 1071
+  spring updates, 777 effect writes). Line counters match with no springs.
+  Paused equal-time ticks do no timeline/effect/spring work. Disposal leaves zero
+  clock consumers and observed targets. This is controlled component evidence,
+  not native Spotify cadence or GPU/FPS proof.
+- **12 serial paired resize workloads / 48 samples**, Word/forced-Line ×
+  Original/Above/Furigana × fixed/responsive fonts, 40/80 voices: every sample
+  produces five geometry batches and zero extra idle batches. At 80 voices,
+  Word/Above maximum batches are 7.4/7.7ms fixed/responsive versus 8.6/8.0ms
+  baseline; Original is 3.5/3.3ms versus 2.3/2.2ms. Heavy Line/Furigana still
+  reaches 35.9ms fixed and 22.8ms responsive, versus 44.5/19.4ms baseline.
+  These are single paired workload results with noise, not universal speedups.
+  A real regression was isolated with a CSS-only control: a family `[style*=]`
+  ancestor selector made height writes invalidate descendants. The final code
+  toggles a presence class instead, preserving font behavior and avoiding that cost.
+- Build through `npm run build`: **27.1 MiB / 10 stylesheets**, embedded dictionary
+  and hosted-dependency guards pass. All four generated aliases pass `node --check`
+  and have SHA256
+  `AF7E2BCBF7C12729534CE88BFBD04C8A0FC044443C239D290EE359BF5427A1C0`.
+- **Local delivery completed.** Roaming/Local Spicetify source copies and Spotify's
+  installed extension match that hash. Exact old bundles/config are backed up in
+  private evidence `pass6-20261101/install-backup-20261101-155603/`; six config/theme/
+  unrelated-extension hashes remain unchanged after replacement and restart.
+- **User confirms startup works after Spicetify restore/reapply.** No independent
+  post-reapply native playback/appearance certification. During initial delivery,
+  DevTools read-only checks showed the candidate CSS marker and runtime lease present,
+  but `JustEnoughLyrics.version` is unavailable. `Spicetify.CosmosAsync` is missing;
+  Player, Platform, History, Playbar, Snackbar and URI are present. The unchanged
+  Session readiness path waits for CosmosAsync. Current client is Spotify
+  1.2.99.317.g9bd8c54d, CLI 2.46.4; the wrapper logs waiting for required webpack
+  modules. The reason the wrapper has not exposed CosmosAsync is not resolved in
+  this pass. Stored presentation schema remains 7 (lazy migration, no preference
+  edits). Temporary DevTools was closed. User subsequently resolved startup via
+  restore/reapply; the precise cause is unconfirmed and diagnosis was stopped.
+- **Pass 7 source/ruby paint clipping remains deferred.** Matched-font frozen.22
+  and current native-font fixtures fail at exactly the same ruby bounds. The
+  legacy geometry regression gate now explicitly retains its original effective
+  sans-serif font and all bounds assertions. This does not certify inherited-font
+  paint bounds. Musixmatch optional normalization reports remain a separate backlog.
+- User test reminder once native startup works: test the four-em inset clamp at
+  narrow/wide columns and across monitor changes, plus the preferred font/readouts,
+  overlapping voices and manual follow controls. No commit or push was made.
+
 ## Ruby visual-row spacing — 5.1.0-local.22, 2026-10-31
 
 - Replaces uniform wrapped Line/Static leading with one reusable empty layout

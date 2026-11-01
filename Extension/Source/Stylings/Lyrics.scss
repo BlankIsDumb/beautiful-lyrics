@@ -69,7 +69,9 @@
 	letter-spacing: 0em;
 	transition: color 0.1s, transform 0.1s ease-in-out, padding 0.1s ease-in-out;
 
-	font-family: var(--encore-body-font-stack, sans-serif) !important;
+	// Blank shared preference leaves the actual host/theme cascade in charge.
+	// Do not replace a theme's direct group font with an inherited !important rule.
+	font-family: inherit;
 
 	unicode-bidi: isolate;
 
@@ -159,6 +161,7 @@
 	--lyrics-size: clamp(var(--minimum-lyrics-size),
 			calc(1cqw * var(--vocal-lyrics-scale)),
 			var(--maximum-lyrics-size));
+	--jel-source-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1));
 
 	will-change: transform, opacity;
 	contain: layout paint;
@@ -185,8 +188,8 @@
 .Vocals.Lead {
 	opacity: var(--vocal-idle-opacity) !important;
 
-	font-size: var(--lyrics-size) !important;
-	font-weight: 700 !important;
+	font-size: var(--jel-source-size) !important;
+	font-weight: var(--jel-lead-weight, 700) !important;
 }
 
 .Vocals.Lead.Sung {
@@ -206,9 +209,9 @@
 .Vocals.Background {
 	opacity: var(--background-idle-opacity) !important;
 
-	--font-size: calc(var(--lyrics-size) * 0.75);
+	--font-size: calc(var(--jel-source-size) * var(--jel-backing-ratio, .75));
 	font-size: var(--font-size) !important;
-	font-weight: 500 !important;
+	font-weight: var(--jel-backing-weight, 500) !important;
 	margin-top: calc(var(--font-size) * -0.05) !important;
 }
 
@@ -370,6 +373,47 @@
   overflow-wrap: anywhere;
 }
 .Syllable.ExplicitSpacing.Emphasis { flex-wrap: wrap; max-width: 100%; }
+// Wrap only oversized source owners. Safe shaping units remain one text
+// context; Chromium's Unicode line breaker preserves grapheme boundaries.
+.Vocals:not(.RubyReading) .Word { flex-wrap: wrap; max-width: 100%; }
+.Syllable.FragmentedOwner {
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  max-width: 100%; min-width: 0; flex-shrink: 0;
+  > .SourcePaint {
+    // A single-row owner keeps the exact original paint box. Layout enables
+    // fragmentation only when this owner actually occupies multiple rows.
+    display: contents; white-space: inherit;
+    box-decoration-break: slice; -webkit-box-decoration-break: slice;
+  }
+  &.WrappedPainter {
+    display: block;
+    &.Synced { background: none !important; }
+    > .SourcePaint { display: inline; }
+  }
+}
+.Vocals:not(.RubyReading) .Syllable.Emphasis { flex-wrap: wrap; max-width: 100%; }
+.Lyrics.CustomFontFamily .VocalsGroup,
+.Lyrics.CustomFontFamily .VocalsGroup * { font-family: var(--jel-family) !important; }
+.Lyrics .VocalsGroup { line-height: var(--jel-leading, 1.1818181818); }
+.Lyrics.CustomGroupGap .VocalsGroup:not(:has(.Interlude)) {
+  // em here must be the primary font, not the host button's inherited size.
+  --jel-gap-primary: calc(clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size)) * var(--jel-primary-ratio, 1));
+  margin-block: calc(var(--jel-gap-primary) * var(--jel-group-gap) / 2);
+}
+.Lyrics.CustomInset .VocalsGroup {
+  // Keep .Lyrics as the existing query container. Changing its padding would
+  // alter cqw and the responsive 1x baseline. Inset only the existing column.
+  --jel-inset-primary: calc(clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size)) * var(--jel-primary-ratio, 1));
+  --jel-effective-inset: min(var(--jel-requested-inset), max(0px, calc((100cqw - min(100cqw, var(--jel-inset-primary) * 4)) / 2)));
+  margin-inline: var(--jel-effective-inset);
+  width: calc(100% - var(--jel-effective-inset) * 2);
+  .Vocals, .VoiceBlock, .RubyVocals { width: 95%; }
+  .VoiceBlock > .Vocals, .VoiceBlock > .RubyVocals { width: 100%; }
+}
+.Lyrics.CustomInset:has(.AlignedOpposite) .VocalsGroup {
+  .Vocals, .VoiceBlock, .RubyVocals { width: 75%; }
+  .VoiceBlock > .Vocals, .VoiceBlock > .RubyVocals { width: 100%; }
+}
 // A converted owner can be much wider than a dictionary token while retaining
 // one continuous paint box. Budget its existing spring scale envelope at the
 // wrap limit, rather than letting a full-width owner scale beyond the viewport.
@@ -490,6 +534,9 @@
 
 // Universal cue candidates keep stable slots, but disabled slots occupy no space.
 .VocalsGroup[hidden] { display: none; }
+// Context filtering preserves mounted geometry and scroll extents. Cue `hidden`
+// remains a separate eligibility mechanism; never reuse it for source context.
+.Lyrics .VocalsGroup.ContextExcluded { visibility: hidden; pointer-events: none; }
 
 // A voice block owns source + optional reading rows. It deliberately has no
 // opacity/filter/transform: the two rows have independent effect lifetimes.
@@ -499,9 +546,9 @@
 .RubyVocals {
   --lyrics-size: clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size));
   position: relative; display: block; width: 95cqw;
-  font-size: var(--lyrics-size); font-weight: 700;
+  font-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1)); font-weight: var(--jel-lead-weight, 700);
   padding: 0;
-  &.Background { font-size: calc(var(--lyrics-size) * .75); font-weight: 500; }
+  &.Background { font-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1) * var(--jel-backing-ratio, .75)); font-weight: var(--jel-backing-weight, 500); }
 }
 .RubyVocals.RubyNoReadings { padding-block: 0 !important; }
 .Lyrics:has(.AlignedOpposite) .RubyVocals { width: 75cqw; }
@@ -520,9 +567,9 @@
   font-weight: 500 !important;
 }
 .Lyrics .SecondaryText.Vocals {
-  font-size: calc(var(--lyrics-size) * var(--annotation-secondary-size, .6)) !important;
+  font-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1) * var(--annotation-secondary-size, .6)) !important;
   margin-block-start: var(--annotation-gap, .15em) !important;
-  &.Background { font-size: calc(var(--lyrics-size) * .75 * var(--annotation-secondary-size, .6)) !important; }
+  &.Background { font-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1) * var(--jel-backing-ratio, .75) * var(--annotation-secondary-size, .6)) !important; }
 }
 .Lyrics .RubyVocals .RubyReading.Vocals {
   font-size: calc(1em * var(--annotation-ruby-size, .5) * var(--ruby-fit, 1)) !important;
@@ -542,6 +589,7 @@
 }
 .Lyrics .RubyVocals .RubyReading { writing-mode: horizontal-tb; }
 .Lyrics .SecondaryText.Vocals { margin-block-start: 0 !important; margin-block-end: var(--annotation-gap, .15em) !important; }
+.Lyrics .SecondaryText.Vocals { line-height: 1.1818181818; }
 
 // Reading opacity scales this root's OWN effective highlight/voice policy.
 // Neutral row/ruby owners never multiply primary alpha into the reading. Keep

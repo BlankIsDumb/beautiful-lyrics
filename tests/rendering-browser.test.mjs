@@ -97,15 +97,26 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
       check(cue.RequiresContinuous()&&cueRoot.querySelectorAll('.InterludeDot').length===3&&counters.springsAllocated>0,'eligible animated cue allocates real springs');
       scroller.AutoScrollBlocked=true;scroller.Scroller.isScrolling=false;
       let scrollWrites=0;const oldScrollTo=scroller.ScrollTo,oldElementScroll=scroller.ScrollerObject.scrollTo;
-      scroller.ScrollTo=()=>scrollWrites++;scroller.ScrollerObject.scrollTo=()=>scrollWrites++;
+      // Layout may preserve a browsing reading anchor with an instant write.
+      // Follow movement remains forbidden throughout the existing grace.
+      let anchorWrites=0;scroller.ScrollTo=()=>scrollWrites++;scroller.ScrollerObject.scrollTo=options=>{check(options.behavior==='instant','browsing anchor correction is instant');anchorWrites++};
       const nativeRAF=globalThis.requestAnimationFrame,nativeCancel=globalThis.cancelAnimationFrame,frames=new Map();let frameId=0;
       globalThis.requestAnimationFrame=fn=>{frames.set(++frameId,fn);return frameId};globalThis.cancelAnimationFrame=id=>frames.delete(id);
       const nativeTimeout=globalThis.setTimeout,nativeClearTimeout=globalThis.clearTimeout,timers=new Map();let timerId=1000000;
       globalThis.setTimeout=(callback,delay)=>{timers.set(++timerId,{callback,delay});return timerId};globalThis.clearTimeout=id=>{if(!timers.delete(id))nativeClearTimeout(id)};
       const originalMove=scroller.MoveToActiveLyrics;let moveCalls=0;scroller.MoveToActiveLyrics=function(...args){moveCalls++;return originalMove.apply(this,args)};
       try{
-        scroller.AutoScrolling=false;scroller.ScrollerObject.dispatchEvent(new Event('scroll'));
-        const grace=[...timers].find(([,timer])=>timer.delay===750);check(!!grace,'actual scroll listener schedules existing750ms grace callback');
+        // This fixture also owns a Static scroller on the same scroll element.
+        // Real deadline subtraction may yield 749.9ms for this scroller and
+        // 750ms for the other. Selecting a timer by exact duration could execute
+        // the OTHER callback. Reproduce that clock precision deterministically,
+        // then select the task actually retained by the scroller under test.
+        const nativeNow=performance.now;let nowCalls=0;
+        performance.now=()=>[1000,1000.1,1000.2,1000.2][Math.min(nowCalls++,3)];
+        try{scroller.AutoScrolling=false;scroller.ScrollerObject.dispatchEvent(new Event('scroll'))}finally{performance.now=nativeNow}
+        const graceId=scroller.Maid.Get('WaitForUserToStopScrolling')?.[1],grace=[graceId,timers.get(graceId)];
+        check(!!grace[1]&&grace[1].delay>749&&grace[1].delay<750,'actual scroll listener schedules owned remaining750ms grace callback');
+        check(graceId!==staticScroller.Maid.Get('WaitForUserToStopScrolling')?.[1],'grace callback belongs to timed scroller rather than other fixture listener');
         // Async annotation layout/typography uses the same grace, and repeated
         // invalidations coalesce both geometry and one distance-blur refresh.
         scroller.SetBlurEnabled(true);const annotationBlurBefore=counters.blurCalculations;
@@ -126,7 +137,7 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
         check(scrollWrites===0&&scroller.AutoScrollBlocked,'hiding active cue preserves manual-scroll grace after physical scroll stops');
         controllers.forEach(v=>v.Animate(-1,0,true)); // Existing timeout lands in silence.
         timers.delete(grace[0]);grace[1].callback();
-        check(!scroller.PreserveManualGrace&&scroller.AutoScrollBlocked,'cue guard expires through existing grace timeout even without active voices');
+        check(!scroller.PreserveManualGrace&&scroller.AutoScrollBlocked,'cue guard expires through existing grace timeout even without active voices '+JSON.stringify({preserve:scroller.PreserveManualGrace,blocked:scroller.AutoScrollBlocked,active:scroller.VocalGroups.map(g=>g.Vocals.map(v=>v.IsActive())),delay:grace[1].delay}));
         const movesAfterExpiry=moveCalls;controllers[0].Animate(1.25,0,true);await Promise.resolve();
         check(moveCalls>movesAfterExpiry,'later playback activity reaches normal scrolling policy after grace expiry');
       }finally{globalThis.requestAnimationFrame=nativeRAF;globalThis.cancelAnimationFrame=nativeCancel;globalThis.setTimeout=nativeTimeout;globalThis.clearTimeout=nativeClearTimeout;scroller.MoveToActiveLyrics=originalMove;scroller.ScrollTo=oldScrollTo;scroller.ScrollerObject.scrollTo=oldElementScroll}

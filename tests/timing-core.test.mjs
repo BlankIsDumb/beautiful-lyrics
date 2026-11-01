@@ -162,7 +162,9 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
   const harness = { visuals: [], cues: [], scrollers: [], pending: new Set() };
   globalThis.__timingHarness = harness;
   class Element {
-    classList = { add() {} };
+    classList = { add() {}, toggle() {}, contains() {return false} };
+    style = {getPropertyValue(){return ""},setProperty(){},removeProperty(){}};
+    setAttribute(){} removeAttribute(){} addEventListener(){} removeEventListener(){}
     dataset = {};
     children = [];
     appendChild(child) {this.children.push(child)}
@@ -185,7 +187,7 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       export function OnPreRender(callback){const set=globalThis.__timingHarness.pending;set.add(callback);return ()=>set.delete(callback)}`,
     'scroller-stub': `export class LyricsScroller {
       forced=[]; ended=[]; constructor(){globalThis.__timingHarness.scrollers.push(this)}
-      SetBlurEnabled(){} RefreshAnnotationLayout(){this.annotationRefreshes=(this.annotationRefreshes||0)+1} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
+      IsBrowsing(){return false} SetProfile(){} RefreshLayout(){} SetBlurEnabled(){} RefreshAnnotationLayout(){this.annotationRefreshes=(this.annotationRefreshes||0)+1} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
     }`,
     'controller-stub': `export class VocalController {
       calls=[];frames=0;renderChanges=0;RequestedTimeSkip={Connect:callback=>{this.click=callback}};

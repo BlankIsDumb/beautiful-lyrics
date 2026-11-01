@@ -1,0 +1,15 @@
+// Shared by the real page and the settings' text-only measurement surface.
+// Keep these query units in their original containing-block hierarchy.
+@mixin contained-column {
+  --LyricsPaddingLeft: 17.5cqw;
+  --LyricsPaddingRight: 15cqw;
+}
+@mixin fullscreen-panel {
+  --PlayPanelWidth: calc(min(30cqw, 50cqh) * 1.1);
+  --PlayPanelRightSpace: calc(var(--PlayPanelWidth) / 4);
+  --PlayPanelAppliedLeftSpace: calc(50cqw - var(--PlayPanelWidth) - var(--PlayPanelRightSpace));
+}
+@mixin fullscreen-column {
+  --LyricsPaddingLeft: calc(50cqw - (var(--PlayPanelRightSpace) * 0.3));
+  --LyricsPaddingRight: calc(var(--PlayPanelAppliedLeftSpace) * 0.25);
+}

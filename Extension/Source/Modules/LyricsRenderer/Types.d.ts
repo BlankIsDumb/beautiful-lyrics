@@ -29,6 +29,7 @@ interface SyncedVocals extends BaseVocals {
 	NeedsFrame(): boolean
 	IsActive(): boolean
 	HasAnnotations?(): boolean
+    PrepareSourceWrapping?(): (() => void) | undefined
 	PrepareAnnotations?(fontGeneration?: number): AnnotationLayoutJob | undefined
 	MeasureAnnotations?(fontGeneration?: number): void
 	GetScrollTarget?(): { Element: HTMLElement; StartTime: number }

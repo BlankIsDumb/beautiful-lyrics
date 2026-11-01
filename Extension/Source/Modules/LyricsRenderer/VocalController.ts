@@ -26,6 +26,7 @@ export class VocalController implements SyncedVocals {
   ActivityChanged = this.activity.GetEvent();
   RequestedTimeSkip = this.skip.GetEvent();
   private active = false;
+  private presentationVisible = true;
   private child!: TextChild;
   private ruby?: RubyVocals;
   private annotations = NormalizeAnnotations();
@@ -183,17 +184,24 @@ export class VocalController implements SyncedVocals {
   Animate(time: number, delta: number, immediate?: true) {
     this.lastTime = time;
     if (this.kind === "plain") return;
-    const active = time >= this.voice.start && time <= this.voice.end;
-    if (this.active !== active) { this.active = active; this.activity.Fire(active); }
+    this.SetLogicalActivity(time >= this.voice.start && time <= this.voice.end);
     (this.child as SyllableVocals | LineVocals).Animate(time, delta, immediate);
     this.ruby?.Animate(time, delta, immediate);
     if (this.secondary && IsTimedChild(this.secondary.child)) this.secondary.child.Animate(time, delta, immediate);
   }
   IsActive() { return this.active; }
+  SetLogicalActivity(active: boolean) {
+    if (this.active !== active) { this.active = active; this.activity.Fire(active); }
+  }
+  SetPresentationVisible(visible: boolean) {
+    this.presentationVisible = visible;
+    if (visible) this.SetBlur(this.blurDistance);
+  }
   NeedsFrame() { return (!(this.child instanceof StaticVocals) && this.child.NeedsFrame()) || !!this.ruby?.NeedsFrame() || !!(this.secondary && IsTimedChild(this.secondary.child) && this.secondary.child.NeedsFrame()); }
   RequiresContinuous() { return (!(this.child instanceof StaticVocals) && this.child.RequiresContinuous()) || !!this.ruby?.RequiresContinuous() || !!(this.secondary && IsTimedChild(this.secondary.child) && this.secondary.child.RequiresContinuous()); }
   SetBlur(distance: number) {
     this.blurDistance = distance;
+    if (!this.presentationVisible) return;
     if (this.profile.blur) this.root.style.setProperty("--text-blur", `${distance}px`);
     else this.root.style.removeProperty("--text-blur");
     this.ruby?.SetBlur(distance, this.annotationRendering().blur);
@@ -209,6 +217,11 @@ export class VocalController implements SyncedVocals {
     this.secondary?.root.style.removeProperty("--text-blur");
   }
   HasAnnotations() { return !!this.secondary || !!this.ruby; }
+  PrepareSourceWrapping() {
+    const primary=this.child instanceof SyllableVocals?this.child.PrepareSourceWrapping():undefined;
+    const secondary=this.secondary?.child instanceof SyllableVocals?this.secondary.child.PrepareSourceWrapping():undefined;
+    return primary||secondary?()=>{primary?.();secondary?.()}:undefined;
+  }
   PrepareAnnotations(fontGeneration = 0) { return this.ruby?.PrepareLayout(fontGeneration, this.currentTime?.() ?? this.lastTime); }
   MeasureAnnotations(fontGeneration = 0) { this.ruby?.FitReadings(fontGeneration, this.currentTime?.() ?? this.lastTime); }
   GetScrollTarget() { return { Element: this.block || this.ruby?.Element || this.root, StartTime: this.voice.start }; }

@@ -4,10 +4,12 @@ import path from 'node:path';
 
 // Shared by standalone Chromium tests and the private parent-run native fixture.
 // It bundles real components/layout, without player/session/storage dependencies.
-export async function buildVocalFixture(baselineRoot, includeScroller = false, realConverters = false) {
+export async function buildVocalFixture(baselineRoot, includeScroller = false, realConverters = false, includeLayout = false, includeRenderer = false) {
   const baseline = baselineRoot ? ['SyllableVocals','LineVocals','Interlude'].map((name,index)=>`export {default as ${['Baseline','BaselineLine','BaselineInterlude'][index]}} from ${JSON.stringify(path.join(baselineRoot, 'Extension/Source/Modules/LyricsRenderer/Components/'+name+'.ts').replaceAll('\\','/'))};`).join('\n') : '';
   const result = await build({ stdin: { contents: `
     ${includeScroller ? "export {LyricsScroller} from './Extension/Source/Modules/LyricsRenderer/LyricsScroller.ts';" : ''}
+    ${includeLayout ? "export * from './Extension/Source/LayoutSettings.ts';export {PresentationSettings} from './Extension/Source/PresentationSettings.ts';export * from './Extension/Source/Modules/LyricsRenderer/TypographyPreview.ts';" : ''}
+    ${includeRenderer ? "export {default as LyricsRenderer} from './Extension/Source/Modules/LyricsRenderer.ts';" : ''}
     export {VocalController} from './Extension/Source/Modules/LyricsRenderer/VocalController.ts';
     export {CueController} from './Extension/Source/Modules/LyricsRenderer/CueController.ts';
     export {RenderScheduler} from './Extension/Source/Modules/LyricsRenderer/RenderScheduler.ts';
@@ -20,6 +22,8 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false, r
     export {NormalizeLyrics} from './Extension/Source/Modules/LyricDocument.ts';
     export {AlignJapanese,ConvertVoice} from './Extension/Source/Modules/AnnotationConverters.ts';${baseline}`, resolveDir: process.cwd() },
     bundle: true, write: false, format: 'iife', globalName: 'fixtureModule', plugins: [{ name: 'isolated-vocals', setup(b) {
+      if(includeRenderer)b.onResolve({filter:/LyricClock\.ts$/},()=>({path:'fixture-clock',namespace:'clock'}));
+      b.onLoad({filter:/.*/,namespace:'clock'},()=>({contents:'export const PlayerLyricClock={};'}));
       b.onResolve({ filter: /^@|^npm:/ }, args => {
         if (args.importer.endsWith('AnnotationConverters.ts') && (!realConverters || args.path.includes('KuromojiAnalyzer'))) return { path: 'unused-language', namespace: 'fixture' };
         if (args.path.startsWith('@Universal/')) return { path: path.resolve('Universal', args.path.slice('@Universal/'.length)) };
@@ -27,7 +31,7 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false, r
         if (args.path.startsWith('@Pinyin/')) return { path: path.resolve('Pinyin', args.path.slice('@Pinyin/'.length)) };
         if (args.path.startsWith('npm:')) return b.resolve(args.path.slice(4).replace(/@[^/@]+$/, ''), { resolveDir: process.cwd(), kind: args.kind });
       });
-      b.onLoad({ filter: /\.css$/ }, () => ({contents:'',loader:'js'}));
+      b.onLoad({ filter: /\.(?:css|scss)$/ }, () => ({contents:'',loader:'js'}));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export default {};' }));
     } }] });
   return { code: result.outputFiles[0].text, css: sass.compile('Extension/Source/Stylings/Lyrics.scss').css };

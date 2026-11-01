@@ -333,8 +333,15 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 						relativeTimestamp += relativeTimestep
 					}
 				} else {
-					// Update our text
-					syllableSpan.innerText = syllableMetadata.Text
+                    // The outer canonical owner still owns timing, transforms
+                    // and springs. A fragmented inline painter slices ONE
+                    // gradient through wrapped rows instead of repeating its
+                    // horizontal sweep on every row of a block background.
+                    const paint = document.createElement("span")
+                    paint.className = "SourcePaint Synced"
+                    paint.innerText = syllableMetadata.Text
+                    syllableSpan.classList.add("FragmentedOwner")
+                    syllableSpan.append(paint)
 				}
 
 				// Determine our time information
@@ -410,6 +417,29 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
             // even when the original voice was already idle and sleeping.
             this.Reconcile(time)
         }
+    }
+    // Read-only preparation during a real layout invalidation. No playback
+    // frame measures source rows. Every voice's reads finish before any class
+    // writes; nonwrapped owners retain their exact Classic background box.
+    public PrepareSourceWrapping() {
+        const lineHeight=parseFloat(getComputedStyle(this.Container).lineHeight)
+        if(!Number.isFinite(lineHeight)||this.Container.clientWidth<=0)return
+        const changes: {element:HTMLElement;wrapped:boolean}[]=[]
+        for(const syllable of this.Syllables) {
+            if(syllable.Type!=="Syllable")continue
+            const element=syllable.LiveText.Object
+            let wrapped=element.offsetHeight>lineHeight+2
+            if(element.classList.contains("WrappedPainter")) {
+                // Ruby's empty row-exclusion float can retain its old height
+                // until the later annotation write barrier. Classify actual
+                // source fragments instead of that float's block height, so a
+                // width/font change restores the Classic painter in this batch.
+                const rects=[...element.querySelector<HTMLElement>(".SourcePaint")!.getClientRects()].filter(rect=>rect.width>0&&rect.height>0)
+                if(rects.length)wrapped=Math.max(...rects.map(rect=>rect.top))-Math.min(...rects.map(rect=>rect.top))>lineHeight/2
+            }
+            if(element.classList.contains("WrappedPainter")!==wrapped)changes.push({element,wrapped})
+        }
+        return changes.length?()=>{for(const {element,wrapped} of changes)element.classList.toggle("WrappedPainter",wrapped)}:undefined
     }
 
 	// Private Methods

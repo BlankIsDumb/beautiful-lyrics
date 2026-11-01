@@ -32,17 +32,17 @@ test('real vocal DOM preserves clusters, source granularity, narrow annotation w
         for(const time of [-1,0,.5,1.5,2,4,20,0])fixture.vocal.Animate(time,1/60,true);
         for(const element of fixture.container.querySelectorAll('[style]'))check(!/NaN|Infinity/.test(element.getAttribute('style')),'finite animation CSS '+sample.name);
       }
-      // Regression: a long nowrap provider word must not shrink each Thai chunk
-      // into a vertical column. Inherited whole-word overflow is allowed here;
-      // changing that policy would be a separate layout feature.
+      // Pass6: oversized provider words wrap between safe units, without
+      // shrinking each Thai chunk into a vertical column.
       const longThai=spans(['กิ','ดี','มาก','ก้','กุ','ไป','มา','ดี','กิ','ได้','ใจ','เรา','กัน']);
       longThai[longThai.length-1].IsPartOfWord=false;
       const oversized=make(longThai,LayoutSyllables(longThai));
       const longWord=oversized.container.querySelector('.Word');
-      check(longWord&&longWord.getBoundingClientRect().width>oversized.container.clientWidth,'exercise a word wider than available space');
+      check(longWord&&longWord.getBoundingClientRect().width<=oversized.container.clientWidth+1,'oversized provider word stays in available width');
+      check(new Set([...longWord.children].map(node=>Math.round(node.getBoundingClientRect().top))).size>1,'oversized word wraps to real visual rows');
       const lineHeight=parseFloat(getComputedStyle(oversized.container).lineHeight);
       for(const run of longWord.querySelectorAll('.ShapingRun')) {
-        check(getComputedStyle(run).flexShrink==='0'&&getComputedStyle(run).whiteSpace==='pre','original run is atomic');
+        check(getComputedStyle(run).flexShrink==='0'&&getComputedStyle(run).whiteSpace==='pre-wrap','original run is atomic');
         check(run.getBoundingClientRect().height<=lineHeight*1.1+3,'Thai fragment never wraps internally into columns');
       }
       const wordSource=spans(['กิ','ดีมาก ','กุ','ดีมาก ','ก้','ดีมาก ']);

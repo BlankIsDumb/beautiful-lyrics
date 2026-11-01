@@ -151,11 +151,13 @@ test('ruby keeps canonical primary paint/springs/emphasis and uses bounded sourc
       }
       // Hidden entries own no continuing spring work. Real layout arrival pulls
       // the current clock, even while paused after skipped hidden visual ticks.
-      hosts[0].style.width='18px';const hiddenDoc=makeDoc([['前前前胸を',1,4],['後',6,8]]),hiddenGroup=document.createElement('button');hiddenGroup.className='VocalsGroup';hosts[0].append(hiddenGroup);
+      // Pass6 wraps the former18px overflow case back into the column. A
+      // genuinely unavailable zero-width surface is the hidden-work fixture.
+      hosts[0].style.width='0px';const hiddenDoc=makeDoc([['前前前胸を',1,4],['後',6,8]]),hiddenGroup=document.createElement('button');hiddenGroup.className='VocalsGroup';hosts[0].append(hiddenGroup);
       let now=0;const count=CreateRenderingCounters(),hidden=new VocalController(hiddenGroup,hiddenDoc,hiddenDoc.groups[0].voices[0],minimal,count,undefined,()=>now);owned.push(hidden);
       const hiddenRuns=AlignJapanese(hiddenDoc.groups[0].voices[0],[{surface_form:'前前前'},{surface_form:'胸',reading:'ムネ'},{surface_form:'を'},{surface_form:'後'}],'kana',kana);
       const animated=NormalizeAnnotations();for(const sourceCase of ['Word','Line'])animated.cases[sourceCase]={inherit:false,effects:{...ClassicRendering,blur:false,emphasis:false}};
-      hidden.SetAnnotations(animated,undefined,hiddenRuns,0);hidden.MeasureAnnotations();const updates=count.springUpdates;
+      hidden.SetAnnotations(animated,undefined,hiddenRuns,0);hidden.MeasureAnnotations();check(hidden.ruby.entries.every(entry=>entry.host.hidden)&&hidden.ruby.fitKey==='','zero geometry is not cached as a valid fit');const updates=count.springUpdates;
       for(let index=0;index<100;index++)hidden.Animate(index/20,1/60);
       check(count.springUpdates===updates&&!hidden.RequiresContinuous()&&!hidden.NeedsFrame(),'unrenderable readings stop frame/spring work');
       now=2.5;hosts[0].style.width='700px';hidden.MeasureAnnotations(1);

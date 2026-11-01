@@ -31,11 +31,12 @@ test('ruby reserves only actual annotated visual rows against untouched Original
       }return result.sort((a,b)=>a.top-b.top);
     }
     function mount(text,mode='Line',size=29.6,width=337.034,direction='Left',opposite=false){
-      const shell=document.createElement('div');shell.className='shell';shell.style.cssText='width:'+width+'px;--minimum-lyrics-size:'+size+'px;--maximum-lyrics-size:'+size+'px;--encore-body-font-stack:'+font;document.body.append(shell);
-      const lyrics=document.createElement('div');lyrics.className='Lyrics NaturallyAligned'+direction;shell.append(lyrics);
+      const shell=document.createElement('div');shell.className='shell';shell.style.cssText='width:'+width+'px;--encore-body-font-stack:'+font;document.body.append(shell);
+      const lyrics=document.createElement('div');lyrics.className='Lyrics NaturallyAligned'+direction;lyrics.style.setProperty('--minimum-lyrics-size',size+'px');lyrics.style.setProperty('--maximum-lyrics-size',size+'px');shell.append(lyrics);
       const group=document.createElement('button');group.className='VocalsGroup'+(opposite?' AlignedOpposite':'');lyrics.append(group);
       const doc=mode==='Static'?NormalizeLyrics({Type:'Static',Lines:[{Text:text}]}):mode==='Line'?NormalizeLyrics({Type:'Line',StartTime:1,EndTime:9,Content:[{Type:'Vocal',Text:text,StartTime:1,EndTime:9}]}):NormalizeLyrics({Type:'Syllable',StartTime:1,EndTime:9,Source:{HasWordSync:true},Content:[{Type:'Vocal',Lead:{StartTime:1,EndTime:9,Syllables:[{Text:text.slice(0,3),StartTime:1,EndTime:4,IsPartOfWord:true},{Text:text.slice(3),StartTime:5,EndTime:9,IsPartOfWord:false}]}}]});
       const voice=doc.groups[0].voices[0],controller=new VocalController(group,doc,voice,{...profile}),line=controller.root.querySelector('.Line,.Static');
+      check(Math.abs(parseFloat(getComputedStyle(controller.root).fontSize)-size)<.01,'fixture actual source size '+size);
       return {shell,lyrics,group,doc,voice,controller,line,destroy(){controller.Destroy();shell.remove()}};
     }
     const mapped=(item,readings)=>LayoutVoice(item.voice).map((run,index)=>index?run:{...run,AnnotationDerived:true,Readings:readings,Reading:readings[0]});
@@ -90,7 +91,7 @@ test('ruby reserves only actual annotated visual rows against untouched Original
         v.SetAnnotations(settings,undefined,runs,2.1);v.MeasureAnnotations();const first=v.ruby.lineSpacer;
         check(first&&v.child===owner&&owner.GlowSpring===spring&&spring.Position===position&&spring.Velocity===velocity&&sourceNodes.every(node=>node.parentNode===item.line),'layout preserves exact moving primary and text nodes');
         item.shell.style.width='320px';v.MeasureAnnotations();check(v.ruby.lineSpacer===first,'width change reuses one empty spacer');
-        item.shell.style.setProperty('--minimum-lyrics-size','42px');item.shell.style.setProperty('--maximum-lyrics-size','42px');v.MeasureAnnotations(1);check(v.ruby.lineSpacer===first,'font invalidation reuses spacer');
+        item.lyrics.style.setProperty('--minimum-lyrics-size','42px');item.lyrics.style.setProperty('--maximum-lyrics-size','42px');v.MeasureAnnotations(1);check(v.ruby.lineSpacer===first,'font invalidation reuses spacer');
         v.SetRendering({...profile,glow:true,emphasis:false},2.1);check(!first.isConnected,'source layout invalidation releases old spacer');v.MeasureAnnotations(1);check(v.ruby.lineSpacer?.isConnected,'profile reconciliation rebuilds only needed layout state');
         const replaced=v.ruby.lineSpacer;v.SetProjection([{...runs[0],Text:'unmapped'}],2.1);v.MeasureAnnotations(2);
         check(!replaced.isConnected&&!item.line.querySelector('.RubyLineSpacer')&&!item.line.classList.contains('RubyLineLayout')&&v.ruby.Element.classList.contains('RubyNoReadings')&&parseFloat(getComputedStyle(v.ruby.Element).paddingTop)===0,'unmappable replacement keeps Original with no band/spacer');

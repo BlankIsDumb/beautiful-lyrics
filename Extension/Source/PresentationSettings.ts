@@ -1,3 +1,4 @@
+import { NormalizeLayout, NormalizeFontFamily, LayoutFields, LayoutCategories, ClassicLayout, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import { NormalizeAnnotations, NormalizeConversions, EffectiveConversion, type ConversionProfile, type AnnotationProfile } from "./AnnotationSettings.ts";
 import { NormalizeRendering, ApplyTextPreset, ClassicRendering, NormalizeCues, type CueSettings, SourceCases, type SourceCase, type RenderingProfile } from "./RenderingSettings.ts";
 // Presentation owns no provider, player or annotation dependencies. Saving a view
@@ -6,12 +7,14 @@ export type PresentationView = "NowPlaying" | "FullLyrics";
 export const PresentationLanguages = ["Chinese", "Japanese", "Korean"] as const;
 export type PresentationLanguage = (typeof PresentationLanguages)[number];
 type RenderingCases = Record<SourceCase, RenderingProfile>;
-type Profile = { conversions: ConversionProfile; annotations: AnnotationProfile; cues: CueSettings; renderingCases: RenderingCases; japaneseForm: "romaji" | "kana"; romanizationEnabled: boolean; romanizedLanguages: Record<PresentationLanguage, boolean> };
-type Settings = { version: 7; profiles: Record<PresentationView, Profile> };
+type Profile = { layout: LayoutProfile; conversions: ConversionProfile; annotations: AnnotationProfile; cues: CueSettings; renderingCases: RenderingCases; japaneseForm: "romaji" | "kana"; romanizationEnabled: boolean; romanizedLanguages: Record<PresentationLanguage, boolean> };
+type Settings = { version: 8; fontFamily: string; profiles: Record<PresentationView, Profile> };
 const storageKey = "JustEnoughLyrics/Presentation";
 const legacyKey = "BeautifulLyrics/LyricViews";
 
 export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "setItem">) {
+  const layoutListeners = new Set<(view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void>();
+  const familyListeners = new Set<() => void>();
   const annotationListeners = new Set<(view: PresentationView) => void>();
   const cueListeners = new Set<(view: PresentationView, fields: readonly (keyof CueSettings)[]) => void>();
   const renderingListeners = new Set<(view: PresentationView, sourceCase: SourceCase, fields: readonly (keyof RenderingProfile)[]) => void>();
@@ -53,7 +56,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
       }
     }
     migrated.enabled = migrationEnabled;
-    return { conversions: conversions ? NormalizeConversions(conversions) : migrated, annotations: oldAnnotations, cues: NormalizeCues(cues), renderingCases: cases ? migrateCases(cases) : defaults(), japaneseForm: japaneseForm === "kana" ? "kana" : "romaji", romanizationEnabled: typeof enabled === "boolean" ? enabled : Object.values(romanizedLanguages).some(Boolean), romanizedLanguages };
+    return { layout: NormalizeLayout(), conversions: conversions ? NormalizeConversions(conversions) : migrated, annotations: oldAnnotations, cues: NormalizeCues(cues), renderingCases: cases ? migrateCases(cases) : defaults(), japaneseForm: japaneseForm === "kana" ? "kana" : "romaji", romanizationEnabled: typeof enabled === "boolean" ? enabled : Object.values(romanizedLanguages).some(Boolean), romanizedLanguages };
   };
   const parse = (key: string) => {
     try { return JSON.parse(storage.getItem(key) || "null"); }
@@ -62,23 +65,26 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
   let settings: Settings | undefined;
   let futureVersion = false;
   let migrationRaw: string | undefined;
+  let migrationVersion: number | undefined;
   const read = (): Settings => {
     if (settings) return settings;
     const saved = parse(storageKey);
-    const supported = saved?.version === 1 || saved?.version === 2 || saved?.version === 3 || saved?.version === 4 || saved?.version === 5 || saved?.version === 6 || saved?.version === 7;
+    const supported = saved?.version === 1 || saved?.version === 2 || saved?.version === 3 || saved?.version === 4 || saved?.version === 5 || saved?.version === 6 || saved?.version === 7 || saved?.version === 8;
     futureVersion = saved?.version !== undefined && !supported;
-    if (saved?.version === 6) migrationRaw = storage.getItem(storageKey) || undefined;
+    if (saved?.version === 6 || saved?.version === 7) { migrationRaw = storage.getItem(storageKey) || undefined; migrationVersion = saved.version; }
     const legacy = parse(legacyKey);
     const seed = legacy?.Version === 1 ? legacy.Items?.RomanizedLanguages : undefined;
     // Copy, never share maps or rewrite the legacy store. A rollback still sees
     // its original settings, and editing one new profile cannot affect the other.
     settings = {
-      version: 7,
+      version: 8,
+      fontFamily: saved?.version === 8 ? NormalizeFontFamily(saved.fontFamily) : "",
       profiles: {
-        NowPlaying: profile(supported ? saved.profiles?.NowPlaying?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.NowPlaying?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.NowPlaying?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.NowPlaying?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.NowPlaying?.cues : { motion: saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.NowPlaying?.annotations : undefined, saved?.version === 7 ? saved.profiles?.NowPlaying?.conversions : undefined),
-        FullLyrics: profile(supported ? saved.profiles?.FullLyrics?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.FullLyrics?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.FullLyrics?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.FullLyrics?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.FullLyrics?.cues : { motion: saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.FullLyrics?.annotations : undefined, saved?.version === 7 ? saved.profiles?.FullLyrics?.conversions : undefined),
+        NowPlaying: profile(supported ? saved.profiles?.NowPlaying?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.NowPlaying?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.NowPlaying?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.NowPlaying?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.NowPlaying?.cues : { motion: saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.NowPlaying?.annotations : undefined, saved?.version >= 7 ? saved.profiles?.NowPlaying?.conversions : undefined),
+        FullLyrics: profile(supported ? saved.profiles?.FullLyrics?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.FullLyrics?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.FullLyrics?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.FullLyrics?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.FullLyrics?.cues : { motion: saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.FullLyrics?.annotations : undefined, saved?.version >= 7 ? saved.profiles?.FullLyrics?.conversions : undefined),
       },
     };
+    if (saved?.version === 8) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].layout = NormalizeLayout(saved.profiles?.[view]?.layout);
     return settings;
   };
   const save = (view: PresentationView, next: Profile) => {
@@ -94,7 +100,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     const updated = { ...current, profiles: { ...current.profiles, [view]: next } };
     // Preserve the exact old payload before publishing schema7. Failed snapshot
     // or primary writes leave the lazy in-memory state and all events untouched.
-    if (migrationRaw !== undefined) storage.setItem(storageKey + "/Migration/schema6", migrationRaw);
+    if (migrationRaw !== undefined) storage.setItem(storageKey + "/Migration/schema" + migrationVersion, migrationRaw);
     storage.setItem(storageKey, JSON.stringify(updated));
     migrationRaw = undefined;
     settings = updated;
@@ -104,6 +110,8 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     if (JSON.stringify(previous.annotations) !== JSON.stringify(next.annotations)) for (const listener of annotationListeners) listener(view);
     const cueFields = (["threshold", "motion"] as const).filter(key => previous.cues[key] !== next.cues[key]);
     if (cueFields.length) for (const listener of cueListeners) listener(view, cueFields);
+    const layoutFields = LayoutFields(previous.layout, next.layout);
+    if (layoutFields.length) for (const listener of layoutListeners) listener(view, layoutFields);
     for (const sourceCase of SourceCases) {
       const renderingFields = (Object.keys(next.renderingCases[sourceCase]) as (keyof RenderingProfile)[])
         .filter(key => previous.renderingCases[sourceCase][key] !== next.renderingCases[sourceCase][key]);
@@ -111,6 +119,26 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     }
   };
   return {
+    getLayout: (view: PresentationView) => ({ ...read().profiles[view].layout }),
+    saveLayout: (view: PresentationView, value: LayoutProfile) => save(view, { ...read().profiles[view], layout: NormalizeLayout(value) }),
+    resetLayout: (view: PresentationView, category: LayoutCategory) => {
+      const current = { ...read().profiles[view].layout };
+      for (const key of LayoutCategories[category]) (current as any)[key] = ClassicLayout[key];
+      save(view, { ...read().profiles[view], layout: current });
+    },
+    subscribeLayout: (listener: (view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void) => { layoutListeners.add(listener); return () => { layoutListeners.delete(listener); }; },
+    getFontFamily: () => read().fontFamily,
+    saveFontFamily: (value: string) => {
+      const current = read(), fontFamily = NormalizeFontFamily(value);
+      if (futureVersion) throw new Error("Presentation settings require a newer version.");
+      if (fontFamily === current.fontFamily) return;
+      const updated = { ...current, fontFamily };
+      if (migrationRaw !== undefined) storage.setItem(storageKey + "/Migration/schema" + migrationVersion, migrationRaw);
+      storage.setItem(storageKey, JSON.stringify(updated));
+      migrationRaw = undefined; settings = updated;
+      for (const listener of familyListeners) listener();
+    },
+    subscribeFontFamily: (listener: () => void) => { familyListeners.add(listener); return () => { familyListeners.delete(listener); }; },
     saveConversions: (view: PresentationView, conversions: ConversionProfile) => save(view, { ...read().profiles[view], conversions: NormalizeConversions(conversions) }),
     getConversions: (view: PresentationView) => structuredClone(read().profiles[view].conversions),
     getAnnotations: (view: PresentationView) => structuredClone(read().profiles[view].annotations),
@@ -147,7 +175,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
         conversions.languages[language].enabled = values.romanizedLanguages[language] === true;
       const oldForm = current.conversions.languages.Japanese.kind === "romaji" ? "romaji" : "kana";
       if (values.japaneseForm !== oldForm) conversions.languages.Japanese.kind = values.japaneseForm;
-      save(view, { ...current, ...values, conversions: NormalizeConversions(conversions), annotations: NormalizeAnnotations(values.annotations),
+      save(view, { ...current, ...values, layout: current.layout, conversions: NormalizeConversions(conversions), annotations: NormalizeAnnotations(values.annotations),
         renderingCases: migrateCases(values.renderingCases), cues: NormalizeCues(values.cues) });
     },
     saveLanguages: (view: PresentationView, values: Profile["romanizedLanguages"]) => {

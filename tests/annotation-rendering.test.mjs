@@ -116,6 +116,9 @@ test('host border-box native backing tail and large atomic ruby retain horizonta
   // fragment, including the internally wrapping single source fragment "た)".
   // Host font stack is captured; installed font availability remains environment
   // dependent, and this controlled browser fixture does not certify native pixels.
+  // Keep the previous effective sans-serif for the baseline geometry gate.
+  // Actual inherited host-font bearings reproduce the SAME out-of-owner ruby
+  // on frozen22 and Pass6 (font-classification.txt); that remains Pass7.
   const font='Nunito, "Zen Kaku Gothic Antique Medium", SOV_monomon, "Helvetica Neue", helvetica, arial, "Hiragino Sans", "Hiragino Kaku Gothic ProN", Meiryo, "MS Gothic", sans-serif';
   const script=`(async()=>{${code}
     const {VocalController,NormalizeLyrics,NormalizeAnnotations,AlignJapanese,ApplyTextPreset,ClassicRendering,LyricsScroller}=fixtureModule;
@@ -153,7 +156,7 @@ test('host border-box native backing tail and large atomic ruby retain horizonta
         for(const rt of rtAll.filter(rt=>!rt.parentElement.hidden)){const rects=glyphs(rt);check(Math.max(...rects.map(r=>r.y))-Math.min(...rects.map(r=>r.y))<1,'rt is ONE horizontal visual line');const ruby=rt.closest('.RubyAnnotation').getBoundingClientRect(),bounds=root.getBoundingClientRect();check(ruby.width>=rt.getBoundingClientRect().width-2,'neutral reading host contains its horizontal text');check(ruby.width<=bounds.width+2,'indivisible reading uniformly fits full voice width');}
         const tail=[...root.querySelectorAll('.RubyPrimary .Synced')].find(node=>node.textContent==='た)');check(tail,'captured trailing source grouping retained');const rects=glyphs(tail);check(Math.abs(rects[0].y-rects[1].y)<1,'native trailing た and ) baseline stays one line under border-box');
         const sourceTop=Math.min(...bases.flatMap(base=>base.glyphs.map(rect=>rect.top))),rt=root.querySelector('.RubyReading').getBoundingClientRect();check(rt.bottom<=sourceTop+2,'reading visually above first source glyph row');
-        const parent=root.getBoundingClientRect();for(const unit of root.querySelectorAll('.RubyAnnotation:not([hidden])')){const r=unit.getBoundingClientRect();check(r.top>=parent.top-1&&r.bottom<=parent.bottom+1,'combined voice bounds include complete ruby');}
+        const parent=root.getBoundingClientRect();for(const unit of root.querySelectorAll('.RubyAnnotation:not([hidden])')){const r=unit.getBoundingClientRect();check(r.top>=parent.top-1&&r.bottom<=parent.bottom+1,'combined voice bounds include complete ruby '+JSON.stringify({width:shell.clientWidth,settings,root:root.className,parent:parent.toJSON(),unit:r.toJSON()}));}
         const units=[...root.querySelectorAll('.RubyAnnotation:not([hidden])')].map(node=>node.getBoundingClientRect());for(let i=0;i<units.length;i++)for(let j=i+1;j<units.length;j++){const a=units[i],b=units[j];check(a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1,'atomic reading units do not collide');}
       }
     };
@@ -169,14 +172,15 @@ test('host border-box native backing tail and large atomic ruby retain horizonta
       const phase=parseFloat(v.root.querySelector('.Synced').style.getPropertyValue('--gradient-progress'))/120;
       for(const entry of v.ruby.entries){const range=entry.run.VisualRange,expected=Math.max(0,Math.min(1,(phase-range.start)/(range.end-range.start)));check(Math.abs(parseFloat(entry.root.querySelector('.Synced').style.getPropertyValue('--gradient-progress'))/120-expected)<1e-6,'forced Line readings view one shared complete voice sweep');check(JSON.stringify(entry.child.Projection.Intervals)===JSON.stringify(v.child.Projection.Intervals),'forced Line reading keeps exact complete source interval union');}
       controllers.forEach(v=>v.SetAnnotations(NormalizeAnnotations(),undefined,undefined,5));scroller.RefreshAnnotationLayout();await frame();await frame();check(!group.querySelector('.RubyReading'),'Off removes all readings');
-      const generation=scroller.AnnotationFontGeneration;document.fonts.dispatchEvent(new Event('loadingdone'));await frame();await frame();check(scroller.AnnotationFontGeneration===generation&&!scroller.AnnotationFontWatching,'Off releases font listener and queues no font work');
+      const generation=scroller.AnnotationFontGeneration;document.fonts.dispatchEvent(new Event('loadingdone'));await frame();await frame();check(scroller.AnnotationFontGeneration===generation+1&&!group.querySelector('.RubyReading'),'reading Off releases reading work while source typography still invalidates');
+      scroller.Destroy();const disposedGeneration=scroller.AnnotationFontGeneration;document.fonts.dispatchEvent(new Event('loadingdone'));await frame();check(scroller.AnnotationFontGeneration===disposedGeneration,'renderer disposal releases the shared source/reading font listener');
       jelTestComplete('RUBY_NATIVE_FIXTURE_PASS');
     }catch(error){jelTestComplete('RUBY_NATIVE_FIXTURE_FAIL: '+error.stack)}finally{owned.reverse().forEach(object=>object.Destroy())}
   })();`;
   const directory=path.resolve(await mkdtemp(path.join(tmpdir(),'jel-ruby-native-')));
   try{
     const file=path.join(directory,'fixture.html');
-    await writeFile(file,`<!doctype html><meta charset="utf-8"><body><style>*{box-sizing:border-box}${css}body{margin:0;font-family:${font}}.shell{width:1100px;container-type:inline-size}.Lyrics{width:100%;height:1600px;--minimum-lyrics-size:56px;--maximum-lyrics-size:56px}.LyricsScrollContainer{width:100%;height:800px}</style><script>window.addEventListener("error",event=>jelTestComplete("INITIALIZATION_FAIL: "+event.message+":"+event.lineno+":"+event.colno));window.addEventListener("unhandledrejection",event=>jelTestComplete("INITIALIZATION_FAIL: "+event.reason?.stack));</script><script>${script.replaceAll('</script','<\\/script')}</script>`);
+    await writeFile(file,`<!doctype html><meta charset="utf-8"><body><style>*{box-sizing:border-box}${css}body{margin:0;font-family:${font}}.VocalsGroup{font-family:sans-serif!important}.shell{width:1100px;container-type:inline-size}.Lyrics{width:100%;height:1600px;--minimum-lyrics-size:56px;--maximum-lyrics-size:56px}.LyricsScrollContainer{width:100%;height:800px}</style><script>window.addEventListener("error",event=>jelTestComplete("INITIALIZATION_FAIL: "+event.message+":"+event.lineno+":"+event.colno));window.addEventListener("unhandledrejection",event=>jelTestComplete("INITIALIZATION_FAIL: "+event.reason?.stack));</script><script>${script.replaceAll('</script','<\\/script')}</script>`);
     const result=await runFocusedFixture(chrome,file,path.join(directory,'profile'));assert.equal(result,'RUBY_NATIVE_FIXTURE_PASS',result);
   }finally{assert.ok(directory.startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(directory).startsWith('jel-ruby-native-'));await rm(directory,{recursive:true,force:true,maxRetries:3})}
 });

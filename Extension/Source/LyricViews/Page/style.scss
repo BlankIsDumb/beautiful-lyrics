@@ -1,3 +1,4 @@
+@use "../../Stylings/LyricColumns" as columns;
 // External Support
 body:has(.BeautifulLyricsPage) {
 	.main-topBar-background {
@@ -119,8 +120,7 @@ body:has(.BeautifulLyricsPage) {
 	}
 
 	.Content {
-		--LyricsPaddingLeft: 17.5cqw;
-		--LyricsPaddingRight: 15cqw;
+		@include columns.contained-column;
 
 		.Lyrics {
 			margin-top: 25cqh;
@@ -172,10 +172,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 		*/
 
 		// Play-Panel
-		--PlayPanelWidth: calc(min(30cqw, 50cqh) * 1.1);
-		--PlayPanelRightSpace: calc(var(--PlayPanelWidth) / 4);
-
-		--PlayPanelAppliedLeftSpace: calc(50cqw - var(--PlayPanelWidth) - var(--PlayPanelRightSpace));
+		@include columns.fullscreen-panel;
 		&.NoLyrics {
 			--PlayPanelAppliedLeftSpace: calc(50cqw - (var(--PlayPanelWidth) * 0.5));
 
@@ -1251,8 +1248,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 		}
 
 		// Lyrics
-		--LyricsPaddingLeft: calc(50cqw - (var(--PlayPanelRightSpace) * 0.3));
-		--LyricsPaddingRight: calc(var(--PlayPanelAppliedLeftSpace) * 0.25);
+		@include columns.fullscreen-column;
 
 		.LoadingLyrics {
 			width: calc(100cqw - var(--LyricsPaddingLeft) - var(--LyricsPaddingRight));

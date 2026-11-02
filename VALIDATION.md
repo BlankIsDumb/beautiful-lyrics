@@ -1,5 +1,86 @@
 # Validation
 
+## Pass 6v2 installed — 5.1.0-local.24, 2026-11-02
+
+Implementation adds unified fixed-anchor following, content-owned edge spacers,
+three signed horizontal surfaces, lazy schema9 migration and cancellable live UI
+previews. AL-01 outer-owner width scoping and AL-02 wrapped Word justification are
+included. RY-01 ruby spacing and source/ruby paint clipping remain deferred.
+
+Fresh styled baseline evidence is in the private pass6v2-20261102 directory:
+baseline-follow.json and v2-follow.json. The repaired shared fixture includes real
+Simplebar CSS and asserts bounded nonzero scrollports, real overflow and positive
+source fonts. The reused12-scenario audit workload proves ordinary line placement;
+its historical Word label has only one timed span per group and therefore is
+actually line precision. Genuine multi-span Word, true Line and forced-Line tests
+are separate and assert effective precision explicitly.
+
+The expanded fixed-anchor browser fixture passes135 surface/source/context/anchor
+combinations plus single-group/cue/silent-navigation/hidden/tall cases. The horizontal
+fixture passes60 signed geometry/alignment cases plus collapsed/reopened surfaces,
+nested ruby/Above/VoiceBlock and actual-primary four-em narrowing. These are controlled
+Chromium components with synthetic timing, not authenticated native song replay.
+
+Final source validation: **128/128 tests pass**, zero failures/skips, serial
+`npm test` in128.32s. This includes the repaired styled renderer fixtures, real
+trusted-wheel smooth interruption, explicit/paused/async clicks, delay edits,
+manual/Off reflow anchors, migration/storage failures and modal cleanup.
+
+Independent same-style paired performance covered36 workloads:40/80/160 groups ×
+Word/Line × Original/Above/Furigana × frozenlocal.23/candidate. Each five-resize
+sequence used five geometry batches in both versions, with zero idle, ordinary
+activity or internal-word-boundary extra batches; paused animation/timeline work
+and owned cleanup counts stayed zero (30 explicit paused sample calls remain). The native-like .9509072303771973 device scale quick
+run also retained five batches and zero idle/cleanup work. At160groups, current /
+baseline median batch milliseconds were Word Original19.2/19.7, Above42.1/42.5,
+Furigana31.0/30.7; Line Original7.5/7.4, Above10.2/10.0, Furigana24.8/20.4. These
+single-run timings have noise; the heavier Line/Furigana result remains a measured
+cost limit, not evidence of universal speedup or guaranteed equal performance.
+
+Independent12 nonwrapped exact PNG comparisons preserve stock-zero paint, and
+the independent Classic animation/timing/spring-cadence gate passes1/1. This does not certify wrapped ruby paint
+or fix the known RY-01/Pass7 clipping defects. Readout-only pixels use WeakMap
+metadata; unchanged default columns retain original cqw rules. This followed a
+measured causal control that isolated needless inherited-variable subtree restyles.
+
+Evidence is in private pass6v2-20261102: npm-test-final.txt, parent-performance.json,
+parent-performance-native-scale*.txt, parent-paint-parity.json/.txt and
+parent-classic.txt. No native song-playback claim follows from these fixtures.
+
+The fixed-anchor line matrix currently settles within0.50 CSS px across all three
+surfaces and All/1-before/1-after, including first/last lines. The12 nonwrapped PNG
+comparisons pass. Rollback requires
+both the local.23 artifact and its pre-migration settings raw payload; preserve any
+new schema9 choices first. Provider/session/Cosmos readiness logic is unchanged.
+
+Production build, dictionary/dependency/persisted-file guards and all four syntax
+checks pass. Four generated aliases and three installed copies match SHA256
+`2FEBF54684B671CA041DDEAD20E8BBB5FDA0562E644DD3951A160D60450D73FD`.
+Exact local.23 backups/config are in the private
+pass6v2-20261102/install-backup-20261102-165945 directory. Six unrelated installed
+configuration/theme/extension hashes remain unchanged. Final 21-file product-source
+manifest still matches the tested freeze; `git diff --check` passes. No commit/push.
+
+After restart, direct Spotify DevTools confirms mounted local.24, Cosmos/Platform/
+Player ready and lyrics loaded. Real Contained playback samples place active
+source blocks at561.46 and561.81 CSS px against561.30 preferred, at different
+scroll positions. These observations do not certify every transition or surface.
+Native Card geometry was unavailable/collapsed; Fullscreen playback replay and
+monitor-change acceptance remain untested. Settings show live primary56/backing42
+CSS px and Contained column metrics, with Fullscreen metrics explicitly labelled
+as a preview. An independently opened settings dialog and saved preference edit
+took priority: the native preview-input test skipped before sending input, and no
+playback/preference commands were sent by validation. Preview cancellation and
+cleanup are covered by automated fixtures. Exact pre-apply schema8 raw migration
+backup is verified; latest schema9 user edits were preserved. Private validation
+state was removed. No restore/reapply or readiness-code change was necessary.
+Evidence: final-identities.json, post-restart-runtime.json, native-page-playback.json,
+native-final-observation.json, native-delivery-final.json and the installation manifest.
+Please test successive lines, manual resume, three surface limits/readouts, narrow/
+wide windows and moving between monitors. AL-01/AL-02 fixes await acceptance on the
+reported songs; RY-01 ruby gap/collision and Pass7 clipping remain unfixed.
+
+
 ## Pass 6 layout/context/following — 5.1.0-local.23, 2026-11-01
 
 Post-test audit: user rejected the implemented stable-if-visible normal-follow

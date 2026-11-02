@@ -102,7 +102,7 @@ test('master Off remembers choices, persists independently and notifies only eff
   assert.deepEqual(events.at(-1), ['NowPlaying', []]);
   const reopened = CreatePresentationSettings(storage);
   assert.equal(reopened.getProfile('NowPlaying').romanizationEnabled, false);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 8);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 9);
   draft.romanizationEnabled = true;
   reopened.saveProfile('NowPlaying', draft);
   assert.equal(reopened.isRomanized('NowPlaying', 'Japanese'), true);
@@ -228,7 +228,7 @@ test('schema5 defaults and v4 migration split four independent text cases withou
   const draft=settings.getProfile('NowPlaying');settings.saveProfile('NowPlaying',{...draft,japaneseForm:'kana'});draft.renderingCases.Word.glow=true;
   assert.equal(settings.getRendering('NowPlaying','Word').glow,false); // Detached save boundary.
   assert.deepEqual(settings.getCues('NowPlaying'),{threshold:100,motion:false});
-  assert.equal(JSON.parse(storage.getItem(key)).version,8);
+  assert.equal(JSON.parse(storage.getItem(key)).version,9);
 });
 
 test('schema5 partial/corrupt Line maps use muted defaults and edited v4 presets/detail survive both cases', () => {
@@ -263,7 +263,7 @@ test('schema6 annotations preserve primary choices and isolate views, cases, cha
   settings.saveAnnotations('NowPlaying',{...next,secondarySize:NaN,rubySize:10,gap:-1,spacing:Infinity,opacity:2,cases:{Word:{inherit:false},Line:{inherit:false}}});
   const valid=settings.getAnnotations('NowPlaying');assert.equal(valid.secondarySize,.6);assert.equal(valid.rubySize,.5);assert.equal(valid.gap,.15);assert.equal(valid.opacity,.8);
   assert.equal(valid.cases.Line.effects.scale,false);assert.equal(valid.cases.Line.effects.glow,false);
-  assert.equal(JSON.parse(storage.getItem(key)).version,8);
+  assert.equal(JSON.parse(storage.getItem(key)).version,9);
 });
 
 
@@ -278,7 +278,7 @@ test('schema7 migration is per-language, lazy, recoverable and preserves indepen
   assert.equal(storage.getItem(key),raw);assert.equal(storage.getItem(key+'/Migration/schema6'),null);
   settings.saveConversions('NowPlaying',now);assert.equal(storage.getItem(key),raw,'no-op is not a migration write');
   now.languages.Japanese.placement='above';settings.saveConversions('NowPlaying',now);
-  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,8);
+  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,9);
   assert.equal(settings.getCues('NowPlaying').threshold,9);assert.equal(settings.getAnnotations('NowPlaying').rubySize,.8);assert.equal(settings.getRendering('NowPlaying','Line').highlight,'off');
   const reopened=CreatePresentationSettings(storage);reopened.setRomanized('NowPlaying','Japanese',false);reopened.setRomanized('NowPlaying','Japanese',true);
   assert.equal(reopened.getConversions('NowPlaying').languages.Japanese.placement,'above');

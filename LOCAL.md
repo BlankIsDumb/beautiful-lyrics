@@ -1,9 +1,9 @@
 # Just Enough Lyrics local build notes
 
-Current local version: **5.1.0-local.23**. See [VALIDATION.md](VALIDATION.md) for
+Current local version: **5.1.0-local.24**. See [VALIDATION.md](VALIDATION.md) for
 build/install evidence and remaining native checks. Pass 6 typography, context and
-following controls live under Lyrics → Now Playing / Fullscreen. Fullscreen,
-cinema and the ordinary lyrics page share the Fullscreen layout profile.
+following controls live under Lyrics → Now Playing / Full Lyrics. Fullscreen/cinema and the ordinary lyrics page share Full Lyrics typography,
+context and scrolling. Horizontal spacing alone has three independent surfaces.
 
 ## Typography, context and following
 
@@ -11,9 +11,23 @@ The lyric font family is shared; empty follows Spotify or the active theme.
 Primary size is a per-view .5–2 multiplier over the complete responsive default,
 initially 1×. Backing size is .5–1 of primary, initially .75×. Both controls show
 current CSS pixels; resizing never saves a pixel snapshot. Weight, source leading,
-group gap and column inset have their units/ranges explained by the help buttons.
-Inset retains fullscreen artwork space and clamps to leave four primary em where
-possible, without rewriting the saved request.
+group gap have their units/ranges explained by the help buttons.
+
+Horizontal adjustment is independently saved for Sidecard, Ordinary lyrics page
+and Fullscreen/cinema: −100 is the widest protected column, 0 the existing default,
++100 the narrowest (four primary em in the actual source where possible). It changes
+column width without changing font/query-container size. Card padding and fullscreen
+artwork/control reservation remain protected; the page can use its lyric viewport.
+Readouts report physical column gaps/width in CSS pixels, not glyph ink edges.
+Dragging previews without writing storage; release/confirmed number commits, Escape
+or closing cancels. Typography reset also resets that viewer's spacing surfaces.
+
+Schema9 resets old pixel inset values to0. Reading/migration is lazy: the exact old
+raw schema1–8 payload is backed up under JustEnoughLyrics/Presentation/Migration/schemaN
+before the first changed save. Existing distinct backups are retained with a suffixed
+copy. Failed backup/main writes do not publish successful edits. Rolling back to
+local.23 requires restoring BOTH its bundle and the old schema8 raw settings; preserve
+the schema9 raw payload separately too. Future schemas remain read-only.
 
 Context counts logical source groups. All active groups and every group between
 them form one block, with before/after counts outside it. Readings, backing rows,
@@ -26,10 +40,17 @@ Auto-follow Off leaves playback/external seeks stationary. Clicking lyrics still
 seeks/recenters once, including paused clicks and asynchronous Spotify seeks.
 Following supports Classic, instant and native smooth transitions; manual input
 cancels smooth movement. The default preferred anchor is 45% from the readable
-viewport top; empty selects legacy Classic positioning. Active voices stay visible
-together when possible; newer takes priority when the block cannot fit. Classic
+viewport top, numeric0–100. Every newly active source block reaches that anchor,
+even if already visible. Extreme anchors are constrained to keep active blocks
+readable. Active voices stay visible together when possible; newest source voice
+wins when the union cannot fit, and an oversized voice aligns at the readable top
+without panning through its words. Ordinary silence/ending hold; initial navigation
+or external seeks into silence use the preceding source span (first before vocals).
+Classic transition and resume remain independent of position. Classic
 resume is initially selected; After delay resumes after the last manual input,
-waiting for a target during silence. Typography reflow preserves browsing position.
+waiting for a target during silence. Typography/width reflow preserves the readable-top source anchor while browsing
+and while follow is Off. Please test horizontal limits/readouts at narrow/wide
+window sizes and when moving between monitors.
 
 ## Runtime and sources
 The root npm build produces one self-contained browser extension. Spotify transport

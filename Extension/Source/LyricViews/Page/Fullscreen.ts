@@ -219,7 +219,7 @@ export default class PageView implements Giveable {
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!
-		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid)
+		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid, undefined, {surface:"Fullscreen", reservation:container.querySelector<HTMLElement>(".PlayPanelMouseArea")!})
 
 		// Handle our play-panel
 		{

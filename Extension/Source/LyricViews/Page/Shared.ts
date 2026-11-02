@@ -1,3 +1,4 @@
+import type { HorizontalSurface } from "../../HorizontalSpacing.ts";
 // Web-Modules
 import { Maid } from "@Universal/Modules/Maid.ts"
 
@@ -23,6 +24,7 @@ export const CreateLyricsRenderer = (
 	container: HTMLDivElement,
 	maid: Maid,
 	noLyricsTemplate?: string,
+    options: {surface: HorizontalSurface; reservation?: HTMLElement} = {surface:"Contained"},
 ) => {
 	const UpdateLyricsRenderer = () => {
 		// Wipe our previous renderer
@@ -58,7 +60,7 @@ export const CreateLyricsRenderer = (
 					(
 						(SongLyrics.RomanizedLanguage !== undefined)
 						&& PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage)
-					)
+					), "FullLyrics", undefined, undefined, options
 				),
 				"LyricsRenderer"
 			)

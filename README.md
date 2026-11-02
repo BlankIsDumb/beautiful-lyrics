@@ -8,8 +8,10 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local version: **5.1.0-local.23**. Pass 6 adds shared lyric font-family
-selection and per-view responsive typography, context and following controls.
+Current local version: **5.1.0-local.24**. Pass 6v2 follows every newly active source block at
+a fixed readable-viewport anchor and adds independent signed horizontal spacing
+for Sidecard, Ordinary lyrics page and Fullscreen/cinema. Typography and context
+retain their two viewer profiles; the lyric font family remains shared.
 Oversized timed segments wrap while retaining their original timing and animation
 owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
 Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
@@ -33,7 +35,7 @@ Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
 - Optional above readings and attached Japanese furigana for each real voice, with per-view
   size, spacing, opacity and alignment. Reading effects inherit the current text
   case or use independent Word/Line overrides. Off stops their work.
-- Four independent text-rendering cases: **Lyrics → Now Playing / Fullscreen →
+- Four independent text-rendering cases: **Lyrics → Now Playing / Full Lyrics →
   Word sync / Line sync**. Word sources start expressive; Line sources start muted.
   Actual source precision selects the case, even when Word text is displayed as Line.
   Untimed lyrics stay plain without an extra configurable branch.
@@ -41,13 +43,15 @@ Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
   settings belong to each view and are never changed by a text preset.
 - Shared lyric delay and independent per-view offsets; positive means lyrics later.
 - One lyric font family, with an empty value following Spotify/theme fonts.
-  Independent Now Playing/Fullscreen primary-size multipliers retain responsive
+  Independent Now Playing/Full Lyrics primary-size multipliers retain responsive
   sizing and show current CSS pixels; backing ratio, weights, source leading,
-  group spacing and inset are adjustable. Word/Line effects remain independent.
+  group spacing are adjustable. Each surface has its own −100…+100 horizontal
+  adjustment, effective column readouts and cancellable live preview. Word/Line effects remain independent.
 - Source-group context before/after the entire active block; manual browsing and
   Auto-follow Off reveal the whole song. Context-filtered visual work stops.
 - Classic/instant/native-smooth following, a preferred 45% readable-viewport
-  anchor, and Classic/after-delay resume. Off leaves external seeks stationary;
+  anchor (adjustable from 0–100), and Classic/after-delay resume. First/last
+  space preserves that anchor; ordinary silence and the ending hold position. Off leaves external seeks stationary;
   explicit lyric clicks still seek and recenter once.
 - Grapheme-safe emphasis and cross-span cluster handling, with conservative shaping
   units for joining scripts and original timing provenance retained.

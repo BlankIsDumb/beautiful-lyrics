@@ -17,6 +17,7 @@ export class LyricContext {
     for(const interval of intervals){const groups=this.endingGroups.get(interval.end)||[];groups.push(interval.index);this.endingGroups.set(interval.end,groups);}
     this.ends=[...this.endingGroups.keys()].sort((a,b)=>a-b);
   }
+  getNavigationSpan(): readonly [number, number] { return this.length ? [this.span[0], this.span[this.span.length-1]] : [0,-1]; }
   select(active: readonly number[], time: number, seek: boolean, profile: LayoutProfile, browsing: boolean) {
     {
       let preceding: number[]=[];

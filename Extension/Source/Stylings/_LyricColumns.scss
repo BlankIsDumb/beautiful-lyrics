@@ -5,6 +5,7 @@
   --LyricsPaddingRight: 15cqw;
 }
 @mixin fullscreen-panel {
+  --jel-panel-reservation: calc(var(--PlayPanelAppliedLeftSpace) + var(--PlayPanelWidth) + (var(--PlayPanelRightSpace) * 0.5));
   --PlayPanelWidth: calc(min(30cqw, 50cqh) * 1.1);
   --PlayPanelRightSpace: calc(var(--PlayPanelWidth) / 4);
   --PlayPanelAppliedLeftSpace: calc(50cqw - var(--PlayPanelWidth) - var(--PlayPanelRightSpace));

@@ -21,6 +21,7 @@ import {
 import type { Maid } from "@Universal/Modules/Maid.ts";
 import Icons from "./LyricViews/Icons.ts";
 import { PresentationSettings, PresentationLanguages, type PresentationView } from "./PresentationSettings.ts";
+import type { HorizontalSurface } from "./HorizontalSpacing.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
 import { ApplyTextPreset, NormalizeRendering, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp } from "./SettingsHelp.ts";
@@ -33,10 +34,13 @@ export function OpenProviderSettings() {
   content.className = "BL-Settings";
   const lifetime = new AbortController();
   let disposeTypography: (() => void) | undefined;
+  const spacingOutputs = new Map<HorizontalSurface, HTMLOutputElement>();
+  const spacingControls = new Map<HorizontalSurface, {cancel: () => void; sync: () => void; dispose: () => void}>();
   const sizeOutputs = new Map<PresentationView, {primary: HTMLOutputElement; backing: HTMLOutputElement}>();
   const addHelp = CreateSettingsHelp(content, () => {
     lifetime.abort();
     disposeTypography?.();
+    for (const control of spacingControls.values()) control.dispose();
     for (const control of content.querySelectorAll<HTMLInputElement>("input,select,button")) control.disabled = true;
   });
   // No draft-wide Save and no broad observer: every native event has this exact
@@ -116,7 +120,7 @@ export function OpenProviderSettings() {
     family.removeAttribute("aria-invalid");apply(()=>PresentationSettings.saveFontFamily(next),()=>{family.value=PresentationSettings.getFontFamily()});
   });
   for (const view of ["NowPlaying", "FullLyrics"] as const) {
-    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Fullscreen";
+    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Full Lyrics";
     const section = document.createElement("section"); section.className = "BL-ViewSettings"; lyricsSection.append(section);
     const title = heading(section, viewTitle, "h4"); title.id = `JEL-${view}-Heading`; section.setAttribute("aria-labelledby", title.id);
     let sidebar: HTMLInputElement | undefined;
@@ -137,13 +141,13 @@ export function OpenProviderSettings() {
       details.className="BL-CaseSettings";summary.textContent=title;body.className="BL-GroupOptions";body.disabled=presentationReadOnly;
       details.append(summary,body);fields.append(details);
       const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?"Reset scrolling (45% anchor)":`Classic ${title.toLowerCase()}`;body.append(reset);
-      listen(reset,"click",()=>{apply(()=>PresentationSettings.resetLayout(view,category));for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}});
+      listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}});
       return body;
     };
     const layoutNumber=(parent: HTMLElement,key: keyof LayoutProfile,label: string,min: number,max: number,step: string,help: string,classic: string)=>{
       const input=numeric(parent,label,`JEL-${view}-Layout-${key}`,()=>layoutRead()[key] as number,value=>layoutWrite(key,value),help,classic,min,max,step,presentationReadOnly);layoutInputs.set(key,input);return input;
     };
-    const nullable=(parent:HTMLElement,key:"groupGap"|"inset"|"before"|"after"|"anchor",label:string,min:number,max:number,step:string,empty:string,help:string,classic:string)=>{
+    const nullable=(parent:HTMLElement,key:"groupGap"|"before"|"after",label:string,min:number,max:number,step:string,empty:string,help:string,classic:string)=>{
       const input=document.createElement("input");input.type="number";input.id=`JEL-${view}-Layout-${key}`;input.min=String(min);input.max=String(max);input.step=step;input.placeholder=empty;input.value=layoutRead()[key]===null?"":String(layoutRead()[key]);input.setAttribute("aria-label",label);
       row(parent,label,input,help,classic);layoutInputs.set(key,input);
       listen(input,"input",()=>{
@@ -162,15 +166,46 @@ export function OpenProviderSettings() {
     layoutNumber(typography,"backingWeight","Backing weight",100,900,"100","Independent CSS backing weight, 100–900. Actual appearance depends on the available font faces.","500");
     layoutNumber(typography,"leading","Source line height",1,2.5,"any","Ratio 1–2.5 of the source font size between wrapped source rows. Does not change the independent reading row gap.","1.1818181818");
     nullable(typography,"groupGap","Between groups (em)",0,2,"0.05","Classic","Total gap 0–2 primary-source em between logical source groups. Reading rows and wrapped rows do not become groups. Empty preserves the responsive Classic margins.","Responsive 1cqw on each side");
-    nullable(typography,"inset","Horizontal inset (CSS px)",0,128,"1","Classic","Requested inset per side, 0–128 CSS px inside the available lyric column. Effective inset clamps to leave four primary em where space permits; saved request remains unchanged. Fullscreen artwork keeps its reserved column. Empty keeps Classic.","Surface default");
+    for (const [surface, surfaceTitle] of (view === "NowPlaying" ? [["Card", "Sidecard"]] : [["Contained", "Ordinary lyrics page"], ["Fullscreen", "Fullscreen/cinema"]]) as [HorizontalSurface, string][]) {
+      const lease = PresentationSettings.createHorizontalPreview(surface);
+      const range = document.createElement("input"), number = document.createElement("input");
+      range.type = "range"; number.type = "number";
+      range.id = `JEL-${surface}-HorizontalSpacing`; number.id = `${range.id}-Number`;
+      for (const input of [range, number]) { input.min="-100";input.max="100";input.step="1";input.disabled=presentationReadOnly; }
+      number.required=true;
+      range.setAttribute("aria-label", `${surfaceTitle} horizontal spacing`);
+      number.setAttribute("aria-label", `${surfaceTitle} horizontal spacing adjustment`);
+      const help = `${surfaceTitle} only. Signed adjustment −100–100: −100 uses the widest allowed column, 0 preserves the surface default, +100 narrows toward four primary-font em where possible. Source font size stays unchanged. ${surface==="Fullscreen" ? "The left gap includes the protected artwork/control reservation." : surface==="Card" ? "The sidecard's inner padding is protected; negative values may already be at the outward limit." : "The widest column reaches this lyrics viewport's edges."} Readouts describe column edges in CSS pixels, not glyph ink.`;
+      row(typography,`${surfaceTitle} horizontal spacing`,range,help,"0 (surface default)");
+      // The help helper owns one accessible row. Both editing controls share it;
+      // synchronization assigns values directly, never synthetic input events.
+      const container=range.closest<HTMLElement>(".BL-HelpRow")!;container.classList.add("BL-HorizontalSpacing");number.setAttribute("aria-describedby",range.getAttribute("aria-describedby")!);container.append(number);
+      const output=document.createElement("output");output.htmlFor=`${range.id} ${number.id}`;output.setAttribute("aria-label",`${surfaceTitle} resolved horizontal column CSS pixels`);container.append(output);spacingOutputs.set(surface,output);
+      const reset=document.createElement("button");reset.type="button";reset.textContent=`Reset ${surfaceTitle.toLowerCase()} spacing`;reset.disabled=presentationReadOnly;container.append(reset);
+      const sync=()=>{const value=PresentationSettings.getEffectiveHorizontalSpacing(surface);range.value=number.value=String(value);number.removeAttribute("aria-invalid");};
+      const valid=()=>number.value.trim()!==""&&number.validity.valid&&Number.isInteger(number.valueAsNumber);
+      const cancel=()=>{lease.cancel();sync();};
+      const commit=(value:number)=>{apply(()=>lease.commit(value),cancel);sync();};
+      listen(range,"input",()=>{const value=Number(range.value);number.value=range.value;number.removeAttribute("aria-invalid");lease.set(value);});
+      listen(range,"change",()=>commit(Number(range.value)));
+      listen(number,"input",()=>{
+        if(!valid()){number.setAttribute("aria-invalid","true");status.textContent="Enter a whole number from −100 to 100; the previous value is still active.";return;}
+        number.removeAttribute("aria-invalid");range.value=number.value;lease.set(number.valueAsNumber);
+      });
+      listen(number,"change",()=>{if(valid())commit(number.valueAsNumber);});
+      listen(number,"blur",()=>{if(!valid()){cancel();status.textContent="Invalid number discarded; the saved spacing is still active.";}});
+      for(const input of [range,number])listen(input,"keydown",event=>{if((event as KeyboardEvent).key==="Escape"){event.preventDefault();event.stopPropagation();cancel();status.textContent="Spacing preview cancelled.";}});
+      listen(reset,"click",()=>{cancel();apply(()=>PresentationSettings.saveHorizontalSpacing(surface,0),sync);sync();});
+      spacingControls.set(surface,{cancel,sync,dispose:()=>lease.dispose()});sync();
+    }
     const contextFields=layoutSection("Context","context");
     nullable(contextFields,"before","Groups before",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole source-group count before the earliest active group. Empty = All. Concurrent activity and all intervening source groups form one block; cues/readings/wrapped rows do not count.","All");
     nullable(contextFields,"after","Groups after",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole groups after the latest active group. Empty = All. Manual browsing and Auto-follow Off reveal All while remembering these counts. Untimed text always shows All.","All");
     const scrolling=layoutSection("Scrolling","scrolling");
     const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Off shows the entire song and never follows playback/external seeks. Explicit lyric clicks still seek and recenter once. Untimed text never follows.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);
-    const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"Native smooth uses the browser's duration and cancels on manual scroll input. Independent of the manual-resume policy.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
-    nullable(scrolling,"anchor","Anchor (% from top)",0,100,"1","Classic","Preferred active center, 0–100% from the top of the readable viewport. Default 45% leaves room below. Active voices stay visible together when they fit; newer wins otherwise. Empty uses the legacy Classic surface position.","Legacy surface position (empty); new default45%");
-    const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic conditionally returns when active lyrics are in reach. After delay returns after the last actual manual scrolling, even offscreen; activity/annotations cannot end it early. Silence defers until a real target.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
+    const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"Classic keeps the surface's CSS transition; all choices use the same fixed anchor. Native smooth uses the browser's duration and cancels on manual scroll input. Independent of the manual-resume policy.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
+    layoutNumber(scrolling,"anchor","Anchor (% from top)",0,100,"any","Preferred active center, 0–100% from the readable viewport top. Default 45%. Every newly active source block follows this fixed position. Visibility constrains the extremes: a nonzero-height block cannot center literally at the top or bottom without clipping. Fitting active voices remain readable together; newer wins otherwise.","45%");
+    const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic conditionally resumes fixed-anchor following when active lyrics are in reach. After delay returns after the last actual manual scrolling, even offscreen; activity/annotations cannot end it early. Silence defers until a real target.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
     layoutNumber(scrolling,"resumeDelay","Resume delay (s)",0,30,"0.05","Seconds 0–30 from the last actual manual scrolling. One owned timeout; more scrolling extends it. Auto-follow Off cancels it.",".75 s");
     if(SongLyrics?.Type==="Static") { contextFields.disabled=true;scrolling.disabled=true;heading(contextFields,"Untimed lyrics show the entire song; following is unavailable.","p") }
     const gap = numeric(fields, "Gap dots after (s)", `JEL-${view}-GapThreshold`, () => PresentationSettings.getCues(view).threshold,
@@ -322,7 +357,7 @@ export function OpenProviderSettings() {
   listen(token, "input", () => { status.textContent = "Token applies when editing finishes."; });
   content.append(status);
   (Spotify as any).PopupModal.display({ title: "Just Enough Lyrics Settings", content, isLarge: true });
-  disposeTypography=CreateTypographyPreview(content,sizeOutputs);
+  disposeTypography=CreateTypographyPreview(content,sizeOutputs,spacingOutputs);
   fetchMode.focus({ preventScroll: true });
   const scrollContainer = content.closest(".spicetify-popup-content"); if (scrollContainer) scrollContainer.scrollTop = 0;
 }

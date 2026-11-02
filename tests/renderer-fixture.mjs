@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import * as sass from 'sass';
 import path from 'node:path';
+import {readFile} from 'node:fs/promises';
 
 // Shared by standalone Chromium tests and the private parent-run native fixture.
 // It bundles real components/layout, without player/session/storage dependencies.
@@ -34,7 +35,8 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false, r
       b.onLoad({ filter: /\.(?:css|scss)$/ }, () => ({contents:'',loader:'js'}));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export default {};' }));
     } }] });
-  return { code: result.outputFiles[0].text, css: sass.compile('Extension/Source/Stylings/Lyrics.scss').css };
+  const scrollerCSS = includeScroller || includeRenderer ? await readFile('Extension/Source/Simplebar/style.css', 'utf8') : '';
+  return { code: result.outputFiles[0].text, css: scrollerCSS + sass.compile('Extension/Source/Stylings/Lyrics.scss').css };
 }
 
 export const shapingCases = [

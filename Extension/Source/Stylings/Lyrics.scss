@@ -375,7 +375,7 @@
 .Syllable.ExplicitSpacing.Emphasis { flex-wrap: wrap; max-width: 100%; }
 // Wrap only oversized source owners. Safe shaping units remain one text
 // context; Chromium's Unicode line breaker preserves grapheme boundaries.
-.Vocals:not(.RubyReading) .Word { flex-wrap: wrap; max-width: 100%; }
+.Vocals:not(.RubyReading) .Word { flex-wrap: wrap; max-width: 100%; justify-content: inherit; }
 .Syllable.FragmentedOwner {
   white-space: pre-wrap; overflow-wrap: anywhere;
   max-width: 100%; min-width: 0; flex-shrink: 0;
@@ -400,20 +400,19 @@
   --jel-gap-primary: calc(clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size)) * var(--jel-primary-ratio, 1));
   margin-block: calc(var(--jel-gap-primary) * var(--jel-group-gap) / 2);
 }
-.Lyrics.CustomInset .VocalsGroup {
-  // Keep .Lyrics as the existing query container. Changing its padding would
-  // alter cqw and the responsive 1x baseline. Inset only the existing column.
-  --jel-inset-primary: calc(clamp(var(--minimum-lyrics-size), calc(1cqw * var(--vocal-lyrics-scale)), var(--maximum-lyrics-size)) * var(--jel-primary-ratio, 1));
-  --jel-effective-inset: min(var(--jel-requested-inset), max(0px, calc((100cqw - min(100cqw, var(--jel-inset-primary) * 4)) / 2)));
-  margin-inline: var(--jel-effective-inset);
-  width: calc(100% - var(--jel-effective-inset) * 2);
-  .Vocals, .VoiceBlock, .RubyVocals { width: 95%; }
-  .VoiceBlock > .Vocals, .VoiceBlock > .RubyVocals { width: 100%; }
+// The query-container/root padding stays untouched: only the outer group column
+// changes. Immediate-child scope avoids recursively shrinking ruby primaries.
+.Lyrics.HorizontalColumn .VocalsGroup {
+  margin-left: var(--jel-column-left, 0px);
+  margin-right: var(--jel-column-right, 0px);
+  width: var(--jel-column-width);
+  > .Vocals, > .VoiceBlock, > .RubyVocals { width: 95%; }
+  > .VoiceBlock > .Vocals, > .VoiceBlock > .RubyVocals { width: 100%; }
 }
-.Lyrics.CustomInset:has(.AlignedOpposite) .VocalsGroup {
-  .Vocals, .VoiceBlock, .RubyVocals { width: 75%; }
-  .VoiceBlock > .Vocals, .VoiceBlock > .RubyVocals { width: 100%; }
+.Lyrics.HorizontalColumn:has(.AlignedOpposite) .VocalsGroup {
+  > .Vocals, > .VoiceBlock, > .RubyVocals { width: 75%; }
 }
+.JEL-FollowSpace { display: block; width: 1px; flex: none; pointer-events: none; overflow: hidden; }
 // A converted owner can be much wider than a dictionary token while retaining
 // one continuous paint box. Budget its existing spring scale envelope at the
 // wrap limit, rather than letting a full-width owner scale beyond the viewport.
@@ -614,3 +613,7 @@
   --annotation-state-opacity: var(--vocal-active-opacity);
   &.Background { --annotation-state-opacity: var(--background-active-opacity); }
 }
+
+// Our cached source anchor owns reflow preservation; native browser anchoring
+// would otherwise apply a second correction before the owned layout batch.
+.LyricsScrollContainer .simplebar-content-wrapper { overflow-anchor: none; }

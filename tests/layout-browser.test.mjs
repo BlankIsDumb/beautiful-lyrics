@@ -50,7 +50,7 @@ test('real card/page/cinema preserve responsive1x container curve and current pr
    // Actual unmounted probes and mounted samples at identical current geometry.
    document.documentElement.style.fontSize='16px';
    for(const kind of ['Card','Contained','Fullscreen']) {
-    const item=mount(kind,760),view=kind==='Card'?'NowPlaying':'FullLyrics';await wait();
+    const item=mount(kind,kind==='Fullscreen'?window.innerWidth:760,kind==='Fullscreen'?window.innerHeight:700),view=kind==='Card'?'NowPlaying':'FullLyrics';await wait();
     const form=document.createElement('form');document.body.append(form);
     const primary=document.createElement('output'),backing=document.createElement('output');form.append(primary,backing);
     const outputs=new Map([[view,{primary,backing}]]),dispose=CreateTypographyPreview(form,outputs);

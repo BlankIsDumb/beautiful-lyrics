@@ -51,6 +51,7 @@ export class CueController implements SyncedVocals {
     if (active !== this.active) { this.active = active; this.activity.Fire(active); }
     this.child?.Animate(time, delta, immediate);
   }
+  GetScrollTarget() { return {Element: this.parent, StartTime: this.cue.StartTime}; }
   IsActive() { return this.active; }
   NeedsFrame() { return this.child?.NeedsFrame() || false; }
   RequiresContinuous() { return this.child instanceof InterludeVisual; }

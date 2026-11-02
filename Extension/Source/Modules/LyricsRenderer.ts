@@ -1,3 +1,4 @@
+import type { HorizontalSurface } from "../HorizontalSpacing.ts";
 import { EffectiveConversion } from "../AnnotationSettings.ts";
 import { ApplyLayoutStyle } from "../LayoutSettings.ts";
 import { LyricContext } from "./LyricsRenderer/LyricContext.ts";
@@ -41,7 +42,7 @@ export default class LyricsRenderer implements Giveable {
 	constructor(
 		parentContainer: HTMLDivElement,
 		sourceLyrics: TransformedLyrics, isRomanized: boolean,
-        view: PresentationView = "FullLyrics", clock: LyricClock = PlayerLyricClock, counters?: RenderingCounters
+        view: PresentationView = "FullLyrics", clock: LyricClock = PlayerLyricClock, counters?: RenderingCounters, options: {surface?: HorizontalSurface; reservation?: HTMLElement} = {}
     ) {
         // Keep the legacy boolean argument position for callers; per-view profile
         // demand now owns alternate text instead of preconverted source fields.
@@ -72,6 +73,8 @@ export default class LyricsRenderer implements Giveable {
 		scrollContainer.classList.add("LyricsScrollContainer")
 		const lyricsContainer = this.Maid.Give(document.createElement("div"))
 		lyricsContainer.classList.add("Lyrics")
+        const surface=options.surface ?? (view === "NowPlaying" ? "Card" : "Contained")
+        lyricsContainer.dataset.horizontalSurface=surface
 		scrollContainer.appendChild(lyricsContainer)
 
 		// Now set our natural-alignment
@@ -130,7 +133,7 @@ export default class LyricsRenderer implements Giveable {
                     }
                 }
             }
-            vocalGroups.push({ GroupContainer: groupContainer, Vocals: groupVocals })
+            vocalGroups.push({ GroupContainer: groupContainer, Vocals: groupVocals, Role: "Type" in row && row.Type === "Interlude" ? "cue" : "source" })
             lyricsContainer.appendChild(groupContainer)
         }
         const updatePrecision = () => {
@@ -141,10 +144,12 @@ export default class LyricsRenderer implements Giveable {
         // Attach before the scroller's first geometry batch. Hidden/collapsed
         // surfaces still defer measurement until their real positive-size resize.
         parentContainer.appendChild(scrollContainer)
-        this.Maid.Give(RegisterTypography(view,lyricsContainer))
+        this.Maid.Give(RegisterTypography(view,lyricsContainer,surface))
         const scroller = this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, vocalGroups,
             lyricDocument.type !== "Static", rendering.blur, counters, { profile: layout,
-                browsing: () => { updateContext(); scheduler.update(contextTime, 0) }, measured: TypographyMeasured }))
+                browsing: () => { updateContext(); scheduler.update(contextTime, 0) }, measured: TypographyMeasured, surface, reservation: options.reservation,
+                spacing:()=>PresentationSettings.getEffectiveHorizontalSpacing(surface),
+                navigationTargets:()=> { const [start,end]=context.getNavigationSpan();return sourceSlots.slice(start,end+1).map(slot=>slot.element) } }))
         const offsets = () => [TimingSettings.get("Shared"), TimingSettings.get(view)] as const
         let effectiveOffset = TimingSettings.get("Shared") + TimingSettings.get(view)
         const lyricTime = () => clock.now() - effectiveOffset
@@ -224,8 +229,11 @@ export default class LyricsRenderer implements Giveable {
             layout=PresentationSettings.getLayout(view)
             ApplyLayoutStyle(lyricsContainer,layout,PresentationSettings.getFontFamily())
             scroller.SetProfile(layout)
-            if(fields.some(field=>["primaryRatio","backingRatio","leadWeight","backingWeight","leading","groupGap","inset"].includes(field))) scroller.RefreshLayout()
+            if(fields.some(field=>["primaryRatio","backingRatio","leadWeight","backingWeight","leading","groupGap"].includes(field))) scroller.RefreshLayout()
             if(fields.some(field=>["before","after","follow"].includes(field))) { contextKey="";updateContext();scheduler.update(contextTime,0) }
+        }))
+        this.Maid.Give(PresentationSettings.subscribeHorizontalSpacing(changedSurface=> {
+            if(changedSurface===surface)scroller.RefreshLayout()
         }))
         this.Maid.Give(PresentationSettings.subscribeFontFamily(() => {
             ApplyLayoutStyle(lyricsContainer,layout,PresentationSettings.getFontFamily());scroller.RefreshLayout()

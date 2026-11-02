@@ -72,7 +72,7 @@ export default class PageView implements Giveable {
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!
-		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid, NoLyrics)
+		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid, NoLyrics, {surface:"Contained"})
 
 		// Handle our controls
 		{

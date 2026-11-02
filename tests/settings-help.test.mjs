@@ -33,15 +33,16 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
         : a.path === 'player' ? `export const SongLyrics=undefined,SongLyricChoices=[],SongChanged={},SongLyricsLoaded={};export const SelectLyricsProvider=()=>{};`
         : `export default {LyricsPage:''};` }));
     } }] });
-  const css = sass.compile('Extension/Source/Stylings/ProviderControls.scss').css;
-  const script = `window.addEventListener("load", () => {
+  const css = ["Extension/Source/Stylings/ProviderControls.scss", "Extension/Source/Stylings/TypographyPreview.scss", "Extension/Source/Stylings/Lyrics.scss"].map(file=>sass.compile(file).css).join("\n");
+  const script = `window.addEventListener("load", async () => {
     const check=(ok,message)=>{if(!ok)throw Error(message)};
     const data=new Map([
       ['JustEnoughLyrics/Timing',JSON.stringify({version:1,offsets:{Shared:.25,NowPlaying:-.5,FullLyrics:1}})],
       ['BeautifulLyricsLocal/SpicyToken','  fixture_original_key  '],
       ['BeautifulLyrics/LyricViews',JSON.stringify({Version:1,Items:{RomanizedLanguages:{Japanese:true}}})],
     ]);
-    const localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+    let storageWrites=0,failStorage=false;
+    const localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>{if(failStorage)throw Error("fixture quota failure");storageWrites++;data.set(key,value)},removeItem:key=>data.delete(key)};
     let fixtureForm;
     const modal=document.createElement('div');
     const fixtureModal={display({content}){modal.replaceChildren(content);document.body.append(modal);fixtureForm=content},hide(){modal.remove()}};
@@ -70,6 +71,41 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       OpenProviderSettings();let form=fixtureForm;
       const change=control=>control.dispatchEvent(new Event('change',{bubbles:true}));
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
+      const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const spacing=surface=>form.querySelector('#JEL-'+surface+'-HorizontalSpacing');
+      const spacingNumber=surface=>form.querySelector('#JEL-'+surface+'-HorizontalSpacing-Number');
+      check(form.querySelectorAll('input[type=range]').length===3,'one horizontal slider per surface');
+      check(!form.querySelector('[id$="-Layout-inset"]'),'obsolete pixel inset removed');
+      const untouched=JSON.stringify([...data]),untouchedWrites=storageWrites;
+      for(let value=1;value<=30;value++)type(spacing('Contained'),String(value));
+      check(PresentationSettings.getEffectiveHorizontalSpacing('Contained')===30&&PresentationSettings.getHorizontalSpacing('Contained')===0,'drag previews without changing canonical spacing');
+      check(PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0&&PresentationSettings.getEffectiveHorizontalSpacing('Card')===0,'preview is surface specific');
+      check(storageWrites===untouchedWrites&&JSON.stringify([...data])===untouched,'drag has zero storage writes');
+      check(spacingNumber('Contained').value==='30','range synchronizes number');
+      spacing('Contained').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      check(PresentationSettings.getEffectiveHorizontalSpacing('Contained')===0&&spacingNumber('Contained').value==='0','Escape cancels draft');
+      type(spacingNumber('Contained'),'-27');check(spacing('Contained').value==='-27','number synchronizes range');change(spacingNumber('Contained'));
+      check(PresentationSettings.getHorizontalSpacing('Contained')===-27&&storageWrites===untouchedWrites+1,'confirmed number saves once');
+      const confirmedWrites=storageWrites;
+      for(const invalid of ['','101','1.5'])type(spacingNumber('Contained'),invalid);
+      check(storageWrites===confirmedWrites&&PresentationSettings.getEffectiveHorizontalSpacing('Contained')===-27,'invalid spacing never previews or writes');
+      spacingNumber('Contained').dispatchEvent(new FocusEvent('blur'));check(spacingNumber('Contained').value==='-27','invalid spacing blur restores saved');
+      type(spacing('Fullscreen'),'44');change(spacing('Fullscreen'));type(spacing('Card'),'12');change(spacing('Card'));
+      const fullTypography=spacing('Fullscreen').closest('fieldset');
+      type(spacing('Fullscreen'),'70');
+      [...fullTypography.querySelectorAll('button')].find(button=>button.textContent==='Classic typography').click();
+      check(PresentationSettings.getHorizontalSpacing('Contained')===0&&PresentationSettings.getHorizontalSpacing('Fullscreen')===0&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'typography reset cancels previews and resets both associated page surfaces');
+      check(PresentationSettings.getHorizontalSpacing('Card')===12,'FullLyrics reset leaves Card spacing alone');
+      const cardRow=spacing('Card').closest('.BL-HorizontalSpacing');
+      [...cardRow.querySelectorAll('button')].find(button=>button.textContent.startsWith('Reset ')).click();
+      check(PresentationSettings.getHorizontalSpacing('Card')===0,'per-surface reset');
+      const beforeFailure=JSON.stringify([...data]);type(spacing('Contained'),'55');failStorage=true;change(spacing('Contained'));failStorage=false;
+      check(JSON.stringify([...data])===beforeFailure&&PresentationSettings.getHorizontalSpacing('Contained')===0&&PresentationSettings.getEffectiveHorizontalSpacing('Contained')===0&&spacingNumber('Contained').value==='0','failed commit restores canonical spacing and controls');
+      const anchor=form.querySelector('#JEL-FullLyrics-Layout-anchor');
+      check(anchor.required&&anchor.step==='any','anchor is required and accepts fractional percentages');
+      type(anchor,'34.125');check(PresentationSettings.getLayout('FullLyrics').anchor===34.125,'fractional anchor retained');
+      const beforeBlank=JSON.stringify([...data]);type(anchor,'');check(JSON.stringify([...data])===beforeBlank,'empty anchor does not save legacy mode');anchor.dispatchEvent(new FocusEvent('blur'));check(anchor.value==='34.125','empty anchor blur restores exact percentage');
+      type(anchor,'45');
       check(!form.querySelector('button[type=submit]'),'no Save button');
       check([...form.querySelectorAll('h3')].some(h=>h.textContent==='Lyrics'),'Lyrics hierarchy');
       check(form.querySelectorAll('.BL-ViewOptions > details.BL-CaseSettings[id$="-Settings"]').length===4,'four native collapsible source cases');
@@ -163,11 +199,13 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const hiddenOffset=form.querySelector('#JEL-NowPlaying-TimingOffset');type(hiddenOffset,'2');check(beforeHidden===JSON.stringify([...data]),'inherited disabled fieldset blocks late synthetic changes');
       sidebar.click();check(!nowFields.hidden&&!nowFields.disabled,'Now Playing reopens retained subtree');
       // A detached form must stay inert even if later reattached and dispatched.
+      type(spacing('Contained'),'63');await frame();check([...form.querySelectorAll('.BL-HorizontalSpacing output')].every(output=>output.textContent.includes('CSS px')||output.textContent.includes('unavailable')),'surface readouts report measured units or unavailable geometry');
       const old=form,oldPreset=wordPreset,oldBytes=JSON.stringify([...data]);help.focus();fixtureModal.hide();
+      check(PresentationSettings.getEffectiveHorizontalSpacing('Contained')===PresentationSettings.getHorizontalSpacing('Contained')&&!document.querySelector('.JEL-TypographyPreview'),'close cancels preview and removes probes');
       check(popups.every(p=>p.destroyed)&&!document.querySelector('.BL-SettingsHelpPopup'),'disconnect cleans all tooltips');
       fixtureModal.display({content:old});oldPreset.value='classic';change(oldPreset);check(oldBytes===JSON.stringify([...data]),'reattached disposed form cannot persist');
       const submit=new Event('submit',{cancelable:true});old.dispatchEvent(submit);check(submit.defaultPrevented,'disposed form cannot navigate');
-      OpenProviderSettings();form=fixtureForm;const beforeReplacement=popups.slice();fixtureModal.display({content:document.createElement('div')});check(beforeReplacement.every(p=>p.destroyed),'replacement releases help/handlers');
+      OpenProviderSettings();form=fixtureForm;type(spacing('Fullscreen'),'72');const beforeReplacement=popups.slice();fixtureModal.display({content:document.createElement('div')});check(beforeReplacement.every(p=>p.destroyed)&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'replacement releases help/handlers and spacing preview');
       OpenProviderSettings();form=fixtureForm;const beforeDispose=JSON.stringify([...data]);GlobalMaid.Destroy();
       const disposed=form.querySelector('#JEL-FullLyrics-GapThreshold');type(disposed,'50');
       check(form.isConnected&&disposed.disabled&&beforeDispose===JSON.stringify([...data]),'runtime disposal disables connected controls and aborts writes');

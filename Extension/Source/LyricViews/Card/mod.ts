@@ -228,7 +228,7 @@ export default class CardView implements Giveable {
 					? false
 					: PresentationSettings.isRomanized("NowPlaying", SongLyrics!.RomanizedLanguage)
 				),
-                "NowPlaying"
+                "NowPlaying", undefined, undefined, {surface:"Card"}
 			),
 			"LyricsRenderer"
 		)

@@ -1,3 +1,4 @@
+import { HorizontalSurfaces, NormalizeHorizontalSpacing, type HorizontalSurface } from "./HorizontalSpacing.ts";
 import { NormalizeLayout, NormalizeFontFamily, LayoutFields, LayoutCategories, ClassicLayout, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import { NormalizeAnnotations, NormalizeConversions, EffectiveConversion, type ConversionProfile, type AnnotationProfile } from "./AnnotationSettings.ts";
 import { NormalizeRendering, ApplyTextPreset, ClassicRendering, NormalizeCues, type CueSettings, SourceCases, type SourceCase, type RenderingProfile } from "./RenderingSettings.ts";
@@ -8,12 +9,15 @@ export const PresentationLanguages = ["Chinese", "Japanese", "Korean"] as const;
 export type PresentationLanguage = (typeof PresentationLanguages)[number];
 type RenderingCases = Record<SourceCase, RenderingProfile>;
 type Profile = { layout: LayoutProfile; conversions: ConversionProfile; annotations: AnnotationProfile; cues: CueSettings; renderingCases: RenderingCases; japaneseForm: "romaji" | "kana"; romanizationEnabled: boolean; romanizedLanguages: Record<PresentationLanguage, boolean> };
-type Settings = { version: 8; fontFamily: string; profiles: Record<PresentationView, Profile> };
+type Settings = { version: 9; fontFamily: string; horizontalSpacing: Record<HorizontalSurface, number>; profiles: Record<PresentationView, Profile> };
 const storageKey = "JustEnoughLyrics/Presentation";
 const legacyKey = "BeautifulLyrics/LyricViews";
 
 export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "setItem">) {
   const layoutListeners = new Set<(view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void>();
+  const spacingListeners = new Set<(surface: HorizontalSurface) => void>();
+  const previews = new Map<HorizontalSurface, {owner: object; value: number}>();
+  const notifySpacing = (surface: HorizontalSurface) => { for (const listener of spacingListeners) listener(surface); };
   const familyListeners = new Set<() => void>();
   const annotationListeners = new Set<(view: PresentationView) => void>();
   const cueListeners = new Set<(view: PresentationView, fields: readonly (keyof CueSettings)[]) => void>();
@@ -66,44 +70,71 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
   let futureVersion = false;
   let migrationRaw: string | undefined;
   let migrationVersion: number | undefined;
+  let migrationBackupKey: string | undefined;
   const read = (): Settings => {
     if (settings) return settings;
     const saved = parse(storageKey);
-    const supported = saved?.version === 1 || saved?.version === 2 || saved?.version === 3 || saved?.version === 4 || saved?.version === 5 || saved?.version === 6 || saved?.version === 7 || saved?.version === 8;
+    const supported = saved?.version === 1 || saved?.version === 2 || saved?.version === 3 || saved?.version === 4 || saved?.version === 5 || saved?.version === 6 || saved?.version === 7 || saved?.version === 8 || saved?.version === 9;
     futureVersion = saved?.version !== undefined && !supported;
-    if (saved?.version === 6 || saved?.version === 7) { migrationRaw = storage.getItem(storageKey) || undefined; migrationVersion = saved.version; }
+    if (supported && saved.version < 9) { migrationRaw = storage.getItem(storageKey) || undefined; migrationVersion = saved.version; }
     const legacy = parse(legacyKey);
     const seed = legacy?.Version === 1 ? legacy.Items?.RomanizedLanguages : undefined;
     // Copy, never share maps or rewrite the legacy store. A rollback still sees
     // its original settings, and editing one new profile cannot affect the other.
     settings = {
-      version: 8,
-      fontFamily: saved?.version === 8 ? NormalizeFontFamily(saved.fontFamily) : "",
+      version: 9,
+      horizontalSpacing: Object.fromEntries(HorizontalSurfaces.map(surface => [surface, saved?.version === 9 ? NormalizeHorizontalSpacing(saved.horizontalSpacing?.[surface]) : 0])) as Record<HorizontalSurface, number>,
+      fontFamily: saved?.version >= 8 ? NormalizeFontFamily(saved.fontFamily) : "",
       profiles: {
         NowPlaying: profile(supported ? saved.profiles?.NowPlaying?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.NowPlaying?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.NowPlaying?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.NowPlaying?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.NowPlaying?.cues : { motion: saved?.version === 4 ? saved.profiles?.NowPlaying?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.NowPlaying?.annotations : undefined, saved?.version >= 7 ? saved.profiles?.NowPlaying?.conversions : undefined),
         FullLyrics: profile(supported ? saved.profiles?.FullLyrics?.romanizedLanguages : seed, supported && saved?.version >= 2 ? saved.profiles?.FullLyrics?.romanizationEnabled : undefined, supported && saved?.version >= 3 ? saved.profiles?.FullLyrics?.japaneseForm : undefined, migrateCases(saved?.version >= 5 ? saved.profiles?.FullLyrics?.renderingCases : undefined, saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering : undefined), saved?.version >= 5 ? saved.profiles?.FullLyrics?.cues : { motion: saved?.version === 4 ? saved.profiles?.FullLyrics?.rendering?.cueAnimation : undefined }, saved?.version >= 6 ? saved.profiles?.FullLyrics?.annotations : undefined, saved?.version >= 7 ? saved.profiles?.FullLyrics?.conversions : undefined),
       },
     };
-    if (saved?.version === 8) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].layout = NormalizeLayout(saved.profiles?.[view]?.layout);
+    if (saved?.version >= 8) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].layout = NormalizeLayout(saved.profiles?.[view]?.layout);
     return settings;
   };
-  const save = (view: PresentationView, next: Profile) => {
+  // All save families share the same lazy transaction: exact old raw first,
+  // canonical payload second, and only then observable in-memory state/events.
+  const persist = (updated: Settings) => {
+    if (futureVersion) throw new Error("Presentation settings require a newer version.");
+    if (migrationRaw !== undefined) {
+      if (!migrationBackupKey) {
+        const base = storageKey + "/Migration/schema" + migrationVersion;
+        const existing = storage.getItem(base);
+        migrationBackupKey = existing === null || existing === migrationRaw ? base : base + "/" + Date.now();
+        // Millisecond collisions must not overwrite another distinct recovery copy.
+        let suffix = 0;
+        while (storage.getItem(migrationBackupKey) !== null && storage.getItem(migrationBackupKey) !== migrationRaw) migrationBackupKey = base + "/" + Date.now() + "-" + (++suffix);
+      }
+      storage.setItem(migrationBackupKey, migrationRaw);
+    }
+    storage.setItem(storageKey, JSON.stringify(updated));
+    migrationRaw = undefined;
+    settings = updated;
+  };
+  const saveSpacing = (surface: HorizontalSurface, value: number) => {
+    const current = read(), normalized = NormalizeHorizontalSpacing(value);
+    if (futureVersion) throw new Error("Presentation settings require a newer version.");
+    if (current.horizontalSpacing[surface] === normalized) return;
+    persist({...current, horizontalSpacing: {...current.horizontalSpacing, [surface]: normalized}});
+    if(!previews.has(surface))notifySpacing(surface);
+  };
+  const save = (view: PresentationView, next: Profile, spacing = read().horizontalSpacing) => {
     const current = read();
     // A downgraded build may read Classic defaults, but must not destroy a newer
     // schema. Only publish changes after persistence succeeds (e.g. quota errors).
     if (futureVersion) throw new Error("Presentation settings require a newer version.");
     const previous = current.profiles[view];
-    if (JSON.stringify(previous) === JSON.stringify(next)) return;
+    const changedSurfaces=HorizontalSurfaces.filter(surface=>current.horizontalSpacing[surface]!==spacing[surface]);
+    if (JSON.stringify(previous) === JSON.stringify(next) && !changedSurfaces.length) return;
     // Only effective text changes rebuild a renderer. Editing remembered choices
     // while the master is Off still saves them, with no unnecessary DOM work.
     const changed = PresentationLanguages.filter(language => JSON.stringify(EffectiveConversion(previous.conversions, language)) !== JSON.stringify(EffectiveConversion(next.conversions, language)));
-    const updated = { ...current, profiles: { ...current.profiles, [view]: next } };
-    // Preserve the exact old payload before publishing schema7. Failed snapshot
+    const updated = { ...current, horizontalSpacing: spacing, profiles: { ...current.profiles, [view]: next } };
+    // Preserve the exact old payload before publishing schema9. Failed snapshot
     // or primary writes leave the lazy in-memory state and all events untouched.
-    if (migrationRaw !== undefined) storage.setItem(storageKey + "/Migration/schema" + migrationVersion, migrationRaw);
-    storage.setItem(storageKey, JSON.stringify(updated));
-    migrationRaw = undefined;
-    settings = updated;
+    persist(updated);
+    for(const surface of changedSurfaces)notifySpacing(surface);
     if (changed.length || JSON.stringify(previous.conversions) !== JSON.stringify(next.conversions) || previous.japaneseForm !== next.japaneseForm || previous.romanizationEnabled !== next.romanizationEnabled || JSON.stringify(previous.romanizedLanguages) !== JSON.stringify(next.romanizedLanguages)) {
       for (const listener of listeners) listener(view, changed);
     }
@@ -119,12 +150,32 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     }
   };
   return {
+    getHorizontalSpacing: (surface: HorizontalSurface) => read().horizontalSpacing[surface],
+    getEffectiveHorizontalSpacing: (surface: HorizontalSurface) => previews.get(surface)?.value ?? read().horizontalSpacing[surface],
+    saveHorizontalSpacing: saveSpacing,
+    subscribeHorizontalSpacing: (listener: (surface: HorizontalSurface) => void) => { spacingListeners.add(listener); return () => { spacingListeners.delete(listener); }; },
+    createHorizontalPreview: (surface: HorizontalSurface) => {
+      const owner = {}; let disposed = false;
+      const cancel = () => { if (previews.get(surface)?.owner === owner) { const previous=previews.get(surface)!.value; previews.delete(surface); if(previous!==read().horizontalSpacing[surface])notifySpacing(surface); } };
+      return {
+        set(value: number) { if (disposed) return; const normalized=NormalizeHorizontalSpacing(value); if(previews.get(surface)?.owner===owner && previews.get(surface)?.value===normalized)return; previews.set(surface,{owner,value:normalized}); notifySpacing(surface); },
+        cancel,
+        commit(value?: number) { if(disposed)return; const next=value ?? (previews.get(surface)?.owner===owner ? previews.get(surface)!.value : read().horizontalSpacing[surface]); try { saveSpacing(surface,next); } finally { cancel(); } },
+        dispose() { if(disposed)return;cancel();disposed=true; },
+      };
+    },
     getLayout: (view: PresentationView) => ({ ...read().profiles[view].layout }),
     saveLayout: (view: PresentationView, value: LayoutProfile) => save(view, { ...read().profiles[view], layout: NormalizeLayout(value) }),
     resetLayout: (view: PresentationView, category: LayoutCategory) => {
       const current = { ...read().profiles[view].layout };
       for (const key of LayoutCategories[category]) (current as any)[key] = ClassicLayout[key];
-      save(view, { ...read().profiles[view], layout: current });
+      const surfaces: HorizontalSurface[] = category === "typography" ? view === "NowPlaying" ? ["Card"] : ["Contained", "Fullscreen"] : [];
+      for (const surface of surfaces) if(previews.delete(surface))notifySpacing(surface);
+      const previous = read();
+      const spacing={...previous.horizontalSpacing};for(const surface of surfaces)spacing[surface]=0;
+      // Typography and its associated surfaces reset in one persisted payload,
+      // so a failed write cannot leave half the reset successfully published.
+      save(view, { ...previous.profiles[view], layout: current },spacing);
     },
     subscribeLayout: (listener: (view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void) => { layoutListeners.add(listener); return () => { layoutListeners.delete(listener); }; },
     getFontFamily: () => read().fontFamily,
@@ -133,9 +184,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
       if (futureVersion) throw new Error("Presentation settings require a newer version.");
       if (fontFamily === current.fontFamily) return;
       const updated = { ...current, fontFamily };
-      if (migrationRaw !== undefined) storage.setItem(storageKey + "/Migration/schema" + migrationVersion, migrationRaw);
-      storage.setItem(storageKey, JSON.stringify(updated));
-      migrationRaw = undefined; settings = updated;
+      persist(updated);
       for (const listener of familyListeners) listener();
     },
     subscribeFontFamily: (listener: () => void) => { familyListeners.add(listener); return () => { familyListeners.delete(listener); }; },

@@ -12,12 +12,13 @@ import { Timeout, Defer, OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 // Imported Types
 import { BaseVocals, SyncedVocals } from "./Types.d.ts"
-import { overlapScrollTarget } from "./OverlapScroll.mjs"
+import { fixedAnchorTarget, edgeSpace, readableViewport } from "./FollowPosition.mjs"
+import { ResolveHorizontalSpacing, SetHorizontalMeasurement, type HorizontalSurface } from "../../HorizontalSpacing.ts"
 
 // Types
 type VocalGroup<V extends (BaseVocals | SyncedVocals)> = {
 	GroupContainer: (HTMLDivElement | HTMLButtonElement),
-	Vocals: V[] 
+	Vocals: V[]; Role?: "source" | "cue"
 }
 export type VocalGroups<V extends (BaseVocals | SyncedVocals)> = VocalGroup<V>[]
 
@@ -54,7 +55,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		Top: number;
 		Bottom: number;
 	}[] = []
-    private VoiceBounds = new Map<SyncedVocals,{top:number;bottom:number;start:number}>()
+    private VoiceBounds = new Map<SyncedVocals,{top:number;bottom:number;start:number;group:number;voice:number}>()
 	private AutoScrollBlocked: boolean = false
 	private AutoScrolling: boolean = false
 	private LastActiveVocalIndex: number = 0
@@ -71,14 +72,24 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
     private ExplicitClick = false
     private ForceInstant = false
     private GeometryValid = false
+    private Destination?: number
+    private NavigationPending = false
+    private PrimaryElement?: HTMLElement
+    private HasOpposite = false
+    private MeasuredSizes = new Map<Element,{width:number;height:number}>()
+    private Leading = 0
+    private Trailing = 0
+    private HoldingExtra = false
+    private LeadingSpacer?: HTMLDivElement
+    private TrailingSpacer?: HTMLDivElement
 
 	// Constructor
 	public constructor(
 		scrollContainer: HTMLDivElement, lyricsContainer: HTMLDivElement,
 		vocalGroups: VocalGroups<V>, lyricsAreSynced: boolean, private BlurEnabled = true, private counters?: RenderingCounters,
-        private options: { profile?: LayoutProfile; browsing?: (browsing: boolean) => void; measured?: () => void } = {}
+        private options: { profile?: LayoutProfile; browsing?: (browsing: boolean) => void; measured?: () => void; surface?: HorizontalSurface; spacing?: () => number; reservation?: HTMLElement; navigationTargets?: () => readonly HTMLElement[] } = {}
 	) {
-		this.Profile = { ...ClassicLayout, anchor: null, ...options.profile }
+		this.Profile = { ...ClassicLayout, ...options.profile }
 		// Mark our synced-state
 		this.LyricsAreSynced = lyricsAreSynced
 
@@ -93,16 +104,33 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		// Store our arguments
 		this.ScrollContainer = scrollContainer, this.LyricsContainer = lyricsContainer
 		this.VocalGroups = vocalGroups
+        this.HasOpposite=vocalGroups.some(group=>group.GroupContainer.classList.contains("AlignedOpposite"))
 
-		// On scroll, block auto-scrolling
+		// Spacers belong to Simplebar content, outside the font query container.
+        if (lyricsAreSynced) {
+            const content = this.Scroller.getContentElement()!
+            for (const leading of [true,false]) {
+                const spacer=document.createElement("div");spacer.className="JEL-FollowSpace";spacer.inert=true;spacer.setAttribute("aria-hidden","true");
+                if(leading){content.insertBefore(spacer,lyricsContainer);this.LeadingSpacer=spacer}else{lyricsContainer.after(spacer);this.TrailingSpacer=spacer}
+                this.Maid.Give(()=>spacer.remove())
+            }
+        }
+        // On scroll, block auto-scrolling
 		this.WatchAutoScrollBlocking()
 
 		// Watch for size changes
 		const resizeObserver = this.Maid.Give(
 			new ResizeObserver(
-				() => {
-                    this.QueueLayoutMeasure()
-				}
+                entries => {
+                    // Column/wrapping writes can deliver RO after their final
+                    // geometry was already measured in this batch. Supplied box
+                    // sizes let that common callback stay cheap and avoid a
+                    // second full annotation/source traversal.
+                    if(!this.GeometryValid || entries.some(entry=>{
+                        const box=entry.borderBoxSize[0], measured=this.MeasuredSizes.get(entry.target)
+                        return !box || !measured || Math.abs(box.inlineSize-measured.width)>.01 || Math.abs(box.blockSize-measured.height)>.01
+                    }))this.QueueLayoutMeasure()
+                }
 			)
 		)
 		resizeObserver.observe(this.ScrollContainer)
@@ -124,8 +152,6 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 			// Handle our lyric active state changes since this affects scrolling/sizing
 			this.HandleLyricActiveStateChanges()
 
-			// Handle moving ourselves to the active lyrics
-			this.MoveToActiveLyrics(true)
 		}
 	}
 
@@ -156,7 +182,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             if (!this.AutoScrollBlocked) this.PreserveManualGrace = false
             this.UpdateLyricHeights()
             if (this.AnnotationBlurQueued) { this.AnnotationBlurQueued = false; this.DetermineLyricBlur() }
-            if (this.LyricsAreSynced && !(preserve && this.AutoScrollBlocked)) this.MoveToActiveLyrics()
+            if (this.LyricsAreSynced && !(preserve && this.AutoScrollBlocked)) { this.MoveToActiveLyrics(); this.ExplicitClick=false;this.ForceInstant=false }
         }), "MeasureLyrics")
     }
     public RefreshLayout() { this.CancelProgrammaticScroll(); this.PreserveManualGrace = true; this.QueueLayoutMeasure() }
@@ -179,7 +205,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         }
         else if(this.AutoScrollBlocked && (old.resume!==profile.resume || old.resumeDelay!==profile.resumeDelay)) this.ArmManualResume()
         this.options.browsing?.(this.AutoScrollBlocked)
-        if (profile.follow && (!old.follow || old.anchor !== profile.anchor)) this.MoveToActiveLyrics()
+        if (profile.follow && (!old.follow || old.anchor !== profile.anchor)) this.QueueLayoutMeasure()
     }
 
 	// Private Methods
@@ -222,6 +248,9 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 
 	private WatchAutoScrollBlocking() {
         const manual = () => {
+            this.MoveGeneration++;this.MoveQueued=false
+            this.NavigationPending=false;this.ExplicitClick=false;this.ForceInstant=false
+            this.PreserveManualGrace=true
             this.CancelProgrammaticScroll()
             this.ToggleAutoScrollBlock(true)
             this.PendingResume = false
@@ -239,7 +268,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         const pointer = (event: PointerEvent) => {
             if ((event.target as HTMLElement)?.closest(".simplebar-track")) manual()
         }
-        const end = () => { this.AutoScrolling = false; this.Maid.Clean("WaitForAutoScroll") }
+        const end = () => { this.Destination=undefined; this.AutoScrolling = false; this.Maid.Clean("WaitForAutoScroll") }
         this.ScrollContainer.addEventListener("wheel", manual, {passive:true})
         this.ScrollContainer.addEventListener("touchmove", manual, {passive:true})
         this.ScrollContainer.addEventListener("pointerdown", pointer)
@@ -258,11 +287,12 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         // Native smooth can outlive Classic's old 1/30s tail. scrollend is the
         // primary completion signal; a single bounded inactivity timeout also
         // supports older CEF versions. No position polling or animation loop.
-        this.Maid.Give(Timeout(.2, () => { this.AutoScrolling = false }), "WaitForAutoScroll")
+        this.Maid.Give(Timeout(.2, () => { this.AutoScrolling = false; this.Destination=undefined }), "WaitForAutoScroll")
     }
     private CancelProgrammaticScroll() {
         if (this.AutoScrolling) this.ScrollerObject.scrollTo({ top: this.ScrollerObject.scrollTop, behavior: "instant" as ScrollBehavior })
         this.AutoScrolling = false
+        this.Destination=undefined
         this.Maid.Clean("WaitForAutoScroll")
     }
 
@@ -270,7 +300,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		for(const vocalGroup of this.VocalGroups as VocalGroups<SyncedVocals>) {
 			for(const vocal of vocalGroup.Vocals) {
 				this.Maid.Give(
-					vocal.ActivityChanged.Connect(() => this.QueueActiveMove())
+					vocal.ActivityChanged.Connect(() => { if(vocalGroup.Role === "cue")this.QueueLayoutMeasure(); this.QueueActiveMove() })
 				)
 			}
 		}
@@ -285,15 +315,22 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		queueMicrotask(() => {
             if(generation!==this.MoveGeneration)return
 			this.MoveQueued = false
-			if (!this.Maid.IsDestroyed() && !(this.PreserveManualGrace && this.AutoScrollBlocked)) this.MoveToActiveLyrics(true)
+			if (!this.Maid.IsDestroyed() && !this.LayoutQueued && !(this.PreserveManualGrace && this.AutoScrollBlocked)) this.MoveToActiveLyrics(true)
 		})
 	}
 
 	private UpdateLyricHeights() {
-		if (!this.LyricsContainer.isConnected || this.ScrollContainer.clientWidth <= 0 || this.ScrollContainer.clientHeight <= 0) { this.GeometryValid = false; return }
+		if (!this.LyricsContainer.isConnected || this.ScrollContainer.clientWidth <= 0 || this.ScrollContainer.clientHeight <= 0) {
+            this.GeometryValid=false
+            SetHorizontalMeasurement(this.LyricsContainer)
+            if(this.LyricsContainer.dataset.columnAvailable!=="false") { this.LyricsContainer.dataset.columnAvailable="false";this.options.measured?.() }
+            return
+        }
         const oldScroll=this.ScrollerObject.scrollTop
-        const readingIndex=this.AutoScrollBlocked ? this.GroupDimensions.findIndex(group=>group.Bottom>oldScroll) : -1
+        const readableTop=Math.min(24,this.ScrollerObject.clientHeight/2)
+        const readingIndex=this.AutoScrollBlocked || !this.Profile.follow ? this.GroupDimensions.findIndex((group,index)=>this.VocalGroups[index].Role!=="cue" && group.Bottom>oldScroll+readableTop) : -1
         const readingOffset=readingIndex>=0 ? oldScroll-this.GroupDimensions[readingIndex].Top : 0
+        if(!this.MeasureHorizontalColumn()){this.GeometryValid=false;this.options.measured?.();return}
 		// Clear our heights
 		this.GroupDimensions = []
 
@@ -333,19 +370,47 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		this.Scroller.recalculate()
         const frame=this.ScrollerObject.getBoundingClientRect()
         const scale=frame.height/this.ScrollerObject.clientHeight || 1
+        const containerRect=this.ScrollContainer.getBoundingClientRect()
+        this.MeasuredSizes.set(this.ScrollContainer,{width:containerRect.width/scale,height:containerRect.height/scale})
         const scrollTop=this.ScrollerObject.scrollTop
         const lyricsTop=(this.LyricsContainer.getBoundingClientRect().top-frame.top)/scale+scrollTop
         this.VoiceBounds.clear()
         for(const [index,group] of (this.VocalGroups as VocalGroups<SyncedVocals>).entries()) {
             const rect=group.GroupContainer.getBoundingClientRect()
+            this.MeasuredSizes.set(group.GroupContainer,{width:rect.width/scale,height:rect.height/scale})
             const top=(rect.top-frame.top)/scale+scrollTop,bottom=(rect.bottom-frame.top)/scale+scrollTop
             this.GroupDimensions[index].Top=top;this.GroupDimensions[index].Bottom=bottom
             // Classic centers remain in Lyrics-local coordinates; follow bounds
             // use ONE content-scroll CSS-pixel frame, including fractional boxes.
             this.GroupDimensions[index].Center=(top+bottom)/2-lyricsTop
-            for(const vocal of group.Vocals) {
+            for(const [voice,vocal] of group.Vocals.entries()) {
                 const target=vocal.GetScrollTarget?.(),bounds=(target?.Element??group.GroupContainer).getBoundingClientRect()
-                this.VoiceBounds.set(vocal,{top:(bounds.top-frame.top)/scale+scrollTop,bottom:(bounds.bottom-frame.top)/scale+scrollTop,start:target?.StartTime??0})
+                this.VoiceBounds.set(vocal,{top:(bounds.top-frame.top)/scale+scrollTop,bottom:(bounds.bottom-frame.top)/scale+scrollTop,start:target?.StartTime??0,group:index,voice})
+            }
+        }
+        const viewport=readableViewport(this.ScrollerObject.clientHeight,this.Profile.anchor)
+        this.GeometryValid = !!viewport
+        if(this.LyricsAreSynced && viewport) {
+            const all=[...this.VoiceBounds.values()].filter(bound=>bound.bottom>bound.top)
+            const neutral=all.map(bound=>({...bound,top:bound.top-this.Leading,bottom:bound.bottom-this.Leading}))
+            const style=getComputedStyle(this.LyricsContainer)
+            // Flow extent is independent of Simplebar's viewport min-height.
+            const intrinsic=lyricsTop-this.Leading+this.LyricsContainer.getBoundingClientRect().height/scale+(parseFloat(style.marginBottom)||0)
+            const extent=edgeSpace(neutral,this.ScrollerObject.clientHeight,this.Profile.anchor,intrinsic)
+            if(extent) {
+                const active=(this.VocalGroups as VocalGroups<SyncedVocals>).some(group=>group.Vocals.some(v=>v.IsActive()))
+                // Disappearing outro dots cannot shrink the range under a held
+                // followed viewport. Navigation/active placement releases this.
+                const trailing=!active && !this.NavigationPending && readingIndex<0 ? Math.max(extent.trailing,Math.ceil((this.Destination??oldScroll)+this.ScrollerObject.clientHeight-intrinsic-extent.leading)) : extent.trailing
+                this.HoldingExtra=trailing>extent.trailing
+                const delta=extent.leading-this.Leading
+                if(delta || trailing!==this.Trailing) {
+                    this.Leading=extent.leading;this.Trailing=trailing
+                    this.LeadingSpacer!.style.height=`${this.Leading}px`;this.TrailingSpacer!.style.height=`${trailing}px`
+                    for(const bounds of this.VoiceBounds.values()){bounds.top+=delta;bounds.bottom+=delta}
+                    for(const dimensions of this.GroupDimensions){dimensions.Top+=delta;dimensions.Bottom+=delta}
+                    this.Scroller.recalculate()
+                }
             }
         }
         if(readingIndex>=0) {
@@ -356,7 +421,6 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
                 this.ArmProgrammaticEnd()
             }
         }
-        this.GeometryValid = true
         this.options.measured?.()
 	}
 
@@ -418,153 +482,74 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		}
 	}
 
-	private MoveToActiveLyrics(redetermineBlur?: true) {
-		// We can't move to any active-lyrics if we aren't synced
-		if (this.LyricsAreSynced === false) {
-			return
-		}
-
-		// We need to redetermine our blur
-		if (redetermineBlur) {
-			this.DetermineLyricBlur()
-		}
-        if ((!this.Profile.follow && !this.ExplicitClick) || !this.GeometryValid) return
-        if (this.AutoScrollBlocked && this.Profile.resume === "delay") {
-            if (performance.now() < this.ManualDeadline) return
+    private MoveToActiveLyrics(redetermineBlur?: true) {
+        if (!this.LyricsAreSynced) return
+        if (redetermineBlur) this.DetermineLyricBlur()
+        if ((!this.Profile.follow && !this.ExplicitClick) || !this.GeometryValid || this.LayoutQueued) return
+        const groups=this.VocalGroups as VocalGroups<SyncedVocals>
+        const collect=(role: "source" | "cue")=>groups.flatMap(group=>(group.Role??"source")===role ? group.Vocals.filter(v=>v.IsActive()).map(v=>this.VoiceBounds.get(v)!).filter(Boolean) : [])
+        let bounds=collect("source")
+        if(!bounds.length)bounds=collect("cue")
+        if(!bounds.length && this.NavigationPending && !this.AutoScrollBlocked) {
+            const targets=new Set(this.options.navigationTargets?.()??[])
+            bounds=groups.flatMap(group=>targets.has(group.GroupContainer) ? group.Vocals.map(v=>this.VoiceBounds.get(v)!).filter(Boolean) : [])
         }
-
-		// If we're still scrolling then don't do anything
-		if (this.AutoScrollBlocked && this.Scroller.isScrolling) {
-			return
-		}
-
-		// Grab the margin that the lyrics-container adds at the top (this affects our scroll-position)
-		const lyricsContainerStyle = globalThis.getComputedStyle(this.LyricsContainer)
-		const lyricsContainerMarginTop = parseInt(lyricsContainerStyle.marginTop!)
-		
-		// Check if we have an offset defined
-		const offset = (
-			(lyricsContainerStyle.getPropertyValue("--use-offset") === "1")
-			? parseInt(lyricsContainerStyle.lineHeight!)
-			: 0
-		)
-
-		// Determine our minimum distance away from the top
-		const scrollViewportHeight = this.ScrollContainer.offsetHeight
-		const viewportCenter = ((scrollViewportHeight / 2) - offset)
-		const minimumDistanceToAutoScroll = (viewportCenter - lyricsContainerMarginTop)
-		const currentScrollTop = this.ScrollerObject.scrollTop
-		const maximumScrollTop = (this.ScrollerObject.scrollHeight - scrollViewportHeight)
-
-		// Grab our active vocal-groups
-		const activeVocalGroups = []
-		for (const [index, vocalGroup] of (this.VocalGroups as VocalGroups<SyncedVocals>).entries()) {
-			if (vocalGroup.Vocals.some(vocal => vocal.IsActive())) {
-				activeVocalGroups.push(
-					{
-						Dimensions: this.GroupDimensions[index],
-						Group: vocalGroup
-					}
-				)
-			}
-		}
-
-		// If we have no active vocal-groups don't even bother
-		if (activeVocalGroups.length === 0) {
-			if ((this.AutoScrollBlocked === false) && this.LyricsEnded) {
-				if (currentScrollTop < maximumScrollTop) {
-					this.ScrollTo(maximumScrollTop)
-				}
-			}
-
-			return
-		}
-        if(this.AutoScrollBlocked && this.Profile.resume==="delay" && performance.now()>=this.ManualDeadline) {
+        this.NavigationPending=false
+        if(!bounds.length)return // Ordinary silence and the ending hold their viewport.
+        if(this.AutoScrollBlocked) {
+            if(this.Scroller.isScrolling)return
+            if(this.Profile.resume==="delay") { if(performance.now()<this.ManualDeadline)return }
+            else {
+                // Classic retains its reach condition, then uses the same anchor.
+                const top=Math.min(...bounds.map(b=>b.top)),bottom=Math.max(...bounds.map(b=>b.bottom))
+                const center=(top+bottom)/2,current=this.ScrollerObject.scrollTop
+                if(center<current-(bottom-top)/2 || center>current+this.ScrollerObject.clientHeight)return
+            }
             this.PendingResume=false;this.ToggleAutoScrollBlock(false)
         }
+        const target=fixedAnchorTarget(bounds,this.ScrollerObject.clientHeight,this.Profile.anchor,this.ScrollerObject.scrollHeight-this.ScrollerObject.clientHeight)
+        if(target!==undefined)this.ScrollTo(target)
+    }
 
-		// Now determine our center
-		const activeVocals = activeVocalGroups.flatMap(g => g.Group.Vocals.filter(v => v.IsActive()))
-        if (this.Profile.anchor !== null && !this.AutoScrollBlocked) {
-            const height = this.ScrollerObject.clientHeight
-            // The existing card/page fades are unreadable above24/below64px.
-            const safeTop = Math.min(24, height / 2), safeBottom = Math.min(64, Math.max(0, height - safeTop - 1))
-            const usable = Math.max(1, height - safeTop - safeBottom)
-            const bounds = activeVocalGroups.flatMap(g => g.Group.Vocals.filter(v => v.IsActive()).map(v => {
-                const bounds=this.VoiceBounds.get(v)!
-                return {...bounds,top:bounds.top-safeTop,bottom:bounds.bottom-safeTop}
-            }))
-            const unionTop=Math.min(...bounds.map(b=>b.top)),unionBottom=Math.max(...bounds.map(b=>b.bottom))
-            let target=overlapScrollTarget(bounds,usable,currentScrollTop,maximumScrollTop)
-            // If the complete active block already fits, preserve the viewport.
-            if (!(unionTop>=currentScrollTop && unionBottom<=currentScrollTop+usable)) {
-                const newest=[...bounds].sort((a,b)=>b.start-a.start||b.top-a.top)[0]
-                const block=unionBottom-unionTop<=usable?{top:unionTop,bottom:unionBottom}:newest
-                if(block.bottom-block.top>usable) target=block.top
-                else target=Math.max(block.bottom-usable, Math.min(block.top,(block.top+block.bottom)/2-usable*this.Profile.anchor/100))
-            }
-            this.ScrollTo(Math.max(0,Math.min(maximumScrollTop,target)))
-            return
+    private MeasureHorizontalColumn() {
+        if(!this.options.surface || !this.options.spacing)return true
+        const root=this.LyricsContainer, rect=root.getBoundingClientRect(), scroll=this.ScrollerObject.getBoundingClientRect()
+        const scale=rect.width/root.offsetWidth || 1
+        const style=getComputedStyle(root)
+        // The canonical source root survives annotation/detail reflow. Resolve it
+        // once rather than querying timed descendants on every resize batch.
+        const primary=this.PrimaryElement?.isConnected ? this.PrimaryElement : root.querySelector<HTMLElement>(".Vocals.Lead:not(.AnnotationText):not(.RubyReading),.Vocals:not(.AnnotationText):not(.RubyReading)")
+        if(primary)this.PrimaryElement=primary
+        const reservation=this.options.reservation?.getBoundingClientRect()
+        const safeLeft=this.options.surface==="Fullscreen" ? reservation && reservation.width>0 ? Math.max(rect.left,Math.min(rect.right,reservation.right)) : NaN : Math.max(rect.left,scroll.left)
+        const result=ResolveHorizontalSpacing({rootLeft:rect.left/scale,rootRight:rect.right/scale,
+            defaultLeft:rect.left/scale+(parseFloat(style.paddingLeft)||0),defaultRight:rect.right/scale-(parseFloat(style.paddingRight)||0),
+            safeLeft:safeLeft/scale,safeRight:Math.min(rect.right,scroll.right)/scale,
+            primary:primary?parseFloat(getComputedStyle(primary).fontSize):0,fontFraction:this.HasOpposite ? .75 : .95,adjustment:this.options.spacing()})
+        const available=String(!!result)
+        if(root.dataset.columnAvailable!==available)root.dataset.columnAvailable=available
+        SetHorizontalMeasurement(root,result)
+        if(!result)return false
+        const limited=String(result.limited)
+        if(root.dataset.columnLimited!==limited)root.dataset.columnLimited=limited
+        const defaultLeft=rect.left/scale+(parseFloat(style.paddingLeft)||0),defaultRight=rect.right/scale-(parseFloat(style.paddingRight)||0)
+        const adjusted=Math.abs(result.left-defaultLeft)>.01 || Math.abs(result.right-defaultRight)>.01
+        // Stock0 (and a request already at its outward limit) retains the exact
+        // original cqw width rules. Rewriting inherited pixel variables during
+        // every host resize adds a full subtree restyle without changing layout.
+        if(adjusted) {
+            const values:Record<string,number>={"--jel-column-left":result.left-defaultLeft,"--jel-column-right":defaultRight-result.right,"--jel-column-width":result.width}
+            for(const [property,value] of Object.entries(values)){const next=`${value}px`;if(root.style.getPropertyValue(property)!==next)root.style.setProperty(property,next)}
+        } else {
+            for(const property of ["--jel-column-left","--jel-column-right","--jel-column-width"])if(root.style.getPropertyValue(property))root.style.removeProperty(property)
         }
-		if (activeVocals.length > 1 && !this.AutoScrollBlocked) {
-			const bounds = activeVocalGroups.flatMap(g => g.Group.Vocals.filter(v => v.IsActive()).map(v => {
-                return this.VoiceBounds.get(v)!
-			}))
-			const target = overlapScrollTarget(bounds, this.ScrollerObject.clientHeight, currentScrollTop, maximumScrollTop)
-			// Stop an already-running smooth scroll when both lines now fit.
-			// Otherwise its old destination can scroll an active line out of view.
-            this.AutoScrolling = true
-            this.ScrollerObject.scrollTo({ top: target, behavior: 'instant' as ScrollBehavior })
-            this.ArmProgrammaticEnd()
-			return
-		}
-
-		// Now determine our center
-		let center = 0, totalHalfHeight = 0
-		for(const activeVocalGroup of activeVocalGroups) {
-			totalHalfHeight += activeVocalGroup.Dimensions.Height
-			center += activeVocalGroup.Dimensions.Center
-		}
-		center /= activeVocalGroups.length
-
-		// First determine if we're even past our minimum distance yet
-		let scrollY: (number | undefined)
-		if (
-			this.AutoScrollBlocked
-			|| (center > minimumDistanceToAutoScroll)
-		) {
-			// Now handle potentially unblocking auto-scrolling
-			if (this.AutoScrollBlocked) {
-				// Check if our center is on-screen
-				if (
-					(center >= (currentScrollTop - totalHalfHeight))
-					&& (center <= (currentScrollTop + scrollViewportHeight))
-				) {
-					this.ToggleAutoScrollBlock(false)
-					this.DetermineLyricBlur()
-					if (activeVocals.length > 1) {
-						this.QueueActiveMove()
-						return
-					}
-				}
-			}
-
-			// Now if we are not blocked we can proceed
-			if (this.AutoScrollBlocked === false) {
-				// Set our scroll to the distance from the minimum
-				scrollY = ((center - viewportCenter) + lyricsContainerMarginTop + offset)
-			}
-		} else if (currentScrollTop > 0) {
-			scrollY = 0
-		}
-
-		// Now set our scroll position (hopefully)
-		if (scrollY !== undefined) {
-			this.ScrollTo(scrollY)
-		}
-	}
+        if(root.classList.contains("HorizontalColumn")!==adjusted)root.classList.toggle("HorizontalColumn",adjusted)
+        return true
+    }
 
 	private ScrollTo(yPosition: number) {
+        if(!this.ExplicitClick && Math.abs(yPosition-(this.Destination??this.ScrollerObject.scrollTop))<=.5)return
+        this.Destination=yPosition
 		this.AutoScrolling = true
         const behavior = this.ForceInstant || this.Profile.transition === "instant" ? "instant" : this.Profile.transition === "smooth" ? "smooth" : "auto"
         this.ScrollerObject.scrollTo({ top: yPosition, behavior: behavior as ScrollBehavior })
@@ -585,6 +570,8 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         // This explicit move also consumes activity already queued by the same
         // seek/click. A second microtask must not replace its chosen transition.
         this.MoveGeneration++;this.MoveQueued=false
+        this.NavigationPending=true
+        if(this.HoldingExtra)this.QueueLayoutMeasure()
         this.ExplicitClick = !!skippedByVocal
         this.ForceInstant = !skippedByVocal && this.Profile.transition === "classic"
 
@@ -601,7 +588,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		}
 
 		this.MoveToActiveLyrics()
-        this.ExplicitClick = false; this.ForceInstant = false
+        if(!this.LayoutQueued && this.GeometryValid){this.ExplicitClick = false; this.ForceInstant = false}
 	}
 
 	public ForceToTop() {
@@ -613,5 +600,6 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		this.CancelProgrammaticScroll()
         this.MoveGeneration++;this.MoveQueued=false
 		this.Maid.Destroy()
+        SetHorizontalMeasurement(this.LyricsContainer)
 	}
 }

@@ -28,7 +28,7 @@ test('actual renderer/context/Simplebar obey Off, clicks, trusted smooth cancell
   const shown=()=>groups().flatMap((group,index)=>group.classList.contains('ContextExcluded')?[]:[index]);
   const locals=()=>groups().map(group=>group.getBoundingClientRect().top-scroll.getBoundingClientRect().top+scroll.scrollTop);
   window.scrollFixture={
-   async initial(){await frame();tick(1.5,true);await frame();check(writes.length===0,'saved Off no initial/external-seek movement');check(shown().length===40,'Off reveals all and remembers counts');
+   async initial(){await frame();tick(1.5,true);await frame();check(scroll.clientHeight===340&&scroll.scrollHeight>scroll.clientHeight,'bounded real Simplebar workload');check(parseFloat(getComputedStyle(groups()[0].querySelector('.Vocals')).fontSize)===32,'computed source font precondition');check(writes.length===0,'saved Off no initial/external-seek movement');check(shown().length===40,'Off reveals all and remembers counts');
     const before=writes.length;groups()[4].querySelector('.Vocals').click();await frame();check(seeks.length===1&&seeks[0]===17,'one inverse group-start seek');check(writes.length===before+1,'one synchronous seek/click recenter');
     emitSeek=false;const second=writes.length;groups()[4].querySelector('.Vocals').click();await frame();check(seeks.length===2&&writes.length===second+1,'paused same-position click still recenters once');emitSeek=true;
     // Real Spotify seek records intent before now() changes. Exercise browsing,
@@ -56,8 +56,8 @@ test('actual renderer/context/Simplebar obey Off, clicks, trusted smooth cancell
     set({follow:false});return this.wheelPoint();
    },
    async anchor(){await wait(40);check(shown().length===40,'Off manual All');
-    const index=groups().findIndex(group=>group.getBoundingClientRect().bottom>scroll.getBoundingClientRect().top),before=groups()[index].getBoundingClientRect().top-scroll.getBoundingClientRect().top;
-    set({primaryRatio:1.5});await frame();await frame();const after=groups()[index].getBoundingClientRect().top-scroll.getBoundingClientRect().top;check(Math.abs(after-before)<1,'font reflow preserves first visible group local reading position');
+    const index=groups().findIndex(group=>group.getBoundingClientRect().bottom>scroll.getBoundingClientRect().top+24),before=groups()[index].getBoundingClientRect().top-scroll.getBoundingClientRect().top;
+    set({primaryRatio:1.5});await frame();await frame();const after=groups()[index].getBoundingClientRect().top-scroll.getBoundingClientRect().top;check(Math.abs(after-before)<1,'font reflow preserves readable-top group local reading position '+JSON.stringify({index,before,after,scroll:scroll.scrollTop}));
     set({follow:true});await frame();check(shown().length<40,'Off to On explicitly exits browsing');
     renderer.Destroy();const count=writes.length;tick(121.5,true);await wait(250);check(writes.length===count&&consumers.size===0,'destroy cancels listener and pending movement');Element.prototype.scrollTo=original;return 'SCROLL_BROWSER_PASS';
    }

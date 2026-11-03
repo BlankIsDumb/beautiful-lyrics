@@ -12,13 +12,17 @@ export const ClassicLayout: Readonly<LayoutProfile> = Object.freeze({
   leading: 1.1818181818, groupGap: null, before: null, after: null,
   follow: true, transition: "classic", anchor: 45, resume: "classic", resumeDelay: .75,
 });
+export const DefaultLayouts = {
+  NowPlaying: Object.freeze({ ...ClassicLayout, anchor: 0, before: 0 }),
+  FullLyrics: ClassicLayout,
+} as const;
 export const LayoutCategories = {
   typography: ["primaryRatio", "backingRatio", "leadWeight", "backingWeight", "leading", "groupGap"],
   context: ["before", "after"], scrolling: ["follow", "transition", "anchor", "resume", "resumeDelay"],
 } as const;
 export type LayoutCategory = keyof typeof LayoutCategories;
-export function NormalizeLayout(value?: Partial<LayoutProfile>): LayoutProfile {
-  const result = { ...ClassicLayout };
+export function NormalizeLayout(value?: Partial<LayoutProfile>, defaults = ClassicLayout): LayoutProfile {
+  const result = { ...defaults };
   const bounded = (key: keyof LayoutProfile, minimum: number, maximum: number, nullable = false, integer = false) => {
     const item = value?.[key];
     if (nullable && item === null) (result as any)[key] = null;

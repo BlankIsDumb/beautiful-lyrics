@@ -8,7 +8,10 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local version: **5.1.0-local.24**. Pass 6v2 follows every newly active source block at
+Current local version: **5.1.0-local.25**, built and installed locally.
+Pass 6v3 gives the Sidecard natural song-edge limits and per-view outside-context
+Hide or static muted lyrics with independent blur, darkening and opacity. Distance
+gradient is deferred. Pass 6v2 follows every newly active source block at
 a fixed readable-viewport anchor and adds independent signed horizontal spacing
 for Sidecard, Ordinary lyrics page and Fullscreen/cinema. Typography and context
 retain their two viewer profiles; the lyric font family remains shared.
@@ -49,9 +52,11 @@ Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
   adjustment, effective column readouts and cancellable live preview. Word/Line effects remain independent.
 - Source-group context before/after the entire active block; manual browsing and
   Auto-follow Off reveal the whole song. Context-filtered visual work stops.
-- Classic/instant/native-smooth following, a preferred 45% readable-viewport
-  anchor (adjustable from 0–100), and Classic/after-delay resume. First/last
-  space preserves that anchor; ordinary silence and the ending hold position. Off leaves external seeks stationary;
+- Classic/instant/native-smooth following, an adjustable 0–100% anchor, and
+  Classic/after-delay resume. The sidecard defaults to the readable top with
+  zero preceding groups and all following groups, and clamps to the song edges.
+  The lyrics page and fullscreen default to 45%. Ordinary silence and the ending
+  hold position. Off leaves external seeks stationary;
   explicit lyric clicks still seek and recenter once.
 - Grapheme-safe emphasis and cross-span cluster handling, with conservative shaping
   units for joining scripts and original timing provenance retained.

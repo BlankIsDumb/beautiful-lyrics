@@ -1,5 +1,86 @@
 # Validation
 
+## Beta build — 5.1.0-local.26, 2026-11-03
+
+The sidecard defaults to the readable top with zero preceding groups and all
+following groups. Existing stored values take precedence. The extension status
+and LRCLIB client ID read the release version from package.json.
+
+The root build refreshed both canonical bundles and both compatibility aliases.
+All four pass syntax checks and share SHA-256
+`203EE60F08C9198C07B4F5CE123AA3697FF260AAA923C1D1AF22D8223DEA58D4`.
+Native install evidence below covers the earlier local.25 build.
+
+## Pass 6v3 installed — 5.1.0-local.25, 2026-11-02
+
+Card natural song edges and per-view static muted context are implemented. Hide
+remains default; blur/darkening/opacity are independent. User explicitly deferred
+distance gradient after private GPU profiling; no new distance mask or gradient
+settings ship. Existing viewport/card edge fades remain unchanged.
+Schema10 preserves exact schema1–9 raw payload lazily before changed saves.
+
+Final serial source suite: **133/133 tests pass**, zero failures/skips in138.86s.
+The actual renderer matrix covers Word/true Line/forced Line with Original/Above/
+ruby, stable geometry/node identity, independent reading opacity (including zero),
+zero excluded Animate/continuous/settling calls, muted focus/opacity0 safety and
+one-seek child/native-button/Enter behavior. Trusted wheel/ArrowDown retains manual
+browsing while muted text has focus. Modal/reset/storage failure gates pass.
+
+The Card fixture now includes the actual header/controls/padding. Its135 main
+surface/source/context/anchor combinations preserve other-surface behavior;14
+additional small/tall/fractional-scale cases verify physical readable first/last
+edges and short-song top alignment. A focused Card-only height cap keeps the inner
+scrollport within the existing outer clip when25cqh exceeds available card height.
+
+These are controlled Chromium tests with synthetic timing, not native song proof.
+Static muted text stops scheduler animation but can still incur paint/filter cost.
+Independent default checks cover36 paired workloads, five geometry batches for
+five resizes, no idle/ordinary-source-boundary extra geometry work and no disposed
+clock/observer work. Paused explicit samples still count30 calls; animation work0.
+Twelve exact nonwrapped PNGs and the Classic timing/spring-cadence gate pass.
+Annotated resize timings vary; a focused three-triple CSS control did not establish
+a repeatable inactive-selector regression, so no speculative rewrite was made.
+
+Actual shipped GPU comparison: three fresh-browser triples of frozen local.24 Hide,
+local.25 Hide and local.25 muted,160 Word/ruby sources and1/1 context. All runs keep
+3 selected/157 excluded, with zero excluded visual calls, steady geometry batches
+or disposed resources. Muted blur/darkening have real paint cost: main-render CPU
+p95 per16.67ms bin is11.57–12.56ms versus5.82–6.94ms for local.25 Hide; these bins
+are not native wall-frame latency/FPS. Own allocated tile data is2.88–3.01MB versus
+.88–1.18MB. Enabled static blur is not advertised as free or as a speedup.
+
+The unchanged production build/integrity guards and all four syntax checks pass.
+Four generated aliases and three installed copies are28,476,481bytes, SHA256
+`8BB20F09E4A3DE3C4FDE11D3099657A7EDF218EA05B9ADF4696049B0206F9904`.
+Independent verification matches all12 embedded dictionary files byte-for-byte.
+The first build attempt was rejected by its in-memory dictionary guard before
+artifact writes; an unchanged retry passed. Its intermittent cause remains
+unconfirmed; no guard or startup code was altered. Exact local.24 backups/config:
+private pass6v3-20261102/install-backup-20261102-225824. Six unrelated installed
+configuration/theme/extension hashes remain unchanged; all23 product-source hashes
+matched the tested freeze at the time of the local.25 installation.
+
+Native Spotify DevTools verifies mounted local.25, Cosmos ready and real lyrics.
+Initial hidden-page geometry was not used as a passing test. Computer use was
+limited to activating the existing Spotify window; measurements/settings checks
+then used DevTools. On a real song, Card start is23.55px from the scrollport top;
+at its ending the final block is124.28px from that top against125px readable-bottom
+target, inside the actual outer clip, with the scroll at its natural maximum.
+The new controls toggle blur/darkening independently. Ordinary page has6 selected/
+54 muted source groups using its saved2/3 counts while Now Playing remains Hide.
+This is native source/geometry/control proof, not universal song/monitor acceptance.
+Exact original preference raw payload, playback state used for the seek check and
+playlist route were restored; schema9 recovery backup verified. No own modal,
+typography probes, focus emulation or private validation state remains. Native
+fullscreen replay/monitor changes remain manual acceptance. RY-01/Pass7 paint
+clipping remain deferred; the distance gradient is explicitly deferred too.
+
+Evidence: npm-test-final.txt, parent-performance.json, parent-default-focused.json,
+parent-paint-parity.json, parent-classic.txt, actual-context-results/analysis.json,
+build-identities.json, native-card-ui-test.json, native-page-ui-test.json and
+native-final.json in the private pass6v3-20261102 directory.
+The installed local.24 evidence below remains historical and unchanged.
+
 ## Pass 6v2 installed — 5.1.0-local.24, 2026-11-02
 
 Implementation adds unified fixed-anchor following, content-owned edge spacers,

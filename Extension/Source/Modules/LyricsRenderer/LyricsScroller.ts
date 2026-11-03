@@ -12,7 +12,7 @@ import { Timeout, Defer, OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 // Imported Types
 import { BaseVocals, SyncedVocals } from "./Types.d.ts"
-import { fixedAnchorTarget, edgeSpace, readableViewport } from "./FollowPosition.mjs"
+import { fixedAnchorTarget, edgeSpace, naturalEdgeSpace, readableViewport } from "./FollowPosition.mjs"
 import { ResolveHorizontalSpacing, SetHorizontalMeasurement, type HorizontalSurface } from "../../HorizontalSpacing.ts"
 
 // Types
@@ -259,7 +259,15 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         }
         const callback = () => {
             if (this.AutoScrolling) this.ArmProgrammaticEnd()
-            else manual()
+            else {
+                // Native keyboard focus may scroll a visible muted button into
+                // view. Focus alone must not turn its static text into an All
+                // context animation window. Explicit wheel/touch/key/track input
+                // already enters manual mode before its resulting scroll event.
+                const focused=document.activeElement?.closest(".ContextMuted")
+                if(focused && this.LyricsContainer.contains(focused))return
+                manual()
+            }
         }
         const key = (event: KeyboardEvent) => {
             if ((event.target as HTMLElement)?.closest("input,textarea,select,[contenteditable=true]")) return
@@ -396,12 +404,13 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             const style=getComputedStyle(this.LyricsContainer)
             // Flow extent is independent of Simplebar's viewport min-height.
             const intrinsic=lyricsTop-this.Leading+this.LyricsContainer.getBoundingClientRect().height/scale+(parseFloat(style.marginBottom)||0)
-            const extent=edgeSpace(neutral,this.ScrollerObject.clientHeight,this.Profile.anchor,intrinsic)
+            const naturalCard=this.options.surface === "Card"
+            const extent=naturalCard ? naturalEdgeSpace(neutral,this.ScrollerObject.clientHeight,intrinsic) : edgeSpace(neutral,this.ScrollerObject.clientHeight,this.Profile.anchor,intrinsic)
             if(extent) {
                 const active=(this.VocalGroups as VocalGroups<SyncedVocals>).some(group=>group.Vocals.some(v=>v.IsActive()))
-                // Disappearing outro dots cannot shrink the range under a held
-                // followed viewport. Navigation/active placement releases this.
-                const trailing=!active && !this.NavigationPending && readingIndex<0 ? Math.max(extent.trailing,Math.ceil((this.Destination??oldScroll)+this.ScrollerObject.clientHeight-intrinsic-extent.leading)) : extent.trailing
+                // Other surfaces retain their held follow range when cues disappear.
+                // Card must allow natural range shrink instead of keeping a blank tail.
+                const trailing=!naturalCard && !active && !this.NavigationPending && readingIndex<0 ? Math.max(extent.trailing,Math.ceil((this.Destination??oldScroll)+this.ScrollerObject.clientHeight-intrinsic-extent.leading)) : extent.trailing
                 this.HoldingExtra=trailing>extent.trailing
                 const delta=extent.leading-this.Leading
                 if(delta || trailing!==this.Trailing) {

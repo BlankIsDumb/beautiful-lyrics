@@ -34,3 +34,15 @@ export function edgeSpace(bounds, height, anchor, intrinsicExtent) {
     trailing: Math.ceil(Math.max(0, height - viewport.anchor - (intrinsicExtent - Math.max(...valid.map(b => b.bottom))))),
   };
 }
+
+// Card follows the same middle-song anchor but reserves only readable song edges.
+// Source context never shortens these physical bounds; hidden source rows remain.
+export function naturalEdgeSpace(bounds, height, intrinsicExtent) {
+  const viewport = readableViewport(height);
+  const valid = bounds.filter(b => Number.isFinite(b.top) && Number.isFinite(b.bottom) && b.bottom > b.top);
+  if (!viewport || !valid.length || !Number.isFinite(intrinsicExtent)) return;
+  return {
+    leading: Math.ceil(Math.max(0, viewport.safeTop - Math.min(...valid.map(b => b.top)))),
+    trailing: Math.ceil(Math.max(0, viewport.safeBottom - (intrinsicExtent - Math.max(...valid.map(b => b.bottom))))),
+  };
+}

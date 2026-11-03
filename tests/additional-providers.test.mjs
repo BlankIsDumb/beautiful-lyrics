@@ -1,4 +1,6 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
+const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 const bundle = await build({
@@ -100,7 +102,7 @@ test("LRCLIB queries local metadata, identifies this extension, and caches parse
     const q = new URL(url).searchParams;
     assert.equal(q.get("track_name"), "local title");
     assert.equal(q.get("artist_name"), "artist");
-    assert.match(options.headers["Lrclib-Client"], /BeautifulLyricsLocal/);
+    assert.equal(options.headers["Lrclib-Client"], `JustEnoughLyrics/${version} (https://github.com/BlankIsDumb/beautiful-lyrics)`);
     return Response.json({ syncedLyrics: "[00:01.00]hello\n[00:02.00]world" });
   };
   const track = {

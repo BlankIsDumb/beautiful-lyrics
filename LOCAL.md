@@ -1,6 +1,7 @@
 # Just Enough Lyrics local build notes
 
-Current local version: **5.1.0-local.24**. See [VALIDATION.md](VALIDATION.md) for
+Current beta bundle: **5.1.0-local.26**, including the sidecard defaults.
+The installation record below covers the **5.1.0-local.25** bundle. See [VALIDATION.md](VALIDATION.md) for
 build/install evidence and remaining native checks. Pass 6 typography, context and
 following controls live under Lyrics → Now Playing / Full Lyrics. Fullscreen/cinema and the ordinary lyrics page share Full Lyrics typography,
 context and scrolling. Horizontal spacing alone has three independent surfaces.
@@ -22,25 +23,38 @@ Readouts report physical column gaps/width in CSS pixels, not glyph ink edges.
 Dragging previews without writing storage; release/confirmed number commits, Escape
 or closing cancels. Typography reset also resets that viewer's spacing surfaces.
 
-Schema9 resets old pixel inset values to0. Reading/migration is lazy: the exact old
-raw schema1–8 payload is backed up under JustEnoughLyrics/Presentation/Migration/schemaN
-before the first changed save. Existing distinct backups are retained with a suffixed
-copy. Failed backup/main writes do not publish successful edits. Rolling back to
-local.23 requires restoring BOTH its bundle and the old schema8 raw settings; preserve
-the schema9 raw payload separately too. Future schemas remain read-only.
+Schema10 adds per-view outside-context appearance, initially Hide. Schemas1–9
+migrate lazily: the exact prior raw payload is backed up under
+JustEnoughLyrics/Presentation/Migration/schemaN before the first changed save.
+Distinct recovery copies remain collision-safe; failed backup/main writes publish
+no edit. Schema9 horizontal spacing and every other existing choice are preserved.
+Rollback to local.24 requires BOTH its exact bundle and schema9 raw payload;
+preserve schema10 separately before restoring. Future schemas stay read-only.
 
 Context counts logical source groups. All active groups and every group between
 them form one block, with before/after counts outside it. Readings, backing rows,
 wrapped rows and gap dots do not consume counts. Silence retains the preceding
 context; before the first vocal it uses the first group. Context hiding preserves
 scroll extents and suspends excluded visual work. Manual browsing and Auto-follow
-Off reveal the entire song while remembering counts.
+Off reveal the entire song while remembering counts. Outside context can instead
+show static muted lyrics, immediately clickable by mouse or keyboard. Blur (CSS
+pixels), darkening (brightness toward black) and opacity are independent. Hover or
+focus raises opacity to at least60% while retaining the chosen effects; zero
+opacity hides nonfocused hit targets. Reading opacity, including zero, remains
+independent. Focus alone never starts excluded timing animation. Reset Context
+restores All/All and Hide together. Distance gradient is deferred after private
+profiling; no gradient controls or persisted placeholder are shipped.
 
 Auto-follow Off leaves playback/external seeks stationary. Clicking lyrics still
 seeks/recenters once, including paused clicks and asynchronous Spotify seeks.
 Following supports Classic, instant and native smooth transitions; manual input
-cancels smooth movement. The default preferred anchor is 45% from the readable
-viewport top, numeric0–100. Every newly active source block reaches that anchor,
+cancels smooth movement. The anchor is adjustable from 0–100%. The Sidecard
+defaults to 0% (readable top), zero preceding groups and all following groups.
+The lyrics page and fullscreen default to 45% with all context. Existing saved
+values are kept. The Sidecard clamps to actual song edges using its normal readable padding:
+short songs stay at the top, and later lines stop at the natural bottom. Context
+edges do not create a shorter song. Ordinary page/fullscreen retain their existing
+edge anchor space. Within the available physical range, every newly active source block reaches that anchor,
 even if already visible. Extreme anchors are constrained to keep active blocks
 readable. Active voices stay visible together when possible; newest source voice
 wins when the union cannot fit, and an oversized voice aligns at the readable top

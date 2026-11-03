@@ -164,7 +164,10 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
   class Element {
     classList = { add() {}, toggle() {}, contains() {return false} };
     style = {getPropertyValue(){return ""},setProperty(){},removeProperty(){}};
-    setAttribute(){} removeAttribute(){} addEventListener(){} removeEventListener(){}
+    attributes = new Map();
+    setAttribute(key,value){this.attributes.set(key,value)} removeAttribute(key){this.attributes.delete(key)}
+    hasAttribute(key){return this.attributes.has(key)} getAttribute(key){return this.attributes.get(key)??null}
+    addEventListener(){} removeEventListener(){}
     dataset = {};
     children = [];
     appendChild(child) {this.children.push(child)}

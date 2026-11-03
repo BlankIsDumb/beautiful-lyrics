@@ -139,6 +139,10 @@
 			display: block;
 			width: 100cqw;
 			height: 25cqh;
+            // The card caps at340px: subtract outer padding, header and gap.
+            // A tall ancestor's25cqh otherwise leaves a scrollport extending
+            // below LyricsContent's real clip/mask, hiding the natural last line.
+            max-height: calc(340px - 32px - 25px - 16px);
 			container-type: size;
 
 			z-index: 100;

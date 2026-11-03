@@ -4,7 +4,7 @@ import {build} from 'esbuild';
 const result=await build({stdin:{contents:`export * from './Extension/Source/LayoutSettings.ts';export * from './Extension/Source/HorizontalSpacing.ts';export * from './Extension/Source/PresentationSettings.ts';export * from './Extension/Source/Modules/LyricsRenderer/LyricContext.ts';export * from './Extension/Source/Modules/LyricsRenderer/RenderScheduler.ts';`,resolveDir:process.cwd()},bundle:true,write:false,format:'esm'});
 const {ResolveHorizontalSpacing,NormalizeHorizontalSpacing,ClassicLayout,NormalizeLayout,ApplyLayoutStyle,CreatePresentationSettings,ContextWindow,LyricContext,RenderScheduler}=await import('data:text/javascript;base64,'+Buffer.from(result.outputFiles[0].text).toString('base64'));
 const key='JustEnoughLyrics/Presentation';
-test('schema9 isolates two layouts/shared family, exact7 recovery, stale legacy adapters and failures',()=>{
+test('schema10 isolates two layouts/shared family, exact7 recovery, stale legacy adapters and failures',()=>{
  const seed=JSON.stringify({version:7,profiles:{NowPlaying:{conversions:{enabled:false}},FullLyrics:{}}},null,3),data=new Map([[key,seed]]),events=[];
  let fail=false;const storage={getItem:k=>data.get(k)||null,setItem:(k,v)=>{if(fail)throw Error('quota');data.set(k,v)}};
  const settings=CreatePresentationSettings(storage),old=settings.getProfile('NowPlaying');
@@ -12,7 +12,7 @@ test('schema9 isolates two layouts/shared family, exact7 recovery, stale legacy 
  assert.equal(settings.getLayout('NowPlaying').primaryRatio,1);assert.equal(data.get(key),seed);
  settings.subscribeLayout((...args)=>events.push(['layout',...args]));settings.subscribeFontFamily(()=>events.push(['family']));settings.subscribe(()=>events.push(['conversion']));
  settings.saveLayout('NowPlaying',{...settings.getLayout('NowPlaying'),primaryRatio:1.35,before:1,after:2});
- assert.equal(data.get(key+'/Migration/schema7'),seed);assert.equal(JSON.parse(data.get(key)).version,9);
+ assert.equal(data.get(key+'/Migration/schema7'),seed);assert.equal(JSON.parse(data.get(key)).version,10);
  settings.saveProfile('NowPlaying',old);assert.equal(settings.getLayout('NowPlaying').primaryRatio,1.35);
  assert.equal(settings.getLayout('FullLyrics').primaryRatio,1);
  assert.equal(events.length,1);assert.equal(events[0][0],'layout');
@@ -20,6 +20,22 @@ test('schema9 isolates two layouts/shared family, exact7 recovery, stale legacy 
  const count=events.length;settings.saveFontFamily('"Local Font", sans-serif');assert.equal(events.length,count);
  fail=true;assert.throws(()=>settings.saveLayout('FullLyrics',{...settings.getLayout('FullLyrics'),follow:false}));assert.equal(settings.getLayout('FullLyrics').follow,true);assert.equal(events.length,count);
  const reopened=CreatePresentationSettings({getItem:k=>data.get(k)||null,setItem(){}});assert.equal(reopened.getFontFamily(),'"Local Font", sans-serif');assert.equal(reopened.getLayout('NowPlaying').after,2);
+});
+test('sidecard defaults and category resets preserve saved layout choices until reset',()=>{
+ const data=new Map(),storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
+ const store=CreatePresentationSettings(storage);
+ const contextAndAnchor=({before,after,anchor})=>[before,after,anchor];
+ assert.deepEqual(contextAndAnchor(store.getLayout('NowPlaying')),[0,null,0]);
+ assert.deepEqual(contextAndAnchor(store.getLayout('FullLyrics')),[null,null,45]);
+ assert.equal(data.size,0);
+ store.saveLayout('NowPlaying',{...store.getLayout('NowPlaying'),before:null,after:1,anchor:45});
+ const reopened=CreatePresentationSettings(storage);
+ assert.deepEqual(contextAndAnchor(reopened.getLayout('NowPlaying')),[null,1,45]);
+ reopened.resetLayout('NowPlaying','scrolling');
+ assert.deepEqual(contextAndAnchor(reopened.getLayout('NowPlaying')),[null,1,0]);
+ reopened.resetLayout('NowPlaying','context');
+ assert.deepEqual(contextAndAnchor(reopened.getLayout('NowPlaying')),[0,null,0]);
+ assert.deepEqual(contextAndAnchor(reopened.getLayout('FullLyrics')),[null,null,45]);
 });
 test('layout normalization rejects nonfinite, fractional context, ranges and clones defaults',()=>{
  assert.deepEqual(NormalizeLayout({primaryRatio:NaN,before:1.2,after:-1,anchor:101,resumeDelay:Infinity}),ClassicLayout);
@@ -59,7 +75,7 @@ test('schema1-8 lazy exact migration, backup collision/retry and horizontal prev
   const data=new Map([[key,raw],[key+'/Migration/schema'+version,'OLDER RAW']]),writes=[],events=[];let failMain=false,failBackup=false;
   const store=CreatePresentationSettings({getItem:k=>data.get(k)??null,setItem:(k,v)=>{writes.push(k);if(k===key&&failMain||k!==key&&failBackup)throw Error('quota');data.set(k,v)}});
   store.subscribeHorizontalSpacing(surface=>events.push(surface));
-  assert.equal(store.getHorizontalSpacing('Card'),0);assert.equal(store.getLayout('NowPlaying').anchor,45);
+  assert.equal(store.getHorizontalSpacing('Card'),0);assert.equal(store.getLayout('NowPlaying').anchor,0);
   if(version===8)assert.equal(store.getLayout('FullLyrics').anchor,42.125);
   const preview=store.createHorizontalPreview('Card');for(let i=0;i<30;i++)preview.set(i);
   assert.equal(writes.length,0);assert.equal(store.getHorizontalSpacing('Card'),0);assert.equal(store.getEffectiveHorizontalSpacing('Card'),29);assert.equal(store.getEffectiveHorizontalSpacing('Contained'),0);
@@ -69,7 +85,7 @@ test('schema1-8 lazy exact migration, backup collision/retry and horizontal prev
   const retryKey=writes.at(-1);failBackup=false;failMain=true;
   assert.throws(()=>store.saveHorizontalSpacing('Fullscreen',-100));assert.equal(store.getHorizontalSpacing('Fullscreen'),0);assert.equal(data.get(key),raw);
   failMain=false;store.saveHorizontalSpacing('Fullscreen',-100);
-  assert.equal(data.get(retryKey),raw);assert.equal(data.get(key+'/Migration/schema'+version),'OLDER RAW');assert.equal(JSON.parse(data.get(key)).version,9);
+  assert.equal(data.get(retryKey),raw);assert.equal(data.get(key+'/Migration/schema'+version),'OLDER RAW');assert.equal(JSON.parse(data.get(key)).version,10);
   assert.equal(store.getHorizontalSpacing('Fullscreen'),-100);assert.equal(store.getHorizontalSpacing('Card'),0);
   preview.dispose();const reopened=CreatePresentationSettings({getItem:k=>data.get(k)??null,setItem(){}});assert.equal(reopened.getHorizontalSpacing('Fullscreen'),-100);
  }

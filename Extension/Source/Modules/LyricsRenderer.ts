@@ -84,6 +84,7 @@ export default class LyricsRenderer implements Giveable {
         let rendering = sourceCase ? PresentationSettings.getRendering(view, sourceCase) : { ...ClassicRendering }
         let cueSettings = PresentationSettings.getCues(view)
         let layout = PresentationSettings.getLayout(view)
+        let contextAppearance = PresentationSettings.getContextAppearance(view)
         ApplyLayoutStyle(lyricsContainer, layout, PresentationSettings.getFontFamily())
         const vocals: VocalController[] = []
         const cues: CueController[] = []
@@ -167,12 +168,34 @@ export default class LyricsRenderer implements Giveable {
             if(key===contextKey)return
             contextKey=key
             const visible=new Set<string>(cueOwners)
+            const muted=contextAppearance.mode === "muted"
+            const filter=[contextAppearance.blurEnabled && contextAppearance.blur > 0 ? `blur(${contextAppearance.blur}px)` : "",
+                contextAppearance.darkeningEnabled && contextAppearance.darkening > 0 ? `brightness(${1-contextAppearance.darkening/100})` : ""].filter(Boolean).join(" ")
+            const mutedProperties: Record<string,string> = muted ? {
+                "--jel-context-opacity":String(contextAppearance.opacity/100),
+                "--jel-context-hover-opacity":String(Math.max(.6,contextAppearance.opacity/100)),
+                "--jel-context-filter":filter || "none",
+            } : {}
             for(const [index,slot] of sourceSlots.entries()) {
-                const shown=index>=start&&index<=end||index===focused
-                if(slot.element.classList.contains("ContextExcluded")===shown) {
-                    slot.element.classList.toggle("ContextExcluded",!shown)
-                    slot.element.inert=!shown
-                    if(shown)slot.element.removeAttribute("aria-hidden");else slot.element.setAttribute("aria-hidden","true")
+                // Muted focus is paint-only. Hide retains its existing focused-row
+                // pin; neither hover nor focus starts excluded timing effects.
+                const shown=index>=start&&index<=end || !muted && index===focused
+                const paintedMuted=!shown && muted && (contextAppearance.opacity > 0 || index===focused)
+                const interactive=shown || paintedMuted
+                if(slot.element.classList.contains("ContextExcluded")===shown)slot.element.classList.toggle("ContextExcluded",!shown)
+                const wasMuted=slot.element.classList.contains("ContextMuted")
+                if(wasMuted!==paintedMuted)slot.element.classList.toggle("ContextMuted",paintedMuted)
+                if(slot.element.inert===interactive)slot.element.inert=!interactive
+                if(interactive) { if(slot.element.hasAttribute("aria-hidden"))slot.element.removeAttribute("aria-hidden") }
+                else if(slot.element.getAttribute("aria-hidden")!=="true")slot.element.setAttribute("aria-hidden","true")
+                // Values live on each excluded group, never on an inherited root
+                // that would invalidate every timed glyph on source transitions.
+                if(paintedMuted || wasMuted) {
+                    for(const name of ["--jel-context-opacity","--jel-context-hover-opacity","--jel-context-filter"]) {
+                        const value=paintedMuted ? mutedProperties[name] : undefined
+                        if(value) { if(slot.element.style.getPropertyValue(name)!==value)slot.element.style.setProperty(name,value) }
+                        else if(slot.element.style.getPropertyValue(name))slot.element.style.removeProperty(name)
+                    }
                 }
                 if(shown)for(const id of slot.owners)visible.add(id)
             }
@@ -212,18 +235,30 @@ export default class LyricsRenderer implements Giveable {
                 effectiveOffset = nextOffset; update(0, true)
             }))
             this.Maid.Give(OnPreRender(() => update(1 / 60, true)))
-            for (const [index, group] of vocalGroups.entries()) for (const vocal of group.Vocals) {
-                this.Maid.Give(vocal.RequestedTimeSkip.Connect(() => {
+            for (const [index, group] of vocalGroups.entries()) {
+                const navigate = () => {
                     clickTarget = groupStarts[index]
                     clickPendingAt=performance.now()
                     clock.seek(TransportTime(groupStarts[index], ...offsets(), clock.duration()))
-                    // A paused or same-position seek need not emit a clock skip.
-                    // Explicit navigation owns exactly one chosen recenter.
+                    // Paused/asynchronous seeks retain the existing one recenter.
                     scheduler.update(groupStarts[index],0,true)
                     scroller.ForceToActive(true)
-                }))
+                }
+                for (const vocal of group.Vocals) this.Maid.Give(vocal.RequestedTimeSkip.Connect(navigate))
+                // Native button keyboard/empty-row activation has no child vocal
+                // click. A bubbled child activation already navigated exactly once.
+                if(group.Role === "source") {
+                    const click=(event: MouseEvent)=>{if(event.target===group.GroupContainer && !group.GroupContainer.inert)navigate()}
+                    group.GroupContainer.addEventListener("click",click)
+                    this.Maid.Give(()=>group.GroupContainer.removeEventListener("click",click))
+                }
             }
         }
+        this.Maid.Give(PresentationSettings.subscribeContextAppearance(changedView=>{
+            if(changedView!==view)return
+            contextAppearance=PresentationSettings.getContextAppearance(view)
+            contextKey="";updateContext();scheduler.update(contextTime,0)
+        }))
         this.Maid.Give(PresentationSettings.subscribeLayout((changedView,fields) => {
             if(changedView!==view)return
             layout=PresentationSettings.getLayout(view)

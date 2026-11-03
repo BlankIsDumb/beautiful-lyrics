@@ -25,7 +25,8 @@ import type { HorizontalSurface } from "./HorizontalSpacing.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
 import { ApplyTextPreset, NormalizeRendering, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp } from "./SettingsHelp.ts";
-import { NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
+import { DefaultLayouts, NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
+import type { ContextAppearance } from "./ContextAppearance.ts";
 import { CreateTypographyPreview, TypographyMeasured } from "./Modules/LyricsRenderer/TypographyPreview.ts";
 import "./Stylings/ProviderControls.scss";
 
@@ -133,15 +134,19 @@ export function OpenProviderSettings() {
     }
     const delay = addTiming(view, fields); delay.setAttribute("aria-label", `${viewTitle} delay offset in seconds`);
     if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
+    const defaults=DefaultLayouts[view];
     const layoutRead=()=>PresentationSettings.getLayout(view);
     const layoutWrite=<K extends keyof LayoutProfile>(key: K,value: LayoutProfile[K])=>PresentationSettings.saveLayout(view,{...layoutRead(),[key]:value});
     const layoutInputs=new Map<keyof LayoutProfile, HTMLInputElement|HTMLSelectElement>();
+    // Reset handlers are registered before the Context controls are created.
+    // The callback is assigned below and runs only for later user actions.
+    let syncContextAppearance = () => {};
     const layoutSection=(title: string,category: LayoutCategory)=>{
       const details=document.createElement("details"),summary=document.createElement("summary"),body=document.createElement("fieldset");
       details.className="BL-CaseSettings";summary.textContent=title;body.className="BL-GroupOptions";body.disabled=presentationReadOnly;
       details.append(summary,body);fields.append(details);
-      const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?"Reset scrolling (45% anchor)":`Classic ${title.toLowerCase()}`;body.append(reset);
-      listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}});
+      const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?`Reset scrolling (${defaults.anchor}% anchor)`:category==="context"?"Reset context":`Classic ${title.toLowerCase()}`;body.append(reset);
+      listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}if(category==="context")syncContextAppearance();});
       return body;
     };
     const layoutNumber=(parent: HTMLElement,key: keyof LayoutProfile,label: string,min: number,max: number,step: string,help: string,classic: string)=>{
@@ -199,12 +204,43 @@ export function OpenProviderSettings() {
       spacingControls.set(surface,{cancel,sync,dispose:()=>lease.dispose()});sync();
     }
     const contextFields=layoutSection("Context","context");
-    nullable(contextFields,"before","Groups before",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole source-group count before the earliest active group. Empty = All. Concurrent activity and all intervening source groups form one block; cues/readings/wrapped rows do not count.","All");
+    nullable(contextFields,"before","Groups before",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole source-group count before the earliest active group. Empty = All. Concurrent activity and all intervening source groups form one block; cues/readings/wrapped rows do not count.",String(defaults.before ?? "All"));
     nullable(contextFields,"after","Groups after",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole groups after the latest active group. Empty = All. Manual browsing and Auto-follow Off reveal All while remembering these counts. Untimed text always shows All.","All");
+    heading(contextFields,"Outside context","h5");
+    const appearanceRead = () => PresentationSettings.getContextAppearance(view);
+    const appearanceWrite = <K extends keyof ContextAppearance>(key: K, value: ContextAppearance[K]) =>
+      PresentationSettings.saveContextAppearance(view, { ...appearanceRead(), [key]: value });
+    const appearanceMode = select(contextFields,"Outside context",`JEL-${view}-Context-mode`,[["hide","Hide"],["muted","Show muted lyrics"]],appearanceRead().mode,
+      "Hide stops outside-context visual effects and hides those groups. Show muted lyrics keeps them static and clickable; hover/focus lightens only that group without restarting animation. Both counts All, Auto-follow Off and manual browsing show the full song without this treatment, while remembering these choices.","Hide");
+    const appearanceFields = document.createElement("fieldset"); appearanceFields.className="BL-ContextAppearance";contextFields.append(appearanceFields);
+    const blurEnabled = toggle(appearanceFields,"Blur",`JEL-${view}-Context-blurEnabled`,appearanceRead().blurEnabled,
+      "Independently blur outside-context source text and readings. Disable to preserve the remembered amount without applying a filter.","On");
+    const blur = numeric(appearanceFields,"Blur amount (CSS px)",`JEL-${view}-Context-blur`,()=>appearanceRead().blur,value=>appearanceWrite("blur",value),
+      "Blur radius in CSS pixels, 0–12 in 0.25 steps. Zero is neutral; it does not change lyric layout.","2 CSS px",0,12,"0.25");
+    const darkeningEnabled = toggle(appearanceFields,"Darkening",`JEL-${view}-Context-darkeningEnabled`,appearanceRead().darkeningEnabled,
+      "Independently darken outside-context source text and readings toward black, without changing the background or transparency.","On");
+    const darkening = numeric(appearanceFields,"Darkening (%)",`JEL-${view}-Context-darkening`,()=>appearanceRead().darkening,value=>appearanceWrite("darkening",value),
+      "Brightness reduction toward black: 0% is neutral and 100% is black. This is independent of opacity.","60%",0,100,"1");
+    const opacity = numeric(appearanceFields,"Opacity (%)",`JEL-${view}-Context-opacity`,()=>appearanceRead().opacity,value=>appearanceWrite("opacity",value),
+      "Transparency of each outside-context group, including its readings: 100% is opaque. Zero hides it and removes invisible hit targets. Hover/focus uses at least 60% while retaining blur and darkening; stronger saved opacity is preserved.","35%",0,100,"1");
+    syncContextAppearance = () => {
+      const value=appearanceRead();
+      appearanceMode.value=value.mode;
+      appearanceFields.disabled=presentationReadOnly||value.mode==="hide";
+      blurEnabled.checked=value.blurEnabled;darkeningEnabled.checked=value.darkeningEnabled;
+      blur.disabled=!value.blurEnabled;darkening.disabled=!value.darkeningEnabled;
+      for(const [input,amount] of [[blur,value.blur],[darkening,value.darkening],[opacity,value.opacity]] as const) {
+        input.value=String(amount);input.removeAttribute("aria-invalid");
+      }
+    };
+    listen(appearanceMode,"change",()=>{apply(()=>appearanceWrite("mode",appearanceMode.value as ContextAppearance["mode"]));syncContextAppearance();});
+    checkbox(blurEnabled,value=>appearanceWrite("blurEnabled",value),()=>appearanceRead().blurEnabled,syncContextAppearance);
+    checkbox(darkeningEnabled,value=>appearanceWrite("darkeningEnabled",value),()=>appearanceRead().darkeningEnabled,syncContextAppearance);
+    syncContextAppearance();
     const scrolling=layoutSection("Scrolling","scrolling");
     const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Off shows the entire song and never follows playback/external seeks. Explicit lyric clicks still seek and recenter once. Untimed text never follows.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);
     const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"Classic keeps the surface's CSS transition; all choices use the same fixed anchor. Native smooth uses the browser's duration and cancels on manual scroll input. Independent of the manual-resume policy.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
-    layoutNumber(scrolling,"anchor","Anchor (% from top)",0,100,"any","Preferred active center, 0–100% from the readable viewport top. Default 45%. Every newly active source block follows this fixed position. Visibility constrains the extremes: a nonzero-height block cannot center literally at the top or bottom without clipping. Fitting active voices remain readable together; newer wins otherwise.","45%");
+    layoutNumber(scrolling,"anchor","Anchor (% from top)",0,100,"any","Preferred active center, 0–100% from the readable viewport top. Every newly active source block follows this fixed position. At 0% the block aligns with the readable top where song edges allow. Fitting active voices remain readable together; newer wins otherwise.",`${defaults.anchor}%`);
     const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic conditionally resumes fixed-anchor following when active lyrics are in reach. After delay returns after the last actual manual scrolling, even offscreen; activity/annotations cannot end it early. Silence defers until a real target.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
     layoutNumber(scrolling,"resumeDelay","Resume delay (s)",0,30,"0.05","Seconds 0–30 from the last actual manual scrolling. One owned timeout; more scrolling extends it. Auto-follow Off cancels it.",".75 s");
     if(SongLyrics?.Type==="Static") { contextFields.disabled=true;scrolling.disabled=true;heading(contextFields,"Untimed lyrics show the entire song; following is unavailable.","p") }

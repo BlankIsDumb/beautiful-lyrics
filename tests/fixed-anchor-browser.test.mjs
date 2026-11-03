@@ -16,9 +16,9 @@ test('fixed anchor actual clock/sources: three surfaces, Word/Line/forced Line, 
   const {LyricsRenderer,PresentationSettings,ClassicLayout,ClassicRendering,ApplyTextPreset}=fixtureModule;
   const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   const check=(value,message)=>{if(!value)throw Error(message)};
-  window.anchorFixture={async run(kind,precision,context,anchor,count=20){
-   const host=document.createElement('div');host.style.cssText='width:'+(kind==='Card'?420:900)+'px;height:800px;position:relative;container-type:size';document.body.append(host);
-   if(kind==='Card')host.innerHTML='<div id="BeautifulLyrics-CardView"><div class="LyricsContent"><div class="ContentContainer"></div></div></div>';
+  window.anchorFixture={async run(kind,precision,context,anchor,count=20,hostHeight=800){
+   const host=document.createElement('div');host.style.cssText='width:'+(kind==='Card'?420:900)+'px;height:'+hostHeight+'px;position:relative;container-type:size';document.body.append(host);
+   if(kind==='Card')host.innerHTML='<div id="BeautifulLyrics-CardView"><div class="Header" data-encore-id="type"><div class="Title">Lyrics</div><div class="Controls"><button class="ViewControl">R</button><button class="ViewControl">P</button><button class="ViewControl">X</button></div></div><div class="LyricsContent"><div class="ContentContainer"></div></div></div>';
    else{host.classList.add('Root__main-view');host.innerHTML='<div class="BeautifulLyricsPage '+kind+'"><div class="Content"></div></div>';}
    const parent=host.querySelector(kind==='Card'?'.ContentContainer':'.Content'),view=kind==='Card'?'NowPlaying':'FullLyrics';
    const reservation=document.createElement('div');reservation.style.cssText='position:absolute;left:0;top:0;width:400px;height:800px';host.append(reservation);
@@ -33,22 +33,36 @@ test('fixed anchor actual clock/sources: three surfaces, Word/Line/forced Line, 
    const renderer=new LyricsRenderer(parent,source,false,view,clock,undefined,{surface:kind,reservation});
    try{
     await frame();await frame();const root=parent.querySelector('.Lyrics'),scroll=parent.querySelector('.simplebar-content-wrapper'),groups=[...root.querySelectorAll('.VocalsGroup')].filter(g=>!g.querySelector('.Interlude'));
-    check(scroll.clientHeight>0&&scroll.clientHeight<=800,'bounded real scrollport');check(scroll.scrollHeight>scroll.clientHeight,'real scroll range');
+    check(scroll.clientHeight>0&&scroll.clientHeight<=800,'bounded real scrollport');if(count>1)check(scroll.scrollHeight>scroll.clientHeight,'real scroll range');
     check(root.dataset.effectivePrecision===(precision==='Word'?'word':'line'),'genuine source precision '+precision);
+    if(kind==='Card') {
+     const clip=host.querySelector('.LyricsContent').getBoundingClientRect(),port=scroll.getBoundingClientRect();
+     check(port.top>=clip.top+16-.1&&port.bottom<=clip.bottom-16+.1,'Card scrollport fits actual header/padding/outer clip');
+     const spaces=[...parent.querySelectorAll('.JEL-FollowSpace')].map(n=>n.getBoundingClientRect().height);
+     check(spaces.length===2&&spaces[0]<=24&&spaces[1]<=64,'Card never reserves anchor-sized song-edge space');
+    }
     const H=scroll.clientHeight,top=Math.min(24,H/2),bottom=Math.min(64,Math.max(0,H-top-1)),A=top+(H-top-bottom)*anchor/100;
+    const expectedCenter=(r,v)=>{const desired=Math.max(top+r.height/2,Math.min(H-bottom-r.height/2,A));if(kind!=='Card')return desired;const contentCenter=(r.top+r.bottom)/2-v.top+scroll.scrollTop;return contentCenter-Math.max(0,Math.min(scroll.scrollHeight-H,contentCenter-desired))};
     const tick=async(t,seek=false)=>{time=t;for(const fn of consumers)fn(1/60,seek||undefined);await frame()};
     const samples=[];
     for(const index of [...new Set([0,1,2,3,count-1])].filter(i=>i<count)){
      await tick(1.5+index*4);
      const target=groups[index].querySelector('.Vocals'),r=target.getBoundingClientRect(),v=scroll.getBoundingClientRect();
-     const expected=Math.max(top+r.height/2,Math.min(H-bottom-r.height/2,A)),center=(r.top+r.bottom)/2-v.top;
+     if(kind==='Card' && r.height<=H-top-bottom) {
+      const clip=host.querySelector('.LyricsContent').getBoundingClientRect();
+      check(r.top>=clip.top+24-1.5&&r.bottom<=clip.bottom-64+1.5,'Card source stays inside actual outer readable mask region');
+      if(index===0)check(scroll.scrollTop<=1.5&&Math.abs(r.top-v.top-top)<1.5,'Card first source starts at readable top without anchor gap '+JSON.stringify({precision,anchor,count,index,scroll:scroll.scrollTop,top:r.top-v.top,safe:top,spacers:[...parent.querySelectorAll('.JEL-FollowSpace')].map(n=>n.getBoundingClientRect().height)}));
+      if(index===count-1&&count>1)check(Math.abs(scroll.scrollTop-(scroll.scrollHeight-H))<1.5&&Math.abs(r.bottom-v.top-(H-bottom))<1.5,'Card last source ends at natural readable bottom');
+      if(count===1)check(scroll.scrollTop===0&&Math.abs(r.top-v.top-top)<1.5,'short Card stays top aligned');
+     }
+     const expected=expectedCenter(r,v),center=(r.top+r.bottom)/2-v.top;
      check(Math.abs(center-expected)<1.5,JSON.stringify({kind,precision,context,anchor,index,center,expected,scroll:scroll.scrollTop,max:scroll.scrollHeight-H}));samples.push({index,center,expected,scroll:scroll.scrollTop});
      const held=scroll.scrollTop;await tick(3.5+index*4);check(Math.abs(scroll.scrollTop-held)<.1,'ordinary silence holds');
     }
     const last=scroll.scrollTop;await tick(count*4+10);check(Math.abs(scroll.scrollTop-last)<.1,'ending holds final position');
     await tick(7.5,true);const r=groups[Math.min(count-1,1)].querySelector('.Vocals').getBoundingClientRect(),v=scroll.getBoundingClientRect();
-    const expected=Math.max(top+r.height/2,Math.min(H-bottom-r.height/2,A));check(Math.abs((r.top+r.bottom)/2-v.top-expected)<1.5,'external silent navigation uses preceding source');
-    await tick(0,true);const first=groups[0].querySelector('.Vocals').getBoundingClientRect();check(Math.abs((first.top+first.bottom)/2-v.top-Math.max(top+first.height/2,Math.min(H-bottom-first.height/2,A)))<1.5,'before-first navigation');
+    const expected=expectedCenter(r,v);check(Math.abs((r.top+r.bottom)/2-v.top-expected)<1.5,'external silent navigation uses preceding source');
+    await tick(0,true);const first=groups[0].querySelector('.Vocals').getBoundingClientRect();check(Math.abs((first.top+first.bottom)/2-v.top-expectedCenter(first,v))<1.5,'before-first navigation');
     return samples;
    }finally{renderer.Destroy();check(consumers.size===0,'clock cleanup');check(!host.querySelector('.JEL-FollowSpace'),'owned spacers cleanup');host.remove();}
   },async special(){
@@ -60,11 +74,11 @@ test('fixed anchor actual clock/sources: three surfaces, Word/Line/forced Line, 
    try{
     await frame();const scroll=host.querySelector('.simplebar-content-wrapper');check(scroll.scrollTop===0,'zero geometry does not fabricate target');host.style.display='block';await frame();await frame();
     const tick=async(t,seek=false)=>{time=t;for(const fn of consumers)fn(1/60,seek||undefined);await frame();await frame()};
-    const checkTarget=element=>{const H=scroll.clientHeight,st=Math.min(24,H/2),sb=Math.min(64,Math.max(0,H-st-1)),A=st+(H-st-sb)*.45,r=element.getBoundingClientRect(),v=scroll.getBoundingClientRect();check(Math.abs((r.top+r.bottom)/2-v.top-A)<1.5,'cue/source settles at common anchor '+JSON.stringify({r:r.toJSON(),v:v.toJSON(),A}));};
+    const checkTarget=element=>{const H=scroll.clientHeight,st=Math.min(24,H/2),sb=Math.min(64,Math.max(0,H-st-1)),A=st+(H-st-sb)*.45,r=element.getBoundingClientRect(),v=scroll.getBoundingClientRect();const center=(r.top+r.bottom)/2-v.top,contentCenter=center+scroll.scrollTop,expected=contentCenter-Math.max(0,Math.min(scroll.scrollHeight-H,contentCenter-A));check(Math.abs(center-expected)<1.5,'cue/source respects natural Card range '+JSON.stringify({r:r.toJSON(),v:v.toJSON(),A}));};
     await tick(2);checkTarget(host.querySelector('.Interlude.Active').parentElement);
     await tick(10.5);checkTarget([...host.querySelectorAll('.VocalsGroup')].find(g=>g.querySelector('.Vocals')));
     await tick(15);checkTarget(host.querySelector('.Interlude.Active').parentElement);
-    await tick(100.5);const last=scroll.scrollTop;await tick(110);check(Math.abs(scroll.scrollTop-last)<.1,'cue disappearance/ending retains last followed position');
+    await tick(100.5);const last=scroll.scrollTop;await tick(110);check(scroll.scrollTop<=last+.1&&scroll.scrollTop<=scroll.scrollHeight-scroll.clientHeight,'Card cue disappearance permits only natural-range clamp');
    }finally{renderer.Destroy();host.remove();}
    // One genuinely oversized source voice has two timed boundaries. Neither
    // the boundary nor subsequent progress can pan through the unchanged voice.
@@ -84,6 +98,16 @@ test('fixed anchor actual clock/sources: three surfaces, Word/Line/forced Line, 
     const response=await send('Runtime.evaluate',{expression:`anchorFixture.run(${JSON.stringify(kind)},${JSON.stringify(precision)},${context},${anchor})`,awaitPromise:true,returnByValue:true});
     if(response.exceptionDetails)throw Error(response.exceptionDetails.exception?.description||response.exceptionDetails.text);
    }
+   for(const count of [1,20]) {
+    const response=await send('Runtime.evaluate',{expression:`anchorFixture.run('Card','Word',1,45,${count},1680)`,awaitPromise:true,returnByValue:true});if(response.exceptionDetails)throw Error(response.exceptionDetails.exception?.description||response.exceptionDetails.text);
+   }
+   for(const deviceScaleFactor of [.9509072303771973,1.25]) {
+    await send('Emulation.setDeviceMetricsOverride',{width:1100,height:1200,deviceScaleFactor,mobile:false});
+    for(const hostHeight of [480,1277,1680])for(const count of [1,20]) {
+     const response=await send('Runtime.evaluate',{expression:`anchorFixture.run('Card','Word',1,45,${count},${hostHeight})`,awaitPromise:true,returnByValue:true});if(response.exceptionDetails)throw Error(response.exceptionDetails.exception?.description||response.exceptionDetails.text);
+    }
+   }
+   await send('Emulation.clearDeviceMetricsOverride');
    const special=await send('Runtime.evaluate',{expression:'anchorFixture.special()',awaitPromise:true,returnByValue:true});if(special.exceptionDetails)throw Error(special.exceptionDetails.exception?.description||special.exceptionDetails.text);
    for(const kind of ['Card','Contained','Fullscreen']){
     const response=await send('Runtime.evaluate',{expression:`anchorFixture.run(${JSON.stringify(kind)},'Word',0,45,1)`,awaitPromise:true,returnByValue:true});if(response.exceptionDetails)throw Error(response.exceptionDetails.exception?.description||response.exceptionDetails.text);

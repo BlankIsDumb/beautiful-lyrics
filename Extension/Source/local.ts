@@ -1,3 +1,5 @@
+import { version } from "../../package.json";
+
 // Spicetify loads extensions during startup. Wait only for the public host
 // object; Session.ts handles its individual services after this point.
 while (!(globalThis as any).Spicetify?.Platform) {
@@ -15,7 +17,7 @@ const player = await import('@Spices/Spicetify/Services/Player/mod.ts');
 // Never expose provider credentials here.
 const api = {
   name: 'Just Enough Lyrics',
-  version: '5.1.0-local.24',
+  version,
   status: () => ({
     track: player.Song?.Uri,
     lyricsLoaded: player.HaveSongLyricsLoaded,

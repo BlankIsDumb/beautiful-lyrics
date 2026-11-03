@@ -1,3 +1,4 @@
+import { version } from "../../../../../package.json";
 import { GetExpireStore } from "../Cache.ts";
 import {
   GetSpicyToken,
@@ -12,7 +13,7 @@ const lrcCache = GetExpireStore<ProviderLyrics | false>(
   true,
 );
 const client =
-  "BeautifulLyricsLocal/5.1.0-local.5 (https://github.com/BlankIsDumb/beautiful-lyrics)";
+  `JustEnoughLyrics/${version} (https://github.com/BlankIsDumb/beautiful-lyrics)`;
 let lrcQueue: Promise<unknown> = Promise.resolve();
 let nextLrcAt = 0;
 // Spicy responses stay in memory only: no disk copy can outlive its 30-day cap.

@@ -617,3 +617,35 @@
 // Our cached source anchor owns reflow preservation; native browser anchoring
 // would otherwise apply a second correction before the owned layout batch.
 .LyricsScrollContainer .simplebar-content-wrapper { overflow-anchor: none; }
+
+// Excluded source rows retain their real layout and canonical timing nodes, but
+// paint at a deterministic rest state. Scheduler eligibility remains separate.
+.Lyrics .VocalsGroup.ContextExcluded.ContextMuted {
+  visibility: visible; pointer-events: auto;
+  opacity: var(--jel-context-opacity);
+  filter: var(--jel-context-filter, none) !important;
+  transform: none !important; will-change: auto; transition: none;
+  &:is(:hover, :focus-within) { opacity: var(--jel-context-hover-opacity); }
+  * { will-change: auto !important; transition: none !important; animation: none !important; }
+  .Vocals { filter: none !important; transform: none !important; scale: none !important; }
+  .Vocals.Lead:not(.AnnotationText) { opacity: 1 !important; }
+  .Vocals.Background:not(.AnnotationText) { opacity: var(--background-active-opacity) !important; }
+  // The reading keeps its OWN configured alpha (including zero), then the group
+  // opacity applies once to source and reading together. Neutral ruby owners
+  // must not multiply source opacity into the reading a second time.
+  .AnnotationText.Vocals {
+    --annotation-state-opacity: var(--vocal-active-opacity) !important;
+    &.Background { --annotation-state-opacity: var(--background-active-opacity) !important; }
+  }
+  :is(.Line, .Syllable, .Letter, .Synced) {
+    transform: none !important; scale: none !important; translate: none !important;
+    text-shadow: none !important;
+  }
+  // Leave SourcePaint display/fragmentation untouched: it still owns the same
+  // glyphs and wrapping; only the progressive foreground is replaced.
+  :is(.Synced, .SourcePaint) {
+    background-image: none !important; background-color: transparent !important;
+    -webkit-text-fill-color: white !important; color: white !important;
+    text-shadow: none !important;
+  }
+}

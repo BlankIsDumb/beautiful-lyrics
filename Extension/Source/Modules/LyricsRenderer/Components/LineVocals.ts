@@ -1,14 +1,11 @@
 import { ClassicRendering, type RenderingProfile } from "../../../RenderingSettings.ts"
-import { ClearDisabledEffects, EffectProperty, TrackedSpring, type VocalRenderOptions } from "../RenderEffects.ts"
+import { ApplyLineAnimationAttributes, ClearDisabledEffects, EffectCurve, EffectProperty, ReconcileEffectSpring, type VocalRenderOptions } from "../RenderEffects.ts"
 import { RunProgress, VisualProgress, type DisplayRun } from "../../TextLayout.ts"
 import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
 // Packages
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { Signal } from "@Universal/Modules/Signal.ts"
 import Spring from "@Universal/Modules/LegacySpring.ts"
-
-// Modules
-import { GetSpline, Clamp } from "../SharedMethods.ts"
 
 // Imported Types
 import { SyncedVocals, LyricState } from "../Types.d.ts"
@@ -33,10 +30,8 @@ const GlowRange = [
 		Value: 0
 	} // Rest
 ]
-let GlowSpline: ReturnType<typeof GetSpline> | undefined
-
-const GlowDamping = 0.5
-const GlowFrequency = 1
+const GlowCurve = EffectCurve(GlowRange)
+const GlowSpringParameters = [0.5, 1] as const
 
 // Class
 export default class LineVocals implements SyncedVocals, Giveable {
@@ -50,6 +45,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 	private readonly Span: HTMLSpanElement;
 	private GlowSpring?: Spring;
+    private DirectProgress = 0;
     private Profile: RenderingProfile;
     private Options: VocalRenderOptions;
     private Projection?: DisplayRun;
@@ -100,7 +96,8 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 		// Now create our live-text element
 		this.Span = syllableSpan
-		this.GlowSpring = this.Profile.glow ? TrackedSpring(0, GlowDamping, GlowFrequency, options.counters) : undefined
+		this.GlowSpring = ReconcileEffectSpring(undefined, this.Profile.glow, GlowSpringParameters, this.Profile.animationResponse, options.counters)
+		ApplyLineAnimationAttributes(this.Container, this.Profile)
 
 		// Now set our state
 		this.SetToGeneralState(false)
@@ -114,7 +111,7 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	private UpdateLiveTextState = (timeScale: number, forceTo?: true) => {
 		// Grab our values
 		if (!this.GlowSpring) return
-		const glowAlpha = (GlowSpline ??= GetSpline(GlowRange)).at(timeScale)
+		const glowAlpha = GlowCurve(timeScale, this.Profile.animationEasing)
 
 		// Apply them
 		if (forceTo) {
@@ -125,9 +122,10 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	}
 
 	private UpdateLiveTextVisuals = (timeScale: number, deltaTime: number): boolean => {
-        if (this.GlowSpring) {
-            if (this.Options.counters) this.Options.counters.springUpdates++
-            const glowAlpha = this.GlowSpring.Update(deltaTime)
+        if (this.Profile.glow) {
+            if (this.GlowSpring && this.Options.counters) this.Options.counters.springUpdates++
+            if (!this.GlowSpring) this.DirectProgress = timeScale
+            const glowAlpha = this.GlowSpring?.Update(deltaTime) ?? GlowCurve(timeScale, this.Profile.animationEasing)
             EffectProperty(this.Span, "--text-shadow-blur-radius", `${4 + 8 * glowAlpha}px`, this.Options.counters)
             EffectProperty(this.Span, "--text-shadow-opacity", `${glowAlpha * 50}%`, this.Options.counters)
         }
@@ -228,10 +226,12 @@ export default class LineVocals implements SyncedVocals, Giveable {
 	}
 
     public SetText(text: string, projection?: DisplayRun) { this.Span.innerText = text; this.Projection = projection }
-    public SetRendering(profile: RenderingProfile) {
+    public SetRendering(profile: RenderingProfile, _time?: number) {
+        const seed = this.Profile.animationResponse === "direct" && profile.glow && profile.animationResponse !== "direct"
+            ? GlowCurve(this.DirectProgress, this.Profile.animationEasing) : 0
         this.Profile = { ...profile }
-        if (!profile.glow) this.GlowSpring = undefined
-        else this.GlowSpring ??= TrackedSpring(0, GlowDamping, GlowFrequency, this.Options.counters)
+        this.GlowSpring = ReconcileEffectSpring(this.GlowSpring, profile.glow, GlowSpringParameters, profile.animationResponse, this.Options.counters, seed)
+        ApplyLineAnimationAttributes(this.Container, profile)
         ClearDisabledEffects(this.Span, profile, this.Options.counters)
     }
     public RequiresContinuous() { return this.Profile.highlight === "classic" || this.Profile.highlight === "progressive" || this.Profile.glow }
@@ -260,6 +260,10 @@ export default class LineVocals implements SyncedVocals, Giveable {
 
 	// Deconstructor
 	public Destroy() {
+		if (this.Options.root) {
+			this.Container.removeAttribute("data-jel-line-easing")
+			this.Container.removeAttribute("data-jel-line-response")
+		}
 		this.Maid.Destroy()
 	}
 }

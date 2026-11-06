@@ -1,15 +1,16 @@
 // All inputs are neutral scroll-content CSS pixels, never animated glyph boxes.
-export function readableViewport(height, anchor = 45) {
+export function readableViewport(height, anchor = 45, card = false) {
   if (!Number.isFinite(height) || height <= 0 || !Number.isFinite(anchor) || anchor < 0 || anchor > 100) return;
-  const safeTop = Math.min(24, height / 2);
-  const safeBottom = Math.min(64, Math.max(0, height - safeTop - 1));
+  // The Card mask starts at the inner scrollport and fades over 8px at each edge.
+  const safeTop = Math.min(card ? 8 : 24, height / 2);
+  const safeBottom = Math.min(card ? 8 : 64, Math.max(0, height - safeTop - 1));
   const usable = height - safeTop - safeBottom;
   if (usable < 1) return;
   return {safeTop, safeBottom, usable, anchor: safeTop + usable * anchor / 100};
 }
 
-export function fixedAnchorTarget(bounds, height, anchor, maximumScroll) {
-  const viewport = readableViewport(height, anchor);
+export function fixedAnchorTarget(bounds, height, anchor, maximumScroll, card = false) {
+  const viewport = readableViewport(height, anchor, card);
   if (!viewport || !Number.isFinite(maximumScroll) || maximumScroll < 0 || !bounds.length) return;
   const valid = bounds.filter(b => Number.isFinite(b.top) && Number.isFinite(b.bottom) && b.bottom > b.top);
   if (!valid.length) return;
@@ -38,7 +39,7 @@ export function edgeSpace(bounds, height, anchor, intrinsicExtent) {
 // Card follows the same middle-song anchor but reserves only readable song edges.
 // Source context never shortens these physical bounds; hidden source rows remain.
 export function naturalEdgeSpace(bounds, height, intrinsicExtent) {
-  const viewport = readableViewport(height);
+  const viewport = readableViewport(height, 45, true);
   const valid = bounds.filter(b => Number.isFinite(b.top) && Number.isFinite(b.bottom) && b.bottom > b.top);
   if (!viewport || !valid.length || !Number.isFinite(intrinsicExtent)) return;
   return {

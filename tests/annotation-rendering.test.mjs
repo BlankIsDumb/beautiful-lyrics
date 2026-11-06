@@ -171,6 +171,14 @@ test('host border-box native backing tail and large atomic ruby retain horizonta
       const v=controllers[0];v.SetRendering({...profile,detail:'line'},5);v.SetAnnotations(settings,undefined,readings[0],5);v.MeasureAnnotations();v.Animate(5,0,true);
       const phase=parseFloat(v.root.querySelector('.Synced').style.getPropertyValue('--gradient-progress'))/120;
       for(const entry of v.ruby.entries){const range=entry.run.VisualRange,expected=Math.max(0,Math.min(1,(phase-range.start)/(range.end-range.start)));check(Math.abs(parseFloat(entry.root.querySelector('.Synced').style.getPropertyValue('--gradient-progress'))/120-expected)<1e-6,'forced Line readings view one shared complete voice sweep');check(JSON.stringify(entry.child.Projection.Intervals)===JSON.stringify(v.child.Projection.Intervals),'forced Line reading keeps exact complete source interval union');}
+      const overrides=NormalizeAnnotations({...settings,cases:{
+        Word:{inherit:false,effects:{...profile,highlight:'segment'}},
+        Line:{inherit:false,effects:{...profile,highlight:'off'}},
+      }});
+      v.SetAnnotations(overrides,undefined,readings[0],5);
+      check(v.ruby.entries.every(({root})=>root.dataset.jelHighlight==='off'),'forced Line ruby uses the independent Line reading effects');
+      v.SetRendering({...profile,detail:'word'},5);
+      check(v.ruby.entries.every(({root})=>root.dataset.jelHighlight==='segment'),'Word ruby restores its own independent reading effects');
       controllers.forEach(v=>v.SetAnnotations(NormalizeAnnotations(),undefined,undefined,5));scroller.RefreshAnnotationLayout();await frame();await frame();check(!group.querySelector('.RubyReading'),'Off removes all readings');
       const generation=scroller.AnnotationFontGeneration;document.fonts.dispatchEvent(new Event('loadingdone'));await frame();await frame();check(scroller.AnnotationFontGeneration===generation+1&&!group.querySelector('.RubyReading'),'reading Off releases reading work while source typography still invalidates');
       scroller.Destroy();const disposedGeneration=scroller.AnnotationFontGeneration;document.fonts.dispatchEvent(new Event('loadingdone'));await frame();check(scroller.AnnotationFontGeneration===disposedGeneration,'renderer disposal releases the shared source/reading font listener');

@@ -1,5 +1,66 @@
 # Validation
 
+## Whole-line display profile — 5.1.0-local.29, 2026-11-06
+
+The isolated Chromium renderer used conflicting Word and Line profiles on the
+Now Playing card, ordinary lyrics page, and Fullscreen. Forced and genuine Line
+used the same effects. Live edits reused the lyric DOM, the view profiles stayed
+isolated, and switching mid-song kept the active voice and original seek target.
+Separate checks covered inherited above-text effects, independent reading
+overrides, ruby, and settings visibility and failed-save recovery.
+
+Across the three-surface test and the serial rerun of the remaining suite,
+135 of 136 checks passed. The disabled-cue height assertion also fails in an
+isolated replay with the previous controller. The bundled Node 24 run crashed
+in Sass during the ruby-layer fixture, which passed on system Node 20.
+
+Built with the bundled Node 24 runtime. All four aliases pass syntax and bundled
+dictionary checks and match SHA-256
+`A126139DB77886848CC763F6BF7DD0C89A7B10D9C6734FB7C48AD499BB8294F9`.
+This candidate was validated in isolated Chromium and has no native Spotify
+playback result.
+
+## Now Playing card edge fix — 5.1.0-local.28, 2026-11-06
+
+Card following uses an 8 CSS px fade at each inner edge. The card measures the
+last group’s actual bottom to set the lyric paint height, keeping fractional
+row rounding from clipping the ending. The three follow-position tests and both
+browser suites passed, including a 160-row case, short and oversized lyrics,
+manual scrolling, and the three-surface anchor matrix.
+
+All four built aliases passed syntax checks. The three installed copies match
+SHA-256 `E397F2E0FA89FFD95719EE4CA58EE67965DE6442FF188EB534E56D828D41841D`.
+The local.27 copies were backed up and Spotify was restarted. Native DevTools
+was unavailable after restart. The edge checks use isolated Chromium.
+
+## Pass 7 installed — 5.1.0-local.27, 2026-11-05
+
+The serial suite passed 132 of 136 checks on its first run. Four ruby fixture
+checks still expected integer measurement and the old clearance formula. All
+four passed on focused reruns with fractional measurements and fitted clearance
+assertions. Source code stayed fixed across those reruns. The independent
+Classic cadence comparison passed against frozen local.26.
+
+The final source replay of the captured DROP case kept canonical source owners.
+The 112.787px and 34.967px baseline row steps became 64.412px each, with a
+2.299px reading-to-previous-row clearance in the measured case. The controlled
+paint replay recovered all 182 clipped pixels from the scaled source fixture.
+The selected layout containment preserves the outer viewport paint boundary.
+Steady render CPU p95 stayed in the baseline range in the paired isolated
+GPU runs. The first font invalidation cost up to 13.6ms more in the 160-voice
+ruby fixture, with the same number of batches.
+
+The four build aliases and three installed copies share SHA-256
+`CEA63D6475FB8620B8059915CF02FFBCE8573FC36A8024C27C47B3407D6760FD`.
+All four pass syntax checks. All 12 bundled dictionary members match the
+installed build dependencies byte for byte.
+
+Spotify mounted local.27 with Cosmos, Platform and Player available after
+Spicetify restore/reapply. DevTools verified the new easing, response and
+cue controls for both viewers. The settings probe restored the original
+route and preserved the saved presentation payload. No track was loaded
+during that probe. Playback and paint validation above use isolated fixtures.
+
 ## Beta build — 5.1.0-local.26, 2026-11-03
 
 The sidecard defaults to the readable top with zero preceding groups and all

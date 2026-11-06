@@ -1,5 +1,5 @@
-import { ClassicRendering, ContinuousTextEffects, LetterEmphasis, type RenderingProfile } from "../../../RenderingSettings.ts"
-import { ClearDisabledEffects, EffectProperty, ReconcileSprings, type VocalRenderOptions } from "../RenderEffects.ts"
+import { ClassicRendering, ContinuousTextEffects, LetterEmphasis, type AnimationEasing, type RenderingProfile } from "../../../RenderingSettings.ts"
+import { ClearDisabledEffects, EffectCurve, EffectProperty, ReconcileSprings, type VocalRenderOptions } from "../RenderEffects.ts"
 import { LyricTimeline } from "../../LyricTimeline.ts"
 import { Graphemes, LayoutSyllables, RunProgress, SourceOwnerKey, VisualProgress, type DisplayRun, type TimingInterval } from "../../TextLayout.ts"
 import { timingProgress } from "@Spices/Spicetify/Services/Player/LyricTiming.mjs"
@@ -9,10 +9,9 @@ import { easeSinOut } from 'npm:d3-ease';
 // Packages
 import { Maid, Giveable } from '@Universal/Modules/Maid.ts'
 import { Signal } from '@Universal/Modules/Signal.ts'
-import Spring from '@Universal/Modules/LegacySpring.ts'
 
 // Modules
-import { GetSpline, Clamp } from '../SharedMethods.ts';
+import { Clamp } from '../SharedMethods.ts';
 
 // Imported Types
 import { LiveText, LyricState, SyncedVocals } from '../Types.d.ts'
@@ -42,6 +41,7 @@ type AnimatedSyllable = ( // Time is relative to the entire vocal-set
 	& (
 		{
 			Type: "Syllable";
+			SegmentEmphasis: boolean;
 		}
 		| {
 			Type: "Letters";
@@ -97,9 +97,9 @@ const GlowRange = [
 		Value: 0
 	} // Rest
 ]
-let ScaleSpline: ReturnType<typeof GetSpline> | undefined
-let YOffsetSpline: ReturnType<typeof GetSpline> | undefined
-let GlowSpline: ReturnType<typeof GetSpline> | undefined
+const ScaleCurve = EffectCurve(ScaleRange)
+const YOffsetCurve = EffectCurve(YOffsetRange)
+const GlowCurve = EffectCurve(GlowRange)
 
 const YOffsetDamping = 0.4
 const YOffsetFrequency = 1.25
@@ -117,7 +117,7 @@ const IsEmphasized = (metadata: DisplayRun) => {
     // Source-selected eligibility survives a different spelling. Truly merged
     // owners have no honest finer cadence and use a complete grouped effect.
     if (metadata.SourceOwners && !owner) return false
-    const count = metadata.SafeLetters ? Graphemes(owner?.text ?? metadata.Text).length : 0
+    const count = Graphemes(owner?.text ?? metadata.Text).length
     return count > 0 && count <= MaximumEmphasizedCharacters && (owner?.duration ?? metadata.TimingDuration) >= MinimumEmphasizedDuration
 }
 
@@ -256,6 +256,8 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
                 const saved = this.ProjectionStates.get(SourceOwnerKey(syllableMetadata.SourceRanges))
 				// Determine if we are emphasised
 				const isEmphasized = LetterEmphasis(this.Profile) && IsEmphasized(syllableMetadata)
+                const letterEmphasis = isEmphasized && syllableMetadata.SafeLetters
+                const segmentEmphasis = isEmphasized && !syllableMetadata.SafeLetters
 
 				// Create our main span element
 				const syllableSpan = this.ContentMaid.Give(document.createElement('span'))
@@ -266,10 +268,11 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
                     if (!syllableMetadata.SafeLetters) syllableSpan.classList.add('ShapingRun')
                     if (syllableMetadata.ExplicitSpacing) syllableSpan.classList.add('ExplicitSpacing')
                     if (syllableMetadata.AnnotationDerived) syllableSpan.classList.add('ConvertedRun')
-					if (isEmphasized) {
+					if (letterEmphasis) {
 						syllableSpan.classList.add('Emphasis')
 					} else {
 						syllableSpan.classList.add('Synced')
+						if (segmentEmphasis) syllableSpan.classList.add('SegmentEmphasis')
 					}
 
 					const isEndOfWord = (isInWordGroup && (index === (syllableCount - 1)))
@@ -288,7 +291,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 				// Determine whether or not our content is a set of letters or a single text
 				let letters: (AnimatedLetter[] | undefined)
-				if (isEmphasized) {
+				if (letterEmphasis) {
 					// Store all our "letters"
 					const letterTexts = Graphemes(syllableMetadata.Text)
 
@@ -359,7 +362,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					Object: syllableSpan,
 					Springs: ReconcileSprings(saved?.springs, this.Profile, springParameters, this.Options.counters)
 				}
-				if (isEmphasized) {
+				if (letterEmphasis) {
 					this.Syllables.push(
 						{
 							Type: "Letters",
@@ -381,6 +384,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 					this.Syllables.push(
 						{
 							Type: "Syllable",
+                            SegmentEmphasis: segmentEmphasis,
                             Intervals: syllableMetadata.Intervals, TimingDuration: syllableMetadata.TimingDuration,
                             VisualRange: syllableMetadata.VisualRange,
 
@@ -446,16 +450,18 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 	private UpdateLiveTextState = (
 		liveText: Pick<LiveText, "Springs">,
 		timeScale: number, glowTimeScale: number,
-		forceTo?: true
+		forceTo?: true,
+        easing: AnimationEasing = this.Profile.animationEasing
 	) => {
         const springs = liveText.Springs
+        if (!springs) return
         const target = (spring: NonNullable<LiveText["Springs"]>["Scale"], value: number) => {
             if (!spring) return
             if (forceTo) spring.Set(value); else spring.Final = value
         }
-        if (springs?.Scale) target(springs.Scale, (ScaleSpline ??= GetSpline(ScaleRange)).at(timeScale))
-        if (springs?.YOffset) target(springs.YOffset, (YOffsetSpline ??= GetSpline(YOffsetRange)).at(timeScale))
-        if (springs?.Glow) target(springs.Glow, (GlowSpline ??= GetSpline(GlowRange)).at(glowTimeScale))
+        if (springs.Scale) target(springs.Scale, ScaleCurve(timeScale, easing))
+        if (springs.YOffset) target(springs.YOffset, YOffsetCurve(timeScale, easing))
+        if (springs.Glow) target(springs.Glow, GlowCurve(glowTimeScale, easing))
     }
 
     // A genuinely merged token has one honest grouped display clock, but its
@@ -489,8 +495,10 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
         return sleeping
     }
 
-    private UpdateLiveTextVisuals = (liveText: LiveText, isEmphasized: boolean, timeScale: number, deltaTime: number, segmentStarted = timeScale > 0): boolean => {
+    private UpdateLiveTextVisuals = (liveText: LiveText, isEmphasized: boolean, timeScale: number, deltaTime: number, segmentStarted = timeScale > 0, glowTimeScale = timeScale): boolean => {
         const springs = liveText.Springs
+        const direct = this.Profile.animationResponse === "direct"
+        const easing = this.Profile.animationEasing
         const update = (spring: NonNullable<LiveText["Springs"]>["Scale"]) => {
             if (this.Options.counters) this.Options.counters.springUpdates++
             return spring!.Update(deltaTime)
@@ -500,10 +508,16 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
             const progress = this.Profile.highlight === "segment" ? (segmentStarted ? 1 : 0) : timeScale
             set("--gradient-progress", `${-20 + 120 * progress}%`)
         }
-        if (springs?.Scale) set("scale", String(update(springs.Scale)))
-        if (springs?.YOffset) set("transform", `translateY(calc(var(--lyrics-size) * ${update(springs.YOffset) * (isEmphasized ? 2 : 1)}))`)
-        if (springs?.Glow) {
-            const alpha = update(springs.Glow)
+        if (springs?.Scale || (direct && this.Profile.scale)) {
+            const scale = springs?.Scale ? update(springs.Scale) : ScaleCurve(timeScale, easing)
+            set("scale", String(scale))
+        }
+        if (springs?.YOffset || (direct && this.Profile.verticalMotion)) {
+            const offset = springs?.YOffset ? update(springs.YOffset) : YOffsetCurve(timeScale, easing)
+            set("transform", `translateY(calc(var(--lyrics-size) * ${offset * (isEmphasized ? 2 : 1)}))`)
+        }
+        if (springs?.Glow || (direct && this.Profile.glow)) {
+            const alpha = springs?.Glow ? update(springs.Glow) : GlowCurve(glowTimeScale, easing)
             set("--text-shadow-blur-radius", `${4 + 2 * alpha * (isEmphasized ? 3 : 1)}px`)
             set("--text-shadow-opacity", `${alpha * (isEmphasized ? 100 : 35)}%`)
         }
@@ -539,7 +553,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 		for (const syllable of this.Syllables) {
 			// Set our state and visuals
 			this.UpdateLiveTextState(syllable.LiveText, timeScale, timeScale, true)
-			this.UpdateLiveTextVisuals(syllable.LiveText, false, timeScale, 0)
+			this.UpdateLiveTextVisuals(syllable.LiveText, syllable.Type === "Syllable" && syllable.SegmentEmphasis, timeScale, 0)
 
 			// Now if we have letters update them as well
 			if (syllable.Type === "Letters") {
@@ -614,14 +628,15 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
             // updated all runs until this whole voice stopped being scheduled.
             // Preserve that visible cadence only for this active/settling voice
             // when real springs exist; spring-free effects retain indexed work.
-            if (this.Profile.scale || this.Profile.verticalMotion || this.Profile.glow) {
+            const hasSprings = this.Profile.animationResponse !== "direct" && (this.Profile.scale || this.Profile.verticalMotion || this.Profile.glow)
+            if (hasSprings) {
                 for (let index = 0; index < this.Syllables.length; index++) this.RunWork.add(index)
             }
 
             this.LastTime = songTimestamp
             for (const index of this.RunWork) {
                 const syllable = this.Syllables[index]
-                let runSleeping = this.AdvanceHiddenOwners(this.Runs[index], songTimestamp, deltaTime, immediate)
+                let runSleeping = !hasSprings || this.AdvanceHiddenOwners(this.Runs[index], songTimestamp, deltaTime, immediate)
                 if (!runSleeping) isSleeping = false
 
 				// Determine our time-scale for the syllable
@@ -658,7 +673,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 						if (isMoving) {
 							const letterIsSleeping = this.UpdateLiveTextVisuals(
 								letter.LiveText, true,
-								letterTimeScale, deltaTime, relativeTime >= syllable.Start
+								letterTimeScale, deltaTime, relativeTime >= syllable.Start, glowTimeScale
 							)
 
 							if (letterIsSleeping === false) {
@@ -681,7 +696,7 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 
 					if (isMoving) {
 						const syllableIsSleeping = this.UpdateLiveTextVisuals(
-							syllable.LiveText, false,
+							syllable.LiveText, syllable.Type === "Syllable" && syllable.SegmentEmphasis,
 							syllableTimeScale, deltaTime, relativeTime >= syllable.Start
 						)
 
@@ -705,22 +720,51 @@ export default class SyllableVocals implements SyncedVocals, Giveable {
 		}
 	}
 
-    public SetRendering(profile: RenderingProfile) {
-        const lettersChanged = LetterEmphasis(profile) !== LetterEmphasis(this.Profile)
+    public SetRendering(profile: RenderingProfile, time = this.LastTime) {
+        const previous = this.Profile
+        const lettersChanged = LetterEmphasis(profile) !== LetterEmphasis(previous)
+        const seedTime = previous.animationResponse === "direct" && profile.animationResponse !== "direct" ? this.LastTime ?? time : undefined
         this.Profile = { ...profile }
+        // A Direct owner has no spring state to copy. Seed the newly allocated
+        // springs from its previous envelope at the last painted clock time.
+        const seed = (springs: LiveText["Springs"], phase: number, glowPhase = phase) => {
+            this.UpdateLiveTextState({ Springs: springs }, phase, glowPhase, true, previous.animationEasing)
+        }
         for (const state of this.ProjectionStates.values()) {
             state.springs = ReconcileSprings(state.springs, profile, springParameters, this.Options.counters)
             if (!LetterEmphasis(profile)) state.letters = []
             else state.letters = state.letters.map(springs => ReconcileSprings(springs, profile, springParameters, this.Options.counters))
+            if (seedTime !== undefined) {
+                const progress = RunProgress(seedTime, state.run.Intervals, state.run.TimingDuration)
+                seed(state.springs, VisualProgress(progress, state.run.VisualRange))
+                const phase = VisualProgress(easeSinOut(progress), state.run.VisualRange)
+                const count = state.letters.length
+                for (const [index, springs] of state.letters.entries()) {
+                    const start = index / count
+                    seed(springs, Clamp((phase - start) * count, 0, 1), Clamp((phase - start) / (1 - start), 0, 1))
+                }
+            }
         }
-        if (lettersChanged) this.SetProjection(this.Runs)
-        else for (const syllable of this.Syllables) {
-            const texts = syllable.Type === "Letters" ? [syllable.LiveText, ...syllable.Letters.map(letter => letter.LiveText)] : [syllable.LiveText]
-            for (const text of texts) {
+        if (!lettersChanged || seedTime !== undefined) for (const syllable of this.Syllables) {
+            const reconcile = (text: LiveText) => {
                 text.Springs = ReconcileSprings(text.Springs, profile, springParameters, this.Options.counters)
                 ClearDisabledEffects(text.Object, profile, this.Options.counters)
             }
+            reconcile(syllable.LiveText)
+            const progress = seedTime === undefined ? 0 : RunProgress(seedTime, syllable.Intervals, syllable.TimingDuration)
+            if (seedTime !== undefined) seed(syllable.LiveText.Springs, VisualProgress(progress, syllable.VisualRange))
+            if (syllable.Type === "Letters") {
+                const phase = seedTime === undefined ? 0 : VisualProgress(easeSinOut(progress), syllable.VisualRange)
+                for (const letter of syllable.Letters) {
+                    reconcile(letter.LiveText)
+                    if (seedTime !== undefined) {
+                        const elapsed = phase - letter.Start
+                        seed(letter.LiveText.Springs, Clamp(elapsed / letter.Duration, 0, 1), Clamp(elapsed / letter.GlowDuration, 0, 1))
+                    }
+                }
+            }
         }
+        if (lettersChanged) this.SetProjection(this.Runs, time)
     }
     public RequiresContinuous() { return ContinuousTextEffects(this.Profile) }
     // Layout/projection edits repaint at a paused clock without pretending that

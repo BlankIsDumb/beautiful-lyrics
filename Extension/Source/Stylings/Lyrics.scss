@@ -79,7 +79,8 @@
 	margin-bottom: 1cqw;
 
 	will-change: transform;
-	contain: layout paint;
+	// Attached readings need room to paint above the group box.
+	contain: layout;
 }
 
 .VocalsGroup:is(button) {
@@ -164,7 +165,8 @@
 	--jel-source-size: calc(var(--lyrics-size) * var(--jel-primary-ratio, 1));
 
 	will-change: transform, opacity;
-	contain: layout paint;
+	// Glyph motion and glow can extend beyond the vocal box.
+	contain: layout;
 }
 
 .Lyrics .Vocals {
@@ -316,7 +318,19 @@
 
 .Vocals.Lead .Line {
 	transition: background-color 0.3s cubic-bezier(0.61, 1, 0.88, 1);
-	transition: scale 0.1s cubic-bezier(0.37, 0, 0.63, 1);
+	transition: scale var(--jel-line-scale-duration, 0.1s) var(--jel-line-scale-easing, cubic-bezier(0.37, 0, 0.63, 1));
+}
+
+.Vocals[data-jel-line-easing="linear"] { --jel-line-scale-easing: linear; }
+.Vocals[data-jel-line-easing="ease-in"] { --jel-line-scale-easing: cubic-bezier(.333333, 0, .666667, .333333); }
+.Vocals[data-jel-line-easing="ease-out"] { --jel-line-scale-easing: cubic-bezier(.333333, .666667, .666667, 1); }
+.Vocals[data-jel-line-easing="ease-in-out"] { --jel-line-scale-easing: cubic-bezier(.333333, 0, .666667, 1); }
+.Vocals[data-jel-line-response="slow"] { --jel-line-scale-duration: .2s; }
+.Vocals[data-jel-line-response="fast"] { --jel-line-scale-duration: .05s; }
+.Vocals.Lead[data-jel-line-response="direct"] .Line {
+  --jel-line-scale-duration: 0s;
+  // Changing duration alone leaves a transition to the same target running.
+  transition-property: none;
 }
 
 .Vocals.Lead.Active .Line {

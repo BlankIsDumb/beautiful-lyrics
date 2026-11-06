@@ -11,7 +11,7 @@ const chrome=process.env.CHROME_BIN||['C:/Program Files/Google/Chrome/Applicatio
 test('real controllers retain cases/lifetime; universal cue eligibility removes work/space without bypassing manual grace', {skip:!chrome},async()=>{
   const {code,css}=await buildVocalFixture(undefined,true);
   const script=`(async()=>{${code}
-    const {VocalController,CueController,RenderScheduler,LyricsScroller,ClassicRendering,ApplyTextPreset,CreateRenderingCounters,NormalizeLyrics,LayoutVoice}=fixtureModule;
+    const {VocalController,CueController,RenderScheduler,LyricsScroller,ClassicRendering,ApplyTextPreset,CreateRenderingCounters,NormalizeLyrics,LayoutVoice,EffectCurve}=fixtureModule;
     const check=(ok,message)=>{if(!ok)throw Error(message)},owned=[];
     const shell=document.createElement('div');shell.className='shell';
     const scroll=document.createElement('div');scroll.className='LyricsScrollContainer';shell.append(scroll);
@@ -146,6 +146,59 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
       check(!tinyGroup.hidden&&tinyGroup.querySelectorAll('.StaticCue .InterludeDot').length===3&&!tiny.RequiresContinuous()&&cueCounts.springsAllocated===0,'tiny positive gap remains finite static dots');
       tiny.SetSettings({threshold:100,motion:true},1.01);const beforeDisabled=cueCounts.springUpdates;tiny.Animate(1.02,.01);
       check(tinyGroup.hidden&&!tinyGroup.querySelector('.InterludeDot')&&!tiny.NeedsFrame()&&cueCounts.springUpdates===beforeDisabled,'ineligible gap releases all cue state/work');
+
+      const boundedGroup=document.createElement('button');boundedGroup.className='VocalsGroup';lyrics.append(boundedGroup);
+      const boundedCounts=CreateRenderingCounters();
+      const bounded=new CueController(boundedGroup,{Type:'Interlude',StartTime:10,EndTime:29.75},{threshold:20,motion:true,lastSeconds:5},boundedCounts,20);owned.push(bounded);
+      const interval={id:'bounded',start:bounded.GetDisplayInterval().StartTime,end:bounded.GetDisplayInterval().EndTime};
+      const cueTimeline=new RenderScheduler(new Map([['bounded',bounded]]),[interval],new Map([['bounded','bounded']]));
+      cueTimeline.update(10,0,true);const initialCueWork=boundedCounts.springUpdates;
+      for(const time of [11,14,20,24.749])cueTimeline.update(time,1/60);
+      const dots=boundedGroup.querySelector('.Interlude');
+      check(interval.start===24.75&&bounded.GetScrollTarget().StartTime===24.75&&getComputedStyle(dots).display==='none'&&boundedCounts.springUpdates===initialCueWork,'real gap qualifies independently and delayed cues have no continuous updates before their displayed window');
+      cueTimeline.update(27,0,true);
+      check(bounded.IsActive()&&getComputedStyle(dots).display==='grid'&&Number(getComputedStyle(dots).opacity)>.5,'finite cue paints in its window');
+      cueTimeline.update(29.75,1/60);
+      check(bounded.IsActive()&&Number(getComputedStyle(dots).opacity)===0&&!bounded.NeedsFrame(),'finite cue remains logically inclusive but cannot paint past its early endpoint');
+      cueTimeline.update(29.751,.001);
+      check(!bounded.IsActive()&&getComputedStyle(dots).display==='none','finite cue exits without a visible spring tail');
+      const shortened={threshold:20,motion:true,lastSeconds:.575};
+      const allocated=boundedCounts.springsAllocated;
+      check(bounded.SetSettings(shortened,29.5)&&!bounded.RequiresContinuous()&&boundedGroup.querySelectorAll('.StaticCue .InterludeDot').length===3&&boundedCounts.springsAllocated===allocated,'fractional windows at the short-duration boundary use static dots');
+
+      const curve=EffectCurve([{Time:0,Value:0},{Time:.5,Value:1},{Time:1,Value:0}]);
+      for(const [easing,expected] of [['linear',.25],['ease-in',.0625],['ease-out',.4375],['ease-in-out',.15625]]){
+        check(curve(.125,easing)===expected&&curve(-1,easing)===0&&curve(.5,easing)===1&&curve(2,easing)===0,easing+' curve preserves its keyframes and clamps its ends');
+        check(curve(.25,easing)>curve(.125,easing)&&curve(.75,easing)<curve(.625,easing),easing+' curve is monotone between keyframes');
+      }
+      const thaiPart={StartTime:1,EndTime:2.5,Syllables:[{Text:'กิ',StartTime:1,EndTime:2,IsPartOfWord:false},{Text:'ดี',StartTime:2,EndTime:2.5,IsPartOfWord:false}]};
+      const thaiDoc=NormalizeLyrics({Type:'Syllable',StartTime:1,EndTime:2.5,Content:[{Type:'Vocal',Lead:thaiPart}]});
+      const animationCounts=CreateRenderingCounters(),direct={...ClassicRendering,animationEasing:'linear',animationResponse:'direct'};
+      const thai=new VocalController(group,thaiDoc,thaiDoc.groups[0].voices[0],direct,animationCounts);owned.push(thai);
+      thai.Animate(1.075,0,true);
+      const segment=thai.root.querySelector('.SegmentEmphasis'), highlight=segment?.style.getPropertyValue('--gradient-progress');
+      const close=(actual,expected)=>Math.abs(parseFloat(actual)-expected)<1e-8;
+      check(segment?.querySelector('.SourcePaint').textContent==='กิ'&&!segment.querySelector('.Letter'),'Thai emphasis keeps the whole shaping-safe source painter');
+      check(close(segment.style.getPropertyValue('--text-shadow-opacity'),50)&&animationCounts.springsAllocated===0&&animationCounts.springUpdates===0&&thai.RequiresContinuous()&&!thai.NeedsFrame(),'Direct linear samples the emphasis envelope with zero springs or settling');
+      thai.SetRendering({...direct,animationEasing:'ease-in'},1.075);
+      check(close(segment.style.getPropertyValue('--text-shadow-opacity'),25)&&segment.style.getPropertyValue('--gradient-progress')===highlight,'easing changes glow without retiming highlight or replacing the segment');
+      const springProfile={...direct,animationEasing:'ease-in',animationResponse:'slow'};
+      thai.SetRendering(springProfile,1.075);
+      const glow=thai.child.Syllables[0].LiveText.Springs.Glow;
+      check(glow.Frequency===.5&&close(glow.Position,.25),'Slow seeds its spring from the Direct painted position');
+      thai.Animate(1.2,1/60);
+      const position=glow.Position,velocity=glow.Velocity;
+      thai.SetRendering({...springProfile,animationResponse:'fast'},1.2);
+      check(glow===thai.child.Syllables[0].LiveText.Springs.Glow&&glow.Frequency===2&&glow.Position===position&&glow.Velocity===velocity,'Fast reuses moving springs and retains position/velocity');
+      thai.SetRendering({...direct,detail:'line',animationResponse:'slow'},.5);
+      const cssLine=thai.root.querySelector('.Line');
+      check(getComputedStyle(cssLine).transitionDuration==='0.2s'&&getComputedStyle(cssLine).transitionTimingFunction==='linear','whole-line scale resolves the selected CSS response and easing');
+      check(getComputedStyle(cssLine).scale==='none','whole-line transition begins from an inactive style');
+      thai.Animate(1.2,0,true);
+      check(getComputedStyle(cssLine).scale!=='1.05'&&cssLine.getAnimations().some(animation=>animation.transitionProperty==='scale'),'whole-line Slow starts a real in-flight scale transition');
+      thai.SetRendering({...direct,detail:'line'},1.2);
+      const directLine=getComputedStyle(cssLine);
+      check(directLine.transitionDuration==='0s'&&directLine.scale==='1.05'&&!cssLine.getAnimations().some(animation=>animation.transitionProperty==='scale')&&!thai.child.GlowSpring,'whole-line Direct cancels the in-flight transition and releases its glow spring');
       const oldRoot=roots[0];controllers[0].Destroy();oldRoot.click();check(clicks===18&&!oldRoot.isConnected,'Destroy removes root/listener');
       document.body.textContent='RENDERING_PASS';
     }catch(error){document.body.textContent='RENDERING_FAIL: '+error.message}
@@ -154,7 +207,7 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
   const directory=path.resolve(await mkdtemp(path.join(tmpdir(),'jel-render-')));
   try{
     const file=path.join(directory,'fixture.html');
-    await writeFile(file,`<!doctype html><body><style>${css}.shell{width:320px;container-type:inline-size}.Lyrics{width:320px;height:600px;--minimum-lyrics-size:24px;--maximum-lyrics-size:24px}.LyricsScrollContainer{width:320px;height:500px}</style><script>${script.replaceAll('</script','<\\/script')}</script>`);
+    await writeFile(file,`<!doctype html><meta charset="utf-8"><body><style>${css}.shell{width:320px;container-type:inline-size}.Lyrics{width:320px;height:600px;--minimum-lyrics-size:24px;--maximum-lyrics-size:24px}.LyricsScrollContainer{width:320px;height:500px}</style><script>${script.replaceAll('</script','<\\/script')}</script>`);
     const browser=spawnSync(chrome,['--headless=new','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--user-data-dir='+path.join(directory,'profile'),'--dump-dom',pathToFileURL(file).href],{encoding:'utf8',timeout:30000,maxBuffer:2_000_000,windowsHide:true});
     assert.equal(browser.error,undefined,browser.error?.message);assert.equal(browser.status,0,browser.stderr);
     assert.match(browser.stdout,/RENDERING_PASS/,browser.stdout);assert.doesNotMatch(browser.stdout,/RENDERING_FAIL/);

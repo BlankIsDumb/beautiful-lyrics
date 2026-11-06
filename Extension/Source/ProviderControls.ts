@@ -23,7 +23,7 @@ import Icons from "./LyricViews/Icons.ts";
 import { PresentationSettings, PresentationLanguages, type PresentationView } from "./PresentationSettings.ts";
 import type { HorizontalSurface } from "./HorizontalSpacing.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
-import { ApplyTextPreset, NormalizeRendering, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
+import { ApplyTextPreset, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp } from "./SettingsHelp.ts";
 import { DefaultLayouts, NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import type { ContextAppearance } from "./ContextAppearance.ts";
@@ -95,6 +95,29 @@ export function OpenProviderSettings() {
       status.textContent = "Invalid number discarded; the previous value is still active.";
     });
     return input;
+  };
+  const animationControls = (parent: HTMLElement, prefix: string, scope: string, read: () => RenderingProfile,
+    write: (value: RenderingProfile) => void, after?: () => void) => {
+    const easing = select(parent, "Easing", prefix + "AnimationEasing", [["classic", "Classic"], ["linear", "Linear"],
+      ["ease-in", "Ease in"], ["ease-out", "Ease out"], ["ease-in-out", "Ease in/out"]], read().animationEasing,
+      `${scope}. Shapes enabled scale, vertical motion and glow between their existing keyframes. Linear with Direct follows the keyframes without spring lag or extra easing.`, "Classic");
+    const response = select(parent, "Response", prefix + "AnimationResponse", [["classic", "Classic"], ["slow", "Slow"],
+      ["fast", "Fast"], ["direct", "Direct"]], read().animationResponse,
+      `${scope}. Slow and Fast change how quickly enabled effects react. Direct applies the current effect immediately without spring lag or bounce. Lyric timing and highlighting keep their own progress.`, "Classic");
+    easing.setAttribute("aria-label", `${scope} easing`);
+    response.setAttribute("aria-label", `${scope} response`);
+    const sync = () => {
+      const profile = read();
+      easing.value = profile.animationEasing;
+      response.value = profile.animationResponse;
+    };
+    for (const [key, control] of [["animationEasing", easing], ["animationResponse", response]] as const) {
+      listen(control, "change", () => {
+        apply(() => write({ ...read(), [key]: control.value as RenderingProfile[typeof key], preset: "custom" }), sync);
+        after?.();
+      });
+    }
+    return sync;
   };
   const behaviorSection = document.createElement("section"); content.append(behaviorSection); heading(behaviorSection, "Behavior");
   const fetchMode = select(behaviorSection, "Fetch lyrics", "BL-FetchMode", [["change", "On song change"], ["required", "When required"]], GetBehaviorSettings().fetchMode,
@@ -251,6 +274,37 @@ export function OpenProviderSettings() {
     const cueMotion = toggle(fields, "Dot motion", `JEL-${view}-CueMotion`, PresentationSettings.getCues(view).motion,
       "Animated or static gap dots for this view, shared by Word and Line sources. Text presets never change this.", "On"); cueMotion.disabled = presentationReadOnly;
     checkbox(cueMotion, motion => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), motion }), () => PresentationSettings.getCues(view).motion);
+    const cueWindow = document.createElement("input");
+    cueWindow.id = `JEL-${view}-CueLastSeconds`;
+    cueWindow.type = "number";
+    cueWindow.min = "0";
+    cueWindow.step = "any";
+    cueWindow.placeholder = "Full gap";
+    cueWindow.disabled = presentationReadOnly;
+    cueWindow.setAttribute("aria-label", `${viewTitle} show gap dots for last seconds`);
+    const syncCueWindow = () => {
+      cueWindow.value = String(PresentationSettings.getCues(view).lastSeconds ?? "");
+      cueWindow.removeAttribute("aria-invalid");
+    };
+    syncCueWindow();
+    row(fields, "Show dots for last (s)", cueWindow,
+      "Blank uses the full eligible gap. Enter a positive duration ending where the dots normally disappear before the next vocal. Minimum silence still decides which gaps qualify.", "Full gap");
+    listen(cueWindow, "input", () => {
+      const blank = cueWindow.value === "" && !cueWindow.validity.badInput;
+      const value = cueWindow.valueAsNumber;
+      if (!blank && (!cueWindow.validity.valid || !Number.isFinite(value) || value <= 0)) {
+        cueWindow.setAttribute("aria-invalid", "true");
+        status.textContent = "Enter positive seconds or leave blank for the full gap.";
+        return;
+      }
+      cueWindow.removeAttribute("aria-invalid");
+      apply(() => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), lastSeconds: blank ? null : value }), syncCueWindow);
+    });
+    listen(cueWindow, "blur", () => {
+      if (!cueWindow.hasAttribute("aria-invalid")) return;
+      syncCueWindow();
+      status.textContent = "Restored the saved gap window.";
+    });
     const readingGroups: HTMLDetailsElement[] = [];
     for (const sourceCase of SourceCases) {
       const details = document.createElement("details"); details.className = "BL-CaseSettings"; details.id = `JEL-${view}-${sourceCase}-Settings`;
@@ -258,36 +312,84 @@ export function OpenProviderSettings() {
       const body = document.createElement("fieldset"); body.className = "BL-GroupOptions"; body.disabled = presentationReadOnly; details.append(body);
       const read = () => PresentationSettings.getRendering(view, sourceCase);
       const prefix = `JEL-${view}-${sourceCase}-`;
-      const preset = select(body, "Text preset", prefix + "TextPreset", [["classic", "Classic"], ["minimal", "Minimal"], ["balanced", "Balanced"], ["custom", "Custom"]], read().preset,
-        "Editable text effects only. Gap dots and background are separate. The source timing selects this case, even if Word text is displayed as Line.", "Classic");
+      const detail = sourceCase === "Word" ? select(body, "Text detail", prefix + "TextDetail", [["auto", "Auto"], ["line", "Line"], ["word", "Word"]], read().detail,
+        "Choose how to display word-timed lyrics. Line uses this viewer’s Line sync text and reading settings. Auto and Word use the saved Word sync settings.", "Auto") : undefined;
+      const appearance = detail ? document.createElement("fieldset") : body;
+      if (detail) {
+        detail.setAttribute("aria-label", `${viewTitle} Word text detail`);
+        appearance.className = "BL-GroupOptions";
+        body.append(appearance);
+      }
+      const preset = select(appearance, "Text preset", prefix + "TextPreset", [["classic", "Classic"], ["minimal", "Minimal"], ["balanced", "Balanced"], ["custom", "Custom"]], read().preset,
+        "Editable effects for this display mode. Applying a named preset resets its easing and response to Classic.", "Classic");
       preset.setAttribute("aria-label", `${viewTitle} ${sourceCase} text preset`);
       const effectInputs = new Map<keyof RenderingProfile, HTMLInputElement>();
-      const detail = sourceCase === "Word" ? select(body, "Text detail", prefix + "TextDetail", [["auto", "Auto"], ["line", "Line"], ["word", "Word"]], read().detail,
-        "Display this word-timed source as words or a whole line. This remains the Word-source case.", "Auto") : undefined;
-      const highlight = select(body, "Highlight", prefix + "TextHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], read().highlight,
+      const highlight = select(appearance, "Highlight", prefix + "TextHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], read().highlight,
         "Whole segment changes at its start. Progressive follows available timing and freezes in gaps. Off keeps solid text.", "Classic");
       highlight.setAttribute("aria-label", `${viewTitle} ${sourceCase} highlight`);
-      if (detail) detail.setAttribute("aria-label", `${viewTitle} Word text detail`);
       for (const [key, text, help] of [
         ["scale", "Scale", "Scale movement; whole-line detail uses its existing active scale."],
         ["verticalMotion", "Vertical motion", "Word display detail only; whole-line detail stays on its baseline."],
         ["glow", "Glow", "Animated text glow, independent of inactive blur."],
         ["blur", "Inactive blur", "Blur vocals away from active voices."],
-        ["emphasis", "Letter emphasis", "Safe short runs in Word display detail, when another continuous effect is enabled."],
+        ["emphasis", "Emphasis", "In Word display, runs with at least one second of voiced source time and up to 12 source graphemes get emphasis. Text that needs to stay joined moves as one segment. Ambiguous mappings across several source runs keep ordinary animation."],
       ] as const) {
         if (sourceCase === "Line" && (key === "verticalMotion" || key === "emphasis")) continue;
-        const input = toggle(body, text, prefix + key, read()[key], help, "On"); effectInputs.set(key, input);
+        const input = toggle(appearance, text, prefix + key, read()[key], help, "On"); effectInputs.set(key, input);
         input.setAttribute("aria-label", `${viewTitle} ${sourceCase} ${text.toLowerCase()}`);
         checkbox(input, value => PresentationSettings.saveRendering(view, sourceCase, { ...read(), [key]: value, preset: "custom" }), () => read()[key]);
       }
-      const sync = () => { const current = read(); preset.value = current.preset; highlight.value = current.highlight; if (detail) detail.value = current.detail; for (const [key, input] of effectInputs) input.checked = current[key] as boolean; };
+      const animation = document.createElement("details");
+      animation.id = prefix + "Animation";
+      animation.className = "BL-CaseSettings";
+      heading(animation, sourceCase === "Line" ? "Whole-line animation" : "Word animation", "summary");
+      const animationFields = document.createElement("fieldset");
+      animationFields.className = "BL-GroupOptions";
+      animation.append(animationFields);
+      appearance.append(animation);
+      const syncAnimation = animationControls(animationFields, prefix,
+        `${viewTitle} ${sourceCase === "Line" ? "whole-line" : "word"} animation`, read,
+        value => PresentationSettings.saveRendering(view, sourceCase, value), () => sync());
+      let lineHint: HTMLElement | undefined;
+      if (sourceCase === "Line") {
+        heading(appearance, "These settings also apply when word-timed lyrics are displayed as Line.", "p");
+      } else {
+        lineHint = document.createElement("div");
+        heading(lineHint, "Whole-line display uses this viewer’s Line sync settings for text and readings.", "p");
+        const openLine = document.createElement("button");
+        openLine.type = "button";
+        openLine.textContent = "Open Line sync settings";
+        openLine.setAttribute("aria-controls", `JEL-${view}-Line-Settings`);
+        listen(openLine, "click", () => {
+          const line = content.querySelector<HTMLDetailsElement>(`#JEL-${view}-Line-Settings`)!;
+          line.open = true;
+          line.querySelector("summary")?.focus();
+        });
+        lineHint.append(openLine);
+        body.append(lineHint);
+      }
+      const sync = () => {
+        const current = read();
+        preset.value = current.preset;
+        highlight.value = current.highlight;
+        if (detail) detail.value = current.detail;
+        for (const [key, input] of effectInputs) input.checked = current[key] as boolean;
+        syncAnimation();
+        if (lineHint) {
+          const usesLine = current.detail === "line";
+          appearance.hidden = usesLine;
+          appearance.disabled = usesLine;
+          lineHint.hidden = !usesLine;
+        }
+      };
+      sync();
       listen(preset, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, preset.value === "custom" ? { ...read(), preset: "custom" } : ApplyTextPreset(read(), preset.value as "classic" | "minimal" | "balanced")), sync); sync(); });
       listen(highlight, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), highlight: highlight.value as RenderingProfile["highlight"], preset: "custom" }), sync); sync(); });
       for (const input of effectInputs.values()) listen(input, "change", sync);
       if (detail) listen(detail, "change", () => { apply(() => PresentationSettings.saveRendering(view, sourceCase, { ...read(), detail: detail.value as RenderingProfile["detail"] }), sync); sync(); });
       const readingGroup = document.createElement("details"); readingGroup.className = "BL-CaseSettings";
       const readingTitle = document.createElement("summary"); readingGroups.push(readingGroup);
-      readingTitle.textContent = "Reading effects"; readingGroup.append(readingTitle); body.append(readingGroup);
+      readingTitle.textContent = "Reading effects"; readingGroup.append(readingTitle); appearance.append(readingGroup);
       const readingFields = document.createElement("fieldset"); readingFields.className = "BL-GroupOptions"; readingGroup.append(readingFields);
       const readAnnotations = () => PresentationSettings.getAnnotations(view);
       const readCase = () => readAnnotations().cases[sourceCase];
@@ -295,24 +397,31 @@ export function OpenProviderSettings() {
         const current = readAnnotations(); PresentationSettings.saveAnnotations(view, { ...current, cases: { ...current.cases, [sourceCase]: value } });
       };
       const inherit = toggle(readingFields, "Use text effects", prefix + "ReadingInherit", readCase().inherit,
-        "Secondary text and ruby use this source case's text effects. Off enables independent reading effects below. Readings use grouped source timing, never invented phoneme timing.", "On");
+        "Secondary text and ruby inherit the displayed text’s effects. Off enables independent reading effects for this display mode.", "On");
       const custom = document.createElement("fieldset"); custom.className = "BL-GroupOptions"; readingFields.append(custom);
-      const readingExpand = () => { custom.hidden = inherit.checked; custom.disabled = inherit.checked; };
-      checkbox(inherit, value => writeCase({ ...readCase(), inherit: value }), () => readCase().inherit, readingExpand); readingExpand();
       const readingHighlight = select(custom, "Highlight", prefix + "ReadingHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], readCase().effects.highlight,
-        "Reading highlight for this source case only. Grouped progress freezes in real source gaps.", "Use text effects");
+        "Reading highlight for this display mode. Grouped progress freezes in real source gaps.", "Use text effects");
       listen(readingHighlight, "change", () => apply(() => writeCase({ ...readCase(), effects: { ...readCase().effects, highlight: readingHighlight.value as RenderingProfile["highlight"], preset: "custom" } }), () => { readingHighlight.value = readCase().effects.highlight; }));
       for (const [key, text] of [["scale", "Scale"], ["verticalMotion", "Vertical motion"], ["glow", "Glow"], ["blur", "Inactive blur"]] as const) {
         if (sourceCase === "Line" && key === "verticalMotion") continue;
         const input = toggle(custom, text, prefix + "Reading-" + key, readCase().effects[key],
-          "Independent reading effect for this source case. Whole-line detail has no vertical motion. Off stops its effect work.", "Use text effects");
+          "Independent reading effect for this display mode. Whole-line detail has no vertical motion. Off stops its effect work.", "Use text effects");
         checkbox(input, value => writeCase({ ...readCase(), effects: { ...readCase().effects, [key]: value, preset: "custom" } }), () => readCase().effects[key]);
       }
+      const syncReadingAnimation = animationControls(custom, prefix + "Reading-", `${viewTitle} ${sourceCase} reading animation`,
+        () => readCase().effects, effects => writeCase({ ...readCase(), effects }));
       if (sourceCase === "Word") {
-        const emphasis = toggle(custom, "Letter emphasis", prefix + "Reading-emphasis", readCase().effects.emphasis,
-          "Visual grapheme easing over the original source progress, where shaping and mapping are safe. This is not measured phoneme timing. Off allocates no reading letters.", "Use text effects");
+        const emphasis = toggle(custom, "Emphasis", prefix + "Reading-emphasis", readCase().effects.emphasis,
+          "Uses the same voiced source duration and source grapheme limits as lyric emphasis. Joined text can move as one segment. Ambiguous mappings across several source runs keep ordinary animation.", "Use text effects");
         checkbox(emphasis, value => writeCase({ ...readCase(), effects: { ...readCase().effects, emphasis: value, preset: "custom" } }), () => readCase().effects.emphasis);
       }
+      const readingExpand = () => {
+        custom.hidden = inherit.checked;
+        custom.disabled = inherit.checked;
+        syncReadingAnimation();
+      };
+      checkbox(inherit, value => writeCase({ ...readCase(), inherit: value }), () => readCase().inherit, readingExpand);
+      readingExpand();
     }
     const placementSyncs: (() => void)[] = [];
     const styleRows = new Map<string, HTMLElement>();

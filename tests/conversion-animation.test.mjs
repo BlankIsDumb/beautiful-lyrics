@@ -112,8 +112,10 @@ test('all conversions retain source owners, moving springs, honest emphasis and 
       const ownerPhase=(2.1-1)/3,range=entries[1].run.VisualRange,local=Math.max(0,Math.min(1,(ownerPhase-range.start)/(range.end-range.start))),paint=parseFloat(entries[1].child.Syllables[0].LiveText.Object.style.getPropertyValue('--gradient-progress'));
       check(Math.abs(paint-(-20+120*local))<1e-6,'paused changed metrics repaint existing reading immediately');
       let widthReads=0;
-      const naturalWidth=Object.getOwnPropertyDescriptor(Element.prototype,'scrollWidth').get;
-      for(const entry of v.ruby.entries)Object.defineProperty(entry.root,'scrollWidth',{get(){widthReads++;return naturalWidth.call(this)}});
+      for(const entry of v.ruby.entries){
+        const measure=entry.root.getBoundingClientRect.bind(entry.root);
+        entry.root.getBoundingClientRect=()=>{widthReads++;return measure()};
+      }
       const custom=NormalizeAnnotations();custom.cases.Word={inherit:false,effects:{...ClassicRendering,emphasis:false}};
       v.SetAnnotations(custom,undefined,readings,v.lastTime);v.MeasureAnnotations(1);
       check(widthReads===v.ruby.entries.length,'reading emphasis change remeasures intrinsic width without font generation change');

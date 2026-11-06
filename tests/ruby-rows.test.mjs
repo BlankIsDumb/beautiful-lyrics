@@ -58,10 +58,13 @@ test('ruby reserves only actual annotated visual rows against untouched Original
           let bands=0;
           for(let index=1;index<before.length;index++){
             const matching=layer.entries.filter(entry=>before[index].parts.some(part=>part.start===entry.start));
-            const gap=Math.max(1,size*.04),free=Math.max(0,before[index].top-before[index-1].bottom);
-            const need=matching.length?Math.max(0,Math.max(...matching.map(entry=>entry.metrics.height*Number(entry.root.style.getPropertyValue('--ruby-fit'))+gap+2))-free):0;
+            const gap=Math.max(1,size*.04),free=before[index].top-before[index-1].bottom;
+            const need=matching.length?Math.max(0,Math.max(...matching.map(entry=>(entry.metrics.inkBottom-entry.metrics.inkTop)*Number(entry.root.style.getPropertyValue('--ruby-fit'))+gap+2))-free):0;
             const original=before[index].top-before[index-1].top,actual=after[index].top-after[index-1].top;
-            if(need>.05){bands++;check(actual-original>=need-.15&&actual-original<need+3.2,label+' only actual annotated row receives fitted clearance '+JSON.stringify({index,need,original,actual}));}
+            // The reserve includes a 2px safety allowance. Chromium can absorb
+            // part of it at fractional row boundaries. Require the full fitted
+            // reading and gap, and still bound the maximum added space.
+            if(need>.05){bands++;check(actual-original>=Math.max(0,need-2)-.15&&actual-original<need+3.2,label+' only actual annotated row receives fitted clearance '+JSON.stringify({index,need,original,actual}));}
             else check(Math.abs(actual-original)<.1,label+' unannotated/already-clear row keeps Original step '+JSON.stringify({index,original,actual}));
           }
           check(candidate.line.querySelectorAll('.RubyLineSpacer').length===(bands?1:0),label+' one reusable empty exclusion, no per-row owners');

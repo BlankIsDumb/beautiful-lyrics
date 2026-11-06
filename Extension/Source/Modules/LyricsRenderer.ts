@@ -11,7 +11,8 @@ import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
 import { GetLyricDocument, ProjectClassic, DeriveCueCandidates } from "./LyricDocument.ts"
-import { TransportTime } from "./LyricTimeline.ts"
+import { TransportTime, type TimelineInterval } from "./LyricTimeline.ts"
+import { ResolveDetail } from "./RenderProjection.ts"
 import { PlayerLyricClock, type LyricClock } from "./LyricClock.ts"
 import { TimingSettings } from "../TimingSettings.ts"
 import { PresentationSettings, type PresentationView } from "../PresentationSettings.ts"
@@ -28,7 +29,7 @@ import { LyricsScroller, VocalGroups } from "./LyricsRenderer/LyricsScroller.ts"
 import { VocalController } from "./LyricsRenderer/VocalController.ts"
 import { CueController } from "./LyricsRenderer/CueController.ts"
 import { RenderScheduler } from "./LyricsRenderer/RenderScheduler.ts"
-import { ClassicRendering, SourceCaseFor, type RenderingCounters } from "../RenderingSettings.ts"
+import { AnimationFields, ClassicRendering, SourceCaseFor, type RenderingCounters, type RenderingProfile, type SourceCase } from "../RenderingSettings.ts"
 
 // CSS
 import "../Stylings/Lyrics.scss"
@@ -81,13 +82,23 @@ export default class LyricsRenderer implements Giveable {
 		lyricsContainer.classList.add(`NaturallyAligned${transformedLyrics.NaturalAlignment}`)
 
         const sourceCase = SourceCaseFor(lyricDocument.precision)
-        let rendering = sourceCase ? PresentationSettings.getRendering(view, sourceCase) : { ...ClassicRendering }
+        const readRendering = (): RenderingProfile => {
+            if (!sourceCase) return { ...ClassicRendering }
+            const profile = PresentationSettings.getRendering(view, sourceCase)
+            if (sourceCase === "Word" && ResolveDetail(lyricDocument, profile.detail) === "line") {
+                // The source's dropdown selects the display. Line supplies the
+                // effects, even if a saved Line profile has a different detail.
+                return { ...PresentationSettings.getRendering(view, "Line"), detail: "line" }
+            }
+            return profile
+        }
+        let rendering = readRendering()
         let cueSettings = PresentationSettings.getCues(view)
         let layout = PresentationSettings.getLayout(view)
         let contextAppearance = PresentationSettings.getContextAppearance(view)
         ApplyLayoutStyle(lyricsContainer, layout, PresentationSettings.getFontFamily())
         const vocals: VocalController[] = []
-        const cues: CueController[] = []
+        const cues: { id: string; visual: CueController }[] = []
         const vocalGroups: VocalGroups<SyncedVocals> = []
         const visuals = new Map<string, VocalController | CueController>()
         const owners = new Map<string, string>()
@@ -95,11 +106,11 @@ export default class LyricsRenderer implements Giveable {
         const cueOwners = new Set<string>()
         const logicalElements = new Map<Element, number>()
         const sourceSlots: { element: HTMLElement; owners: string[] }[] = []
-        const intervals: { id: string; start: number; end: number }[] = []
+        const sourceIntervals: TimelineInterval[] = []
         let sourceGroupIndex = 0
         const addInterval = (owner: string, start: number, end: number) => {
-            const id = String(intervals.length)
-            owners.set(id, owner); intervals.push({ id, start, end })
+            const id = String(sourceIntervals.length)
+            owners.set(id, owner); sourceIntervals.push({ id, start, end })
         }
         const rows = transformedLyrics.Type === "Static" ? transformedLyrics.Lines : transformedLyrics.Content
         const groupStarts: number[] = []
@@ -109,10 +120,11 @@ export default class LyricsRenderer implements Giveable {
             const groupVocals: (VocalController | CueController)[] = []
             if ("Type" in row && row.Type === "Interlude") {
                 const cue = this.Maid.Give(new CueController(groupContainer, row, cueSettings, counters, gaps.get(row.StartTime)))
-                groupVocals.push(cue); cues.push(cue)
+                groupVocals.push(cue)
                 const id = `cue/${vocalGroups.length}`
+                cues.push({ id, visual: cue })
                 cueOwners.add(id)
-                visuals.set(id, cue); addInterval(id, row.StartTime, row.EndTime)
+                visuals.set(id, cue); owners.set(id, id)
                 groupStarts.push(row.StartTime)
             } else {
                 const group = lyricDocument.groups[sourceGroupIndex++]
@@ -201,7 +213,15 @@ export default class LyricsRenderer implements Giveable {
             }
             scheduler.setVisible(visible)
         }
-        const scheduler = new RenderScheduler(visuals, intervals, owners, counters, (active,time,seek) => {
+        const timelineIntervals = () => {
+            const intervals = [...sourceIntervals]
+            for (const { id, visual } of cues) {
+                const display = visual.GetDisplayInterval()
+                if (display) intervals.push({ id, start: display.StartTime, end: display.EndTime })
+            }
+            return intervals
+        }
+        const scheduler = new RenderScheduler(visuals, timelineIntervals(), owners, counters, (active,time,seek) => {
             activeLogical=[...new Set([...active].map(id=>logicalOwners.get(id)).filter((id):id is number=>id!==undefined))]
             contextTime=time;contextSeek=seek;updateContext()
         })
@@ -277,12 +297,18 @@ export default class LyricsRenderer implements Giveable {
         scrollContainer.addEventListener("focusout",focusChanged)
         this.Maid.Give(()=>scrollContainer.removeEventListener("focusout",focusChanged))
         this.Maid.Give(PresentationSettings.subscribeRendering((changedView, changedCase, fields) => {
-            if (!sourceCase || changedCase !== sourceCase || changedView !== view || fields.every(field => field === "preset")) return
-            rendering = PresentationSettings.getRendering(view, sourceCase)
+            if (!sourceCase || changedView !== view) return
+            const isAnimationField = (field: keyof RenderingProfile) => AnimationFields.some(animation => animation === field)
+            const activeCase = sourceCase === "Word" && rendering.detail === "line" ? "Line" : sourceCase
+            if (changedCase !== activeCase && !(changedCase === sourceCase && fields.includes("detail"))) return
+            const next = readRendering()
+            const effectiveChanges = (Object.keys(next) as (keyof RenderingProfile)[]).filter(field => field !== "preset" && rendering[field] !== next[field])
+            rendering = next
+            if (!effectiveChanges.length) return
             updatePrecision()
             const time = lyricTime()
             for (const vocal of vocals) vocal.SetRendering(rendering, time)
-            if (vocals.some(vocal => vocal.HasAnnotations())) scroller.RefreshAnnotationLayout()
+            if (effectiveChanges.some(field => !isAnimationField(field)) && vocals.some(vocal => vocal.HasAnnotations())) scroller.RefreshAnnotationLayout()
             scroller.SetBlurEnabled(vocals.some(vocal => vocal.HasBlur()))
             scheduler.refresh()
         }))
@@ -290,8 +316,13 @@ export default class LyricsRenderer implements Giveable {
         this.Maid.Give(PresentationSettings.subscribeCues((changedView) => {
             if (changedView !== view || lyricDocument.type === "Static") return
             cueSettings = PresentationSettings.getCues(view)
-            const time = lyricTime()
-            for (const cue of cues) cue.SetSettings(cueSettings, time)
+            const time = clickTarget ?? lyricTime()
+            let intervalsChanged = false
+            for (const { visual } of cues) if (visual.SetSettings(cueSettings, time)) intervalsChanged = true
+            if (intervalsChanged) {
+                scheduler.replaceIntervals(timelineIntervals())
+                scheduler.update(time, 0)
+            }
             scroller.RefreshCueLayout()
             scheduler.refresh()
         }))
@@ -355,7 +386,10 @@ export default class LyricsRenderer implements Giveable {
         this.Maid.Give(PresentationSettings.subscribeAnnotations(changedView => {
             if (changedView !== view) return
             const next = PresentationSettings.getAnnotations(view)
-            const caseChanged = sourceCase && JSON.stringify(next.cases[sourceCase]) !== JSON.stringify(annotations.cases[sourceCase])
+            const readingCaseChanged = (key: SourceCase) => JSON.stringify(next.cases[key]) !== JSON.stringify(annotations.cases[key])
+            // A Word document can switch display in place. Keep both overrides
+            // current so its newly created reading layers use the latest settings.
+            const caseChanged = sourceCase && (readingCaseChanged(sourceCase) || (sourceCase === "Word" && readingCaseChanged("Line")))
             const viewChanged = JSON.stringify({ ...next, cases: undefined }) !== JSON.stringify({ ...annotations, cases: undefined })
             annotations = next
             if (caseChanged || viewChanged) request()

@@ -102,7 +102,7 @@ test('master Off remembers choices, persists independently and notifies only eff
   assert.deepEqual(events.at(-1), ['NowPlaying', []]);
   const reopened = CreatePresentationSettings(storage);
   assert.equal(reopened.getProfile('NowPlaying').romanizationEnabled, false);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 10);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 11);
   draft.romanizationEnabled = true;
   reopened.saveProfile('NowPlaying', draft);
   assert.equal(reopened.isRomanized('NowPlaying', 'Japanese'), true);
@@ -227,8 +227,8 @@ test('schema5 defaults and v4 migration split four independent text cases withou
   assert.equal(settings.getRendering('NowPlaying','Line').preset,'balanced');
   const draft=settings.getProfile('NowPlaying');settings.saveProfile('NowPlaying',{...draft,japaneseForm:'kana'});draft.renderingCases.Word.glow=true;
   assert.equal(settings.getRendering('NowPlaying','Word').glow,false); // Detached save boundary.
-  assert.deepEqual(settings.getCues('NowPlaying'),{threshold:100,motion:false});
-  assert.equal(JSON.parse(storage.getItem(key)).version,10);
+  assert.deepEqual(settings.getCues('NowPlaying'),{threshold:100,motion:false,lastSeconds:null});
+  assert.equal(JSON.parse(storage.getItem(key)).version,11);
 });
 
 test('schema5 partial/corrupt Line maps use muted defaults and edited v4 presets/detail survive both cases', () => {
@@ -263,7 +263,7 @@ test('schema6 annotations preserve primary choices and isolate views, cases, cha
   settings.saveAnnotations('NowPlaying',{...next,secondarySize:NaN,rubySize:10,gap:-1,spacing:Infinity,opacity:2,cases:{Word:{inherit:false},Line:{inherit:false}}});
   const valid=settings.getAnnotations('NowPlaying');assert.equal(valid.secondarySize,.6);assert.equal(valid.rubySize,.5);assert.equal(valid.gap,.15);assert.equal(valid.opacity,.8);
   assert.equal(valid.cases.Line.effects.scale,false);assert.equal(valid.cases.Line.effects.glow,false);
-  assert.equal(JSON.parse(storage.getItem(key)).version,10);
+  assert.equal(JSON.parse(storage.getItem(key)).version,11);
 });
 
 
@@ -278,7 +278,7 @@ test('schema7 migration is per-language, lazy, recoverable and preserves indepen
   assert.equal(storage.getItem(key),raw);assert.equal(storage.getItem(key+'/Migration/schema6'),null);
   settings.saveConversions('NowPlaying',now);assert.equal(storage.getItem(key),raw,'no-op is not a migration write');
   now.languages.Japanese.placement='above';settings.saveConversions('NowPlaying',now);
-  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,10);
+  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,11);
   assert.equal(settings.getCues('NowPlaying').threshold,9);assert.equal(settings.getAnnotations('NowPlaying').rubySize,.8);assert.equal(settings.getRendering('NowPlaying','Line').highlight,'off');
   const reopened=CreatePresentationSettings(storage);reopened.setRomanized('NowPlaying','Japanese',false);reopened.setRomanized('NowPlaying','Japanese',true);
   assert.equal(reopened.getConversions('NowPlaying').languages.Japanese.placement,'above');
@@ -297,4 +297,64 @@ test('schema6 master Off remembered non-Japanese flags do not activate when ruby
   assert.equal(converted.enabled,true);assert.equal(converted.languages.Japanese.kind,'furigana');
   assert.equal(settings.isRomanized('NowPlaying','Japanese'),true);assert.equal(settings.isRomanized('NowPlaying','Chinese'),false);assert.equal(settings.isRomanized('NowPlaying','Korean'),false);
   converted.languages.Japanese.placement='above';settings.saveConversions('NowPlaying',converted);assert.equal(storage.getItem(key+'/Migration/schema6'),raw);
+});
+
+test('schema 10 animation and cue preferences migrate lazily, survive a stale legacy edit, and reopen in scope', async () => {
+  const raw = JSON.stringify({ version: 10, horizontalSpacing: { Card: -34 }, profiles: {
+    NowPlaying: {
+      contextAppearance: { mode: 'muted', opacity: 70 },
+      renderingCases: { Word: { glow: false }, Line: { scale: false } },
+      annotations: { cases: { Word: { inherit: false, effects: { glow: false } } } },
+      cues: { threshold: 5, motion: false },
+    },
+  } }, null, 2);
+  const storage = memoryStorage({ [key]: raw });
+  const settings = CreatePresentationSettings(storage);
+  const stale = settings.getProfile('NowPlaying');
+  assert.equal(stale.renderingCases.Word.animationEasing, 'classic');
+  assert.equal(stale.renderingCases.Line.animationResponse, 'classic');
+  assert.equal(stale.annotations.cases.Word.effects.animationEasing, 'classic');
+  assert.equal(stale.cues.lastSeconds, null);
+  assert.equal(storage.getItem(key), raw);
+
+  const events = [];
+  settings.subscribeRendering((...args) => events.push(['rendering', ...args]));
+  settings.subscribeAnnotations(view => events.push(['reading', view]));
+  settings.subscribeCues((...args) => events.push(['cue', ...args]));
+  const line = settings.getRendering('NowPlaying', 'Line');
+  settings.saveRendering('NowPlaying', 'Line', { ...line, animationResponse: 'fast' });
+  assert.equal(storage.getItem(key + '/Migration/schema10'), raw);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 11);
+  const readings = settings.getAnnotations('NowPlaying');
+  readings.cases.Word.effects.animationEasing = 'ease-in-out';
+  settings.saveAnnotations('NowPlaying', readings);
+  settings.saveCues('NowPlaying', { ...stale.cues, lastSeconds: .125 });
+  assert.deepEqual(events, [
+    ['rendering', 'NowPlaying', 'Line', ['preset', 'animationResponse']],
+    ['reading', 'NowPlaying'],
+    ['cue', 'NowPlaying', ['lastSeconds']],
+  ]);
+  settings.saveProfile('NowPlaying', { ...stale, japaneseForm: 'kana' });
+  assert.equal(events.length, 3);
+
+  const reopened = CreatePresentationSettings(storage);
+  const effectiveLine = reopened.getRendering('NowPlaying', 'Line');
+  assert.equal(effectiveLine.animationResponse, 'fast');
+  assert.equal(effectiveLine.scale, false);
+  assert.equal(reopened.getRendering('NowPlaying', 'Word').animationResponse, 'classic');
+  assert.equal(reopened.getRendering('FullLyrics', 'Line').animationResponse, 'classic');
+  assert.equal(reopened.getCues('NowPlaying').lastSeconds, .125);
+  assert.equal(reopened.getCues('FullLyrics').lastSeconds, null);
+  assert.equal(reopened.getContextAppearance('NowPlaying').opacity, 70);
+  assert.equal(reopened.getHorizontalSpacing('Card'), -34);
+
+  const { AnnotationRendering } = await load(await bundle('Extension/Source/AnnotationSettings.ts'));
+  const annotation = reopened.getAnnotations('NowPlaying');
+  const independent = AnnotationRendering(annotation, 'Word', effectiveLine);
+  assert.equal(independent.animationEasing, 'ease-in-out');
+  assert.equal(independent.animationResponse, 'classic');
+  annotation.cases.Word.inherit = true;
+  const inherited = AnnotationRendering(annotation, 'Word', effectiveLine);
+  assert.equal(inherited.animationEasing, 'classic');
+  assert.equal(inherited.animationResponse, 'fast');
 });

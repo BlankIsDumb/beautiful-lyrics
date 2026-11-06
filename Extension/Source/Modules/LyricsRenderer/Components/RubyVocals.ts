@@ -25,8 +25,8 @@ export function CreateTextChild(root: HTMLElement, document: LyricDocument, voic
 }
 export const IsTimedChild = (child: TextChild): child is SyllableVocals | LineVocals => !(child instanceof StaticVocals);
 
-type ReadingEntry = { metrics?: { width: number; height: number }; pieces?: { range: () => Range; parent: HTMLElement }[]; root: HTMLElement; host: HTMLElement; child: TextChild; start: number; end: number; owner: string; run: DisplayRun };
-type ReadingBox = { entry: ReadingEntry; left: number; right: number; top: number; bottom: number; width: number; height: number };
+type ReadingEntry = { metrics?: { width: number; height: number; inkTop: number; inkBottom: number }; pieces?: { range: () => Range; parent: HTMLElement }[]; root: HTMLElement; host: HTMLElement; child: TextChild; start: number; end: number; owner: string; run: DisplayRun };
+type ReadingBox = { entry: ReadingEntry; left: number; right: number; top: number; bottom: number; width: number; height: number; inkTop: number; inkBottom: number };
 type SourceRow = { top: number; bottom: number; index: number };
 
 // This layer owns readings/layout ONLY. The controller retains its original
@@ -190,12 +190,13 @@ export class RubyVocals {
   // Renderer effects are axis-only scale/translate. Resolve each effect ancestor
   // once per layout, then invert fractional glyph rectangles into the unchanged
   // source frame. This avoids mounting/layout of a duplicate song on every resize.
-  private sourceFrame() {
+  private sourceFrame(zoom: number, root = this.primaryRoot) {
     type Step = { left: number; top: number; x: number; y: number; layoutLeft: number; layoutTop: number };
     type Rect = { left: number; top: number; right: number; bottom: number };
     const cache = new Map<HTMLElement, Step[]>();
     const apply = (rect: Rect, steps: Step[]) => {
-      let { left, top, right, bottom } = rect;
+      let left = rect.left / zoom, top = rect.top / zoom;
+      let right = rect.right / zoom, bottom = rect.bottom / zoom;
       for (const step of steps) {
         left = (left - step.left) / step.x + step.layoutLeft;
         right = (right - step.left) / step.x + step.layoutLeft;
@@ -205,7 +206,7 @@ export class RubyVocals {
       return { left, top, right, bottom, width: right - left, height: bottom - top };
     };
     const stepsFor = (node: HTMLElement): Step[] => {
-      if (node === this.primaryRoot) return [];
+      if (node === root) return [];
       const existing = cache.get(node);
       if (existing) return existing;
       const steps = [...stepsFor(node.parentElement!)];
@@ -213,6 +214,8 @@ export class RubyVocals {
       // transition. Resolve its actual current value, including in-flight seeks.
       if (node.style.scale || node.style.transform || node.style.rotate || node.style.translate || node.classList.contains("Line")) {
         const style = getComputedStyle(node);
+        // Non-replaced inline fragments do not have a CSS transform box.
+        if (style.display === "inline") { cache.set(node, steps); return steps; }
         const matrix = new DOMMatrixReadOnly(style.transform === "none" ? undefined : style.transform);
         if (!matrix.is2D || matrix.b || matrix.c || matrix.a <= 0 || matrix.d <= 0 || style.rotate !== "none" || style.translate !== "none") {
           throw Error("unsupported source transform");
@@ -234,6 +237,26 @@ export class RubyVocals {
     };
     return (rect: Rect, node: HTMLElement) => apply(rect, stepsFor(node));
   }
+  private measureReading(root: HTMLElement, zoom: number) {
+    const bounds = root.getBoundingClientRect(), frame = this.sourceFrame(zoom, root);
+    const top = bounds.top / zoom, height = bounds.height / zoom;
+    let inkTop = Infinity, inkBottom = -Infinity;
+    const walker = globalThis.document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const range = globalThis.document.createRange();
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (!rect.width || !rect.height) continue;
+        const neutral = frame(rect, node.parentElement!);
+        inkTop = Math.min(inkTop, neutral.top - top);
+        inkBottom = Math.max(inkBottom, neutral.bottom - top);
+      }
+    }
+    return { width: bounds.width / zoom, height,
+      inkTop: Number.isFinite(inkTop) ? inkTop : 0,
+      inkBottom: Number.isFinite(inkBottom) ? inkBottom : height };
+  }
   FitReadings(fontGeneration = 0, time = this.lastTime) {
     const job = this.PrepareLayout(fontGeneration, time);
     if (job) RunAnnotationLayout([job]);
@@ -248,20 +271,28 @@ export class RubyVocals {
     // dependency; it is never read by playback/animation.
     const fractionalWidth = this.Element.getBoundingClientRect().width;
     const style = getComputedStyle(this.primaryRoot), ownerStyle = getComputedStyle(this.Element);
+    // Range and bounding rectangles include ancestor CSS zoom, but the
+    // reservation writes and computed font metrics are in local CSS pixels.
+    const zoom = (this.Element as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom
+      || (fractionalWidth / parseFloat(ownerStyle.width)) || 1;
     // Natural reading dimensions depend on typography/font completion, not
     // source wrapping. A width-only pass reuses them without reveal/read cycles.
-    const metricKey = [fontGeneration, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, ownerStyle.getPropertyValue("--annotation-ruby-size"),
+    const metricKey = [fontGeneration, zoom, style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.fontStretch, ownerStyle.getPropertyValue("--annotation-ruby-size"),
       ownerStyle.getPropertyValue("--annotation-spacing"), this.entries[0].root.dataset.jelScale, this.readingEmphasis].join("|");
     const alignment = this.Element.closest<HTMLElement>("[data-annotation-align]")?.dataset.annotationAlign;
-    const key = [metricKey, style.lineHeight, width, fractionalWidth, alignment,
+    const key = [metricKey, zoom, style.lineHeight, width, fractionalWidth, alignment,
       this.profile.detail, this.profile.emphasis].join("|");
     if (key === this.fitKey) return;
     this.mapSource();
     const freshMetrics = this.entries.some(entry=>entry.pieces?.length) && metricKey !== this.metricsKey;
-    let frame=this.sourceFrame();
+    let frame=this.sourceFrame(zoom);
     const hidden = new Set(this.entries.filter(entry => entry.host.hidden));
     const visualScale = this.entries[0].root.dataset.jelScale === "on" ? 1.1 : 1;
     const gap = Math.max(1, parseFloat(style.fontSize) * .04);
+    const readingBottom = (box: ReadingBox, factor: number) =>
+      (box.height / 2 + (box.inkBottom - box.height / 2) * visualScale) * factor;
+    const readingTop = (box: ReadingBox, factor: number) =>
+      (box.height / 2 + (box.inkTop - box.height / 2) * visualScale) * factor;
     const isLine = ResolveDetail(this.document, this.profile.detail) !== "word";
     let boxes: ReadingBox[] = [], rows: ReadingBox[][] = [], complete = false, reserveChanged = false;
     const pixels=(style: CSSStyleDeclaration,property: string,value: number)=>{
@@ -290,7 +321,9 @@ export class RubyVocals {
     const readBoxes = () => {
       unsupportedTransform=false;
       try {
-        const owner=this.Element.getBoundingClientRect();frame=this.sourceFrame();sourceRects.clear();
+        frame=this.sourceFrame(zoom);
+        const owner=frame(this.Element.getBoundingClientRect(), this.primaryRoot);
+        sourceRects.clear();
       for(const entry of this.entries){
         if(!entry.pieces||!entry.metrics)continue;
         const rects=entry.pieces.flatMap(piece=>{
@@ -322,14 +355,14 @@ export class RubyVocals {
       },
       measure: () => {
         if (freshMetrics) {
-          for (const entry of this.entries) entry.metrics = { width: entry.root.scrollWidth, height: entry.root.offsetHeight };
+          for (const entry of this.entries) entry.metrics = this.measureReading(entry.root, zoom);
           this.updateVisualRanges();
         }
         readBoxes();
         if (!isLine && !unsupportedTransform) {
           // Only genuinely wrapped canonical owners need interior clearance.
           // Collect all geometry in the existing read barrier, never playback.
-          const owner = this.Element.getBoundingClientRect();
+          const owner = frame(this.Element.getBoundingClientRect(), this.primaryRoot);
           for (const item of this.primaryRoot.querySelectorAll<HTMLElement>(".WrappedPainter")) {
             const bounds=frame(item.getBoundingClientRect(),item), step=parseFloat(getComputedStyle(item).lineHeight);
             const range=globalThis.document.createRange();range.selectNodeContents(item.querySelector(".SourcePaint")!);
@@ -350,7 +383,7 @@ export class RubyVocals {
         if (line && !unsupportedTransform) {
             const range=globalThis.document.createRange();range.selectNodeContents(line);
             const rects=[...range.getClientRects()].filter(rect=>rect.height>0&&rect.width>0).map(rect=>frame(rect,line));
-            const lineStyle=getComputedStyle(line), bounds=frame(line.getBoundingClientRect(),line), owner=this.Element.getBoundingClientRect();
+            const lineStyle=getComputedStyle(line), bounds=frame(line.getBoundingClientRect(),line), owner=frame(this.Element.getBoundingClientRect(), this.primaryRoot);
             const value=(property: string)=>parseFloat(lineStyle.getPropertyValue(property))||0;
             lineHeight=parseFloat(lineStyle.lineHeight)||parseFloat(style.fontSize)*1.1818181818;
             lineContentHeight=bounds.height-value("padding-top")-value("padding-bottom")-value("border-top-width")-value("border-bottom-width");
@@ -393,7 +426,10 @@ export class RubyVocals {
           this.reserved.clear();this.marginKeys.clear();
           this.clearLineLayout(true);this.Element.style.removeProperty("padding-top");return;
         }
-        const clearance = (box: ReadingBox) => box.height*factors.get(box.entry)!*visualScale+gap+2;
+        const clearance = (box: ReadingBox) => {
+          const factor = factors.get(box.entry)!;
+          return readingBottom(box, factor) - readingTop(box, factor) + gap + 2;
+        };
         if (line && sourceRows.length) {
           const wanted=new Map<number,number>();
           for(const box of visible){
@@ -406,7 +442,7 @@ export class RubyVocals {
           sourceRows.forEach((row,index)=>{
             const desired=wanted.get(row.index);if(desired===undefined)return;
             const previous=sourceRows[index-1];
-            const free=Math.max(0,row.top-(previous?.bottom??lineContentTop));
+            const free=row.top-(previous?.bottom??lineContentTop);
             const band=Math.max(0,desired-free);
             if(row.index===0){topBand=band;return;}
             if(!band)return; // An explicit blank row may already provide room.
@@ -414,7 +450,11 @@ export class RubyVocals {
             // Shape exclusions touch whole line boxes. Pixel-align their edges
             // and leave a 1px boundary guard so a fractional preceding line does
             // not intersect the NEXT band and skip several rows at once.
-            const top=Math.ceil(naturalTop+extra)+1,bottom=top+Math.ceil(band);
+            // Offset the start by the preceding row's actual fractional bearing.
+            // A second band at the nominal line-box edge can consume both rows.
+            const shifted=naturalTop+extra;
+            const top=Math.ceil(shifted+Math.max(1,2-free));
+            const bottom=Math.max(top+1,Math.ceil(shifted+band));
             bands.push({top,bottom});extra=bottom-naturalTop;
           });
           reserveChanged=pixels(this.Element.style,"padding-top",topBand)||reserveChanged;
@@ -448,13 +488,19 @@ export class RubyVocals {
             // whole Word as well would add space above an unannotated first row.
             if(wrapped && box.top>wrapped[1].rows[0].top+2)continue;
             let item=first.parent;while(item.parentElement!==this.primaryRoot&&item.parentElement)item=item.parentElement;
-            desired.set(item,Math.max(desired.get(item)||0,factors.get(box.entry)!));
+            const leading = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.1818181818;
+            const bearing = Math.max(0, box.bottom - box.top - leading);
+            desired.set(item, Math.max(desired.get(item) || 0, clearance(box) + bearing));
           }
-          for(const item of items){
-            const factor=desired.get(item);
-            const margin=factor===undefined?"":`calc(1em * var(--annotation-ruby-size, .5) * ${factor*visualScale*1.1} + .04em + 2px)`;
-            if((this.marginKeys.get(item)||"")!==margin){item.style.marginBlockStart=margin;this.marginKeys.set(item,margin);reserveChanged=true;}
-            if(factor!==undefined)this.reserved.add(item);else this.reserved.delete(item);
+          for (const item of items) {
+            const reserve = desired.get(item);
+            const margin = reserve === undefined ? "" : `${Math.round(reserve * 1000) / 1000}px`;
+            if ((this.marginKeys.get(item) || "") !== margin) {
+              item.style.marginBlockStart = margin;
+              this.marginKeys.set(item, margin);
+              reserveChanged = true;
+            }
+            if (reserve !== undefined) this.reserved.add(item); else this.reserved.delete(item);
           }
           for(const [item,layout] of wrappedRows) {
             const wanted=new Map<number,number>();
@@ -467,9 +513,11 @@ export class RubyVocals {
             for(const row of layout.rows) {
               if(!row.index)continue; // Existing Word margin reserves the first row.
               const desired=wanted.get(row.index);if(desired===undefined)continue;
-              const free=Math.max(0,row.top-layout.rows[row.index-1].bottom),band=Math.max(0,desired-free);
+              const free=row.top-layout.rows[row.index-1].bottom,band=Math.max(0,desired-free);
               if(!band)continue;
-              const naturalTop=row.index*layout.step,top=Math.ceil(naturalTop+extra)+1,bottom=top+Math.ceil(band);
+              const naturalTop=row.index*layout.step, shifted=naturalTop+extra;
+              const top=Math.ceil(shifted+Math.max(1,2-free));
+              const bottom=Math.max(top+1,Math.ceil(shifted+band));
               bands.push({top,bottom});extra=bottom-naturalTop;
             }
             if(!bands.length)continue;
@@ -495,7 +543,7 @@ export class RubyVocals {
           const factor=factors.get(box.entry),position=placements.get(box.entry);
           if(factor===undefined||position===undefined)continue;
           renderable.add(box.entry);
-          const x=Math.round((position+box.width*factor*(visualScale-1)/2)*1000)/1000,y=Math.round((box.top-box.height*factor*visualScale-gap)*1000)/1000;
+          const x=Math.round((position+box.width*factor*(visualScale-1)/2)*1000)/1000,y=Math.round((box.top-readingBottom(box,factor)-gap)*1000)/1000;
           const translation=`${x}px ${y}px`;if(box.entry.host.style.translate!==translation)box.entry.host.style.translate=translation;
         }
         for(const entry of this.entries){const hide=!renderable.has(entry);if(entry.host.hidden!==hide)entry.host.hidden=hide;}
@@ -515,18 +563,23 @@ export class RubyVocals {
       }
     };
   }
-  SetRendering(primary: RenderingProfile, annotation: RenderingProfile) {
+  SetRendering(primary: RenderingProfile, annotation: RenderingProfile, time = this.lastTime, animationOnly = false) {
     if (this.profile.detail !== primary.detail || this.profile.emphasis !== primary.emphasis) {
       this.InvalidateLayout(true);
     }
     // Grapheme spans can change kerning/spacing even at the same font and size.
     // Their effective presence is a natural-metrics dependency, not just paint.
     this.readingEmphasis = LetterEmphasis(annotation);
-    this.profile = primary; this.InvalidateLayout();
+    this.profile = primary;
+    if (!animationOnly) this.InvalidateLayout();
     for (const entry of this.entries) {
-      ApplyRenderingAttributes(entry.root, annotation);
-      if (IsTimedChild(entry.child)) entry.child.SetRendering(annotation);
+      if (!animationOnly) ApplyRenderingAttributes(entry.root, annotation);
+      if (IsTimedChild(entry.child)) entry.child.SetRendering(annotation, time);
     }
+  }
+  Reconcile(time: number) {
+    this.lastTime = time;
+    for (const entry of this.entries) if (!entry.host.hidden && IsTimedChild(entry.child)) entry.child.Reconcile(time);
   }
   Animate(time: number, delta: number, immediate?: true) { this.lastTime = time; for (const entry of this.entries) if (!entry.host.hidden && IsTimedChild(entry.child)) entry.child.Animate(time, delta, immediate); }
   NeedsFrame() { return this.entries.some(({ child, host }) => !host.hidden && IsTimedChild(child) && child.NeedsFrame()); }

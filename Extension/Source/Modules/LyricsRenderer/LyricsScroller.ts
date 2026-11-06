@@ -49,12 +49,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 
 	private readonly Scroller: SimpleBar
 	private readonly ScrollerObject: HTMLElement
-	private GroupDimensions: {
-		Height: number;
-		Center: number;
-		Top: number;
-		Bottom: number;
-	}[] = []
+	private GroupDimensions: { Top: number; Bottom: number }[] = []
     private VoiceBounds = new Map<SyncedVocals,{top:number;bottom:number;start:number;group:number;voice:number}>()
 	private AutoScrollBlocked: boolean = false
 	private AutoScrolling: boolean = false
@@ -335,7 +330,8 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             return
         }
         const oldScroll=this.ScrollerObject.scrollTop
-        const readableTop=Math.min(24,this.ScrollerObject.clientHeight/2)
+        const naturalCard=this.options.surface === "Card"
+        const readableTop=readableViewport(this.ScrollerObject.clientHeight,this.Profile.anchor,naturalCard)?.safeTop ?? 0
         const readingIndex=this.AutoScrollBlocked || !this.Profile.follow ? this.GroupDimensions.findIndex((group,index)=>this.VocalGroups[index].Role!=="cue" && group.Bottom>oldScroll+readableTop) : -1
         const readingOffset=readingIndex>=0 ? oldScroll-this.GroupDimensions[readingIndex].Top : 0
         if(!this.MeasureHorizontalColumn()){this.GeometryValid=false;this.options.measured?.();return}
@@ -358,26 +354,28 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             } else synced.MeasureAnnotations?.(this.AnnotationFontGeneration)
         }
         RunAnnotationLayout(jobs)
-		// Now update our heights
-		let totalHeight = 0
-		for (const vocalGroup of this.VocalGroups) {
-            const groupHeight = GetTotalElementHeight(vocalGroup.GroupContainer)
-
-			this.GroupDimensions.push(
-				{
-					Height: (groupHeight / 2),
-					Center: (totalHeight + (groupHeight / 2)), Top:0, Bottom:0
-				}
-			)
-			totalHeight += groupHeight
-		}
+        let totalHeight = 0
+        let cardScale: number | undefined
+        if (naturalCard) {
+            const port = this.ScrollerObject
+            cardScale = port.getBoundingClientRect().height / parseFloat(getComputedStyle(port).height) || 1
+            const last = this.VocalGroups.findLast(group => !group.GroupContainer.hidden)?.GroupContainer
+            if (last) {
+                // A sum of rounded group heights can undershoot the final line.
+                // Measure the actual flow end before setting the paint clip.
+                const end = (last.getBoundingClientRect().bottom - this.LyricsContainer.getBoundingClientRect().top) / cardScale
+                totalHeight = Math.ceil(end + (parseFloat(getComputedStyle(last).marginBottom) || 0))
+            }
+        } else {
+            for (const { GroupContainer } of this.VocalGroups) totalHeight += GetTotalElementHeight(GroupContainer)
+        }
 
 		// Update our container height
         const height=`${totalHeight}px`
         if(this.LyricsContainer.style.height!==height)this.LyricsContainer.style.height=height
 		this.Scroller.recalculate()
         const frame=this.ScrollerObject.getBoundingClientRect()
-        const scale=frame.height/this.ScrollerObject.clientHeight || 1
+        const scale=cardScale ?? (frame.height/this.ScrollerObject.clientHeight || 1)
         const containerRect=this.ScrollContainer.getBoundingClientRect()
         this.MeasuredSizes.set(this.ScrollContainer,{width:containerRect.width/scale,height:containerRect.height/scale})
         const scrollTop=this.ScrollerObject.scrollTop
@@ -387,16 +385,13 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             const rect=group.GroupContainer.getBoundingClientRect()
             this.MeasuredSizes.set(group.GroupContainer,{width:rect.width/scale,height:rect.height/scale})
             const top=(rect.top-frame.top)/scale+scrollTop,bottom=(rect.bottom-frame.top)/scale+scrollTop
-            this.GroupDimensions[index].Top=top;this.GroupDimensions[index].Bottom=bottom
-            // Classic centers remain in Lyrics-local coordinates; follow bounds
-            // use ONE content-scroll CSS-pixel frame, including fractional boxes.
-            this.GroupDimensions[index].Center=(top+bottom)/2-lyricsTop
+            this.GroupDimensions[index] = { Top: top, Bottom: bottom }
             for(const [voice,vocal] of group.Vocals.entries()) {
                 const target=vocal.GetScrollTarget?.(),bounds=(target?.Element??group.GroupContainer).getBoundingClientRect()
                 this.VoiceBounds.set(vocal,{top:(bounds.top-frame.top)/scale+scrollTop,bottom:(bounds.bottom-frame.top)/scale+scrollTop,start:target?.StartTime??0,group:index,voice})
             }
         }
-        const viewport=readableViewport(this.ScrollerObject.clientHeight,this.Profile.anchor)
+        const viewport=readableViewport(this.ScrollerObject.clientHeight,this.Profile.anchor,naturalCard)
         this.GeometryValid = !!viewport
         if(this.LyricsAreSynced && viewport) {
             const all=[...this.VoiceBounds.values()].filter(bound=>bound.bottom>bound.top)
@@ -404,7 +399,6 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             const style=getComputedStyle(this.LyricsContainer)
             // Flow extent is independent of Simplebar's viewport min-height.
             const intrinsic=lyricsTop-this.Leading+this.LyricsContainer.getBoundingClientRect().height/scale+(parseFloat(style.marginBottom)||0)
-            const naturalCard=this.options.surface === "Card"
             const extent=naturalCard ? naturalEdgeSpace(neutral,this.ScrollerObject.clientHeight,intrinsic) : edgeSpace(neutral,this.ScrollerObject.clientHeight,this.Profile.anchor,intrinsic)
             if(extent) {
                 const active=(this.VocalGroups as VocalGroups<SyncedVocals>).some(group=>group.Vocals.some(v=>v.IsActive()))
@@ -516,7 +510,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             }
             this.PendingResume=false;this.ToggleAutoScrollBlock(false)
         }
-        const target=fixedAnchorTarget(bounds,this.ScrollerObject.clientHeight,this.Profile.anchor,this.ScrollerObject.scrollHeight-this.ScrollerObject.clientHeight)
+        const target=fixedAnchorTarget(bounds,this.ScrollerObject.clientHeight,this.Profile.anchor,this.ScrollerObject.scrollHeight-this.ScrollerObject.clientHeight,this.options.surface === "Card")
         if(target!==undefined)this.ScrollTo(target)
     }
 

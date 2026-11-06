@@ -128,9 +128,6 @@
 		font-size: 1.5rem;
 		line-height: 2.5rem;
 
-		-webkit-mask-image: linear-gradient(180deg, transparent 0, transparent 16px, var(--spice-sidebar) 24px, var(--spice-sidebar) calc(100% - 64px), transparent calc(100% - 16px), transparent);
-		mask-image: linear-gradient(180deg, transparent 0, transparent 16px, var(--spice-sidebar) 24px, var(--spice-sidebar) calc(100% - 64px), transparent calc(100% - 16px), transparent);
-
 		overflow: hidden;
 
 		margin: -16px;
@@ -144,6 +141,9 @@
             // below LyricsContent's real clip/mask, hiding the natural last line.
             max-height: calc(340px - 32px - 25px - 16px);
 			container-type: size;
+
+			// Keep the fades in the same coordinates as the Card follow bounds.
+			mask-image: linear-gradient(to bottom, transparent, black 8px, black calc(100% - 8px), transparent);
 
 			z-index: 100;
 		}

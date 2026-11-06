@@ -14,6 +14,7 @@ export interface ScheduledVisual {
 // components. This is a consumer of the existing clock, not another frame loop.
 export class RenderScheduler {
   private timeline: LyricTimeline;
+  private pendingTimeline?: LyricTimeline;
   private active = new Set<string>();
   private settling = new Set<string>();
   private work = new Set<string>();
@@ -25,23 +26,44 @@ export class RenderScheduler {
     private activity?: (active: ReadonlySet<string>, time: number, seek: boolean) => void) {
     this.timeline = new LyricTimeline(intervals);
   }
+  // Presentation edits replace the intervals at the current clock time without
+  // reporting a transport seek or resetting unrelated source effects.
+  replaceIntervals(intervals: readonly TimelineInterval[]) {
+    this.pendingTimeline = new LyricTimeline(intervals);
+  }
   update(time: number, delta: number, immediate?: true) {
     if (this.counters) this.counters.ticks++;
-    if (!immediate && time === this.previous && this.settling.size === 0 && this.revealed.size === 0) return;
+    const replacement = this.pendingTimeline;
+    if (!immediate && !replacement && time === this.previous && this.settling.size === 0 && this.revealed.size === 0) return;
     immediate = immediate || (this.previous !== undefined && time < this.previous) || undefined;
     this.work.clear();
-    if (immediate || this.timeline.isDue(time)) {
+    const due = immediate || this.timeline.isDue(time);
+    if (due || replacement) {
       if (this.counters) this.counters.timelineEvaluations++;
+      if (replacement) {
+        // Catch source boundaries crossed since the last sample. The fresh
+        // index reports every interval as changed on its first evaluation, so
+        // only actual owner transitions and crossed boundaries request paint.
+        if (due && !immediate) for (const id of this.timeline.evaluate(time).changed) this.work.add(this.owners.get(id)!);
+        this.timeline = replacement;
+        this.pendingTimeline = undefined;
+      }
       const state = this.timeline.evaluate(time, immediate);
       const previousActive = new Set(this.active);
       this.active.clear();
       for (const id of state.active) this.active.add(this.owners.get(id)!);
-      for (const id of previousActive) if (!this.active.has(id)) this.visuals.get(id)?.SetLogicalActivity?.(false);
-      for (const id of this.active) if (!previousActive.has(id)) this.visuals.get(id)?.SetLogicalActivity?.(true);
+      for (const id of previousActive) if (!this.active.has(id)) {
+        this.visuals.get(id)?.SetLogicalActivity?.(false);
+        if (replacement) this.work.add(id);
+      }
+      for (const id of this.active) if (!previousActive.has(id)) {
+        this.visuals.get(id)?.SetLogicalActivity?.(true);
+        if (replacement) this.work.add(id);
+      }
       // Commit presentation before continuous/settling work. Source activity
       // never depends on a hidden visual's Animate call or DOM classes.
       this.activity?.(this.active, time, !!immediate);
-      for (const id of state.changed) this.work.add(this.owners.get(id)!);
+      if (!replacement || immediate) for (const id of state.changed) this.work.add(this.owners.get(id)!);
       if (this.counters) this.counters.boundaryUpdates += this.work.size;
     }
     for (const id of this.active) if (this.isVisible(id) && this.visuals.get(id)!.RequiresContinuous()) {

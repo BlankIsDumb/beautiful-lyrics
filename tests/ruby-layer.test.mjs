@@ -81,8 +81,10 @@ test('ruby keeps canonical primary paint/springs/emphasis and uses bounded sourc
       const color=[...owner.querySelectorAll('.RubyReading')].find(node=>node.textContent==='いろどり');
       check(color&&Number(color.style.getPropertyValue('--ruby-fit'))===1&&color.getBoundingClientRect().width>b[5].width*1.5,'wide reading freely overhangs one-kanji anchor without source widening/fit');
       let clones=0,reads=0;const clone=roots[1].cloneNode.bind(roots[1]);roots[1].cloneNode=(...args)=>{clones++;return clone(...args)};
-      const scrollWidth=Object.getOwnPropertyDescriptor(Element.prototype,'scrollWidth').get;
-      for(const reading of owner.querySelectorAll('.RubyReading'))Object.defineProperty(reading,'scrollWidth',{get(){reads++;return scrollWidth.call(this)}});
+      for(const reading of owner.querySelectorAll('.RubyReading')){
+        const measure=reading.getBoundingClientRect.bind(reading);
+        reading.getBoundingClientRect=()=>{reads++;return measure()};
+      }
       controllers[1].MeasureAnnotations();controllers[1].MeasureAnnotations();for(let i=0;i<100;i++)controllers[1].Animate((i%7)+.1,1/60,true);
       check(clones===0&&reads===0&&!owner.querySelector('.RubyMeasure'),'cached layout and playback do zero clone/reading-width work');
       const verify=()=>{const bounds=owner.getBoundingClientRect(),readings=[...owner.querySelectorAll('.RubyAnnotation:not([hidden])')].map(node=>node.getBoundingClientRect());
@@ -197,13 +199,14 @@ test('ruby keeps canonical primary paint/springs/emphasis and uses bounded sourc
           hosts[0].style.width=[180,400,140,700][index%4]+'px';
           hosts[0].style.setProperty('--minimum-lyrics-size',index%2?'24px':'42px');hosts[0].style.setProperty('--maximum-lyrics-size',index%2?'24px':'42px');
           controller.Animate(time,1/60);controller.MeasureAnnotations();
-          const layer=controller.ruby,frame=layer.sourceFrame(),pieces=layer.entries.flatMap(entry=>entry.pieces||[]);
+          const layer=controller.ruby,frame=layer.sourceFrame(1),pieces=layer.entries.flatMap(entry=>entry.pieces||[]);
           const rest=pieces.map(piece=>[...piece.range().getClientRects()].filter(rect=>rect.width&&rect.height).map(rect=>frame(rect,piece.parent)));
           const owner=layer.Element.getBoundingClientRect(),font=parseFloat(getComputedStyle(root).fontSize),gap=Math.max(1,font*.04);
           for(const entry of layer.entries.filter(entry=>!entry.host.hidden)){
             const rects=entry.pieces.flatMap(piece=>[...piece.range().getClientRects()].filter(rect=>rect.width&&rect.height).map(rect=>frame(rect,piece.parent)));
             const sourceTop=Math.min(...rects.map(rect=>rect.top))-owner.top,fit=Number(entry.root.style.getPropertyValue('--ruby-fit')),visual=entry.root.dataset.jelScale==='on'?1.1:1;
-            const predicted=parseFloat(entry.host.style.translate.split(' ')[1]),expected=sourceTop-entry.metrics.height*fit*visual-gap;
+            const predicted=parseFloat(entry.host.style.translate.split(' ')[1]),center=entry.metrics.height/2;
+            const expected=sourceTop-(center+(entry.metrics.inkBottom-center)*visual)*fit-gap;
             check(Math.abs(predicted-expected)<.12,'reading clearance follows actual current source anchor after resize '+JSON.stringify({line,role,index,predicted,expected}));
           }
           root.classList.add('NeutralSource');
@@ -233,10 +236,11 @@ test('ruby keeps canonical primary paint/springs/emphasis and uses bounded sourc
           check(rows.every(row=>Math.max(...row.map(rect=>rect.bottom))-Math.min(...row.map(rect=>rect.bottom))<1),'mixed direct/Word/emphasis source glyph baselines stay equal per visual row');
           check([...root.children].some(item=>item.classList.contains('Word'))&&root.querySelector('.Letter'),'fixture includes grouped and independently emphasized source owners');
           const plain=[...root.children].find(item=>item.textContent==='かなかな');check(plain&&!plain.style.marginBlockStart,'unannotated source item carries no reading clearance');
-          const layer=controller.ruby,frame=layer.sourceFrame(),bounds=layer.Element.getBoundingClientRect();
+          const layer=controller.ruby,frame=layer.sourceFrame(1),bounds=layer.Element.getBoundingClientRect();
           for(const entry of layer.entries.filter(entry=>!entry.host.hidden)){
             const rects=entry.pieces.flatMap(piece=>[...piece.range().getClientRects()].filter(rect=>rect.width&&rect.height).map(rect=>frame(rect,piece.parent)));
-            const expected=Math.min(...rects.map(rect=>rect.top))-bounds.top-entry.metrics.height*Number(entry.root.style.getPropertyValue('--ruby-fit'))*1.1-Math.max(1,parseFloat(getComputedStyle(root).fontSize)*.04);
+            const center=entry.metrics.height/2,extent=center+(entry.metrics.inkBottom-center)*1.1;
+            const expected=Math.min(...rects.map(rect=>rect.top))-bounds.top-extent*Number(entry.root.style.getPropertyValue('--ruby-fit'))-Math.max(1,parseFloat(getComputedStyle(root).fontSize)*.04);
             check(Math.abs(parseFloat(entry.host.style.translate.split(' ')[1])-expected)<.12,'mixed row reading remains attached after baseline-driven rewrap');
           }
         }

@@ -8,7 +8,9 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local version: **5.1.0-local.25**, built and installed locally.
+Current local build is **5.1.0-local.28**. Pass 7 adds easing and response
+presets, a duration limit for gap dots, and emphasis for intact shaping-sensitive
+segments. It also corrects the reproduced ruby row gaps and clipped lyric paint.
 Pass 6v3 gives the Sidecard natural song-edge limits and per-view outside-context
 Hide or static muted lyrics with independent blur, darkening and opacity. Distance
 gradient is deferred. Pass 6v2 follows every newly active source block at
@@ -17,7 +19,6 @@ for Sidecard, Ordinary lyrics page and Fullscreen/cinema. Typography and context
 retain their two viewer profiles; the lyric font family remains shared.
 Oversized timed segments wrap while retaining their original timing and animation
 owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
-Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
 
 ## What works now
 
@@ -39,8 +40,8 @@ Reported source/ruby paint clipping remains **unfixed and deferred to Pass 7**.
   size, spacing, opacity and alignment. Reading effects inherit the current text
   case or use independent Word/Line overrides. Off stops their work.
 - Four independent text-rendering cases: **Lyrics → Now Playing / Full Lyrics →
-  Word sync / Line sync**. Word sources start expressive; Line sources start muted.
-  Actual source precision selects the case, even when Word text is displayed as Line.
+  Word sync / Line sync**. Word display starts expressive and Line display starts muted.
+  Word-timed lyrics displayed as Line use that viewer’s Line sync text and reading settings.
   Untimed lyrics stay plain without an extra configurable branch.
 - Editable text presets and independent effects; universal gap-dot threshold/motion
   settings belong to each view and are never changed by a text preset.
@@ -139,7 +140,7 @@ Open Just Enough Lyrics Settings from its topbar icon. For less background fetch
 choose **When required** and disable **Now Playing sidebar lyrics**. An enabled
 sidebar requests lyrics on track changes even when the full page is closed.
 Under **Lyrics**, each viewer has collapsible **Word sync** and **Line sync**
-settings. A Word source displayed as Line still uses its Word-source settings.
+settings. Word-timed lyrics displayed as Line use that viewer’s Line sync settings.
 **Text preset** copies editable text effects; changing an effect makes it Custom.
 Line sources use whole-line rendering and expose only supported effects. Turning
 Now Playing off collapses all its options while retaining their values. Fullscreen

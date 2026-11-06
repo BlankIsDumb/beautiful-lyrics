@@ -58,3 +58,18 @@ test('equal transport timestamps continue actual settling then become an idle no
   assert.equal(remaining,0);assert.equal(calls,5);
   scheduler.update(0,1/60);assert.equal(calls,5);
 });
+
+test('cue interval edits at a paused timestamp reconcile the changed owner without a source repaint or seek', () => {
+  const calls=[], activity=[];
+  const visual=id=>({Animate:(time,_delta,seek)=>calls.push([id,time,seek]),RequiresContinuous:()=>false,NeedsFrame:()=>false});
+  const source={id:'word',start:10,end:20}, cue={id:'cue',start:1,end:9.75};
+  const scheduler=new RenderScheduler(new Map([['word',visual('word')],['cue',visual('cue')]]),[source,cue],
+    new Map([['word','word'],['cue','cue']]),undefined,(active,time,seek)=>activity.push([[...active],time,seek]));
+  scheduler.update(4,0,true);calls.length=0;
+  scheduler.replaceIntervals([source,{...cue,start:6}]);scheduler.update(4,0);
+  assert.deepEqual(calls,[['cue',4,undefined]]);assert.deepEqual(activity.at(-1),[[],4,false]);
+  calls.length=0;scheduler.update(5,1);assert.deepEqual(calls,[]);
+  scheduler.update(6,1);assert.deepEqual(calls,[['cue',6,undefined]]);
+  calls.length=0;scheduler.replaceIntervals([source]);scheduler.update(10,0);
+  assert.deepEqual(calls.map(call=>call[0]).sort(),['cue','word']);assert.deepEqual(activity.at(-1),[['word'],10,false]);
+});

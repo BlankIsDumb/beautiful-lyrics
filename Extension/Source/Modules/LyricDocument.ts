@@ -75,6 +75,9 @@ export function NormalizeLyrics(lyrics: Lyrics): LyricDocument {
 }
 
 export type LyricCue = Readonly<Interval & { id: string; gapSeconds: number }>;
+export function CueDisplayStart(start: number, end: number, lastSeconds: number | null) {
+  return lastSeconds == null ? start : Math.max(start, end - lastSeconds);
+}
 export function DeriveCueCandidates(document: LyricDocument, endLead = 0.25): readonly LyricCue[] {
   if (document.type === "Static") return [];
   // Union ALL real voice envelopes, independently of provider order. Candidates

@@ -1,10 +1,18 @@
 # Just Enough Lyrics local build notes
 
-Current beta bundle: **5.1.0-local.26**, including the sidecard defaults.
-The installation record below covers the **5.1.0-local.25** bundle. See [VALIDATION.md](VALIDATION.md) for
-build/install evidence and remaining native checks. Pass 6 typography, context and
+Current local build is **5.1.0-local.29**. See [VALIDATION.md](VALIDATION.md) for
+build and installation evidence. Pass 6 typography, context and
 following controls live under Lyrics → Now Playing / Full Lyrics. Fullscreen/cinema and the ordinary lyrics page share Full Lyrics typography,
 context and scrolling. Horizontal spacing alone has three independent surfaces.
+
+Easing changes the curve between effect keyframes. Response changes how quickly
+scale, vertical motion and glow reach their targets. Direct applies the current
+target immediately. Whole-line display uses the viewer’s Line profile for all
+text effects, including word-timed songs displayed as Line. Its reading effects
+can inherit that profile or use the independent Line reading override.
+
+Show dots for last (s) limits how long eligible gaps display dots. Leave it blank
+to show the full eligible gap. The window still ends just before the next vocal.
 
 ## Typography, context and following
 
@@ -23,13 +31,12 @@ Readouts report physical column gaps/width in CSS pixels, not glyph ink edges.
 Dragging previews without writing storage; release/confirmed number commits, Escape
 or closing cancels. Typography reset also resets that viewer's spacing surfaces.
 
-Schema10 adds per-view outside-context appearance, initially Hide. Schemas1–9
-migrate lazily: the exact prior raw payload is backed up under
-JustEnoughLyrics/Presentation/Migration/schemaN before the first changed save.
-Distinct recovery copies remain collision-safe; failed backup/main writes publish
-no edit. Schema9 horizontal spacing and every other existing choice are preserved.
-Rollback to local.24 requires BOTH its exact bundle and schema9 raw payload;
-preserve schema10 separately before restoring. Future schemas stay read-only.
+Schema 11 adds animation presets and the gap-dot window. Older schemas migrate
+on the first changed save, which backs up the exact prior payload under
+JustEnoughLyrics/Presentation/Migration/schemaN. Existing appearance and spacing
+choices carry forward. Recovery copies are collision-safe and a failed save
+leaves the prior settings active. For rollback after a schema 11 save, pair the
+prior bundle with its corresponding settings backup. Future schemas open read-only.
 
 Context counts logical source groups. All active groups and every group between
 them form one block, with before/after counts outside it. Readings, backing rows,
@@ -51,7 +58,8 @@ Following supports Classic, instant and native smooth transitions; manual input
 cancels smooth movement. The anchor is adjustable from 0–100%. The Sidecard
 defaults to 0% (readable top), zero preceding groups and all following groups.
 The lyrics page and fullscreen default to 45% with all context. Existing saved
-values are kept. The Sidecard clamps to actual song edges using its normal readable padding:
+values are kept. The Sidecard clamps to actual song edges using its 8 CSS px
+inner fades and the measured end of the final lyric group:
 short songs stay at the top, and later lines stop at the natural bottom. Context
 edges do not create a shorter song. Ordinary page/fullscreen retain their existing
 edge anchor space. Within the available physical range, every newly active source block reaches that anchor,
@@ -120,11 +128,11 @@ feature Off releases its demand; cancelled/stale results cannot replace new text
 Cancellation is cooperative: an already executing synchronous tokenizer cannot be
 interrupted, but remaining queued voices and stale installation are stopped.
 
-Source precision selects the active text case independently of requested display
-detail. Line-precision Syllable wrappers always use a whole-line projection; Word
-sources projected as Line retain their Word-source case. Untimed sources stay
-plain, without animated state or a clock subscription. Render events ignore other
-views/inactive cases and retain source data, annotation leases and voice roots.
+Source precision and the Word Text detail preference determine the display mode.
+Line-precision Syllable wrappers always use a whole-line projection. Word sources
+projected as Line use the same viewer’s Line profile and reading override. Untimed
+sources stay plain, without animated state or a clock subscription. Appearance edits
+affect the active profile only and reuse source data, annotation leases and voice roots.
 
 Cue candidates derive once from the union of all real voice envelopes. A separate
 view event reconciles threshold/motion without rebuilding voices or resetting
@@ -155,12 +163,13 @@ Romaji uses pronunciation. Unique kana-anchor alignment attaches readings to
 kanji, preserving okurigana and grouped compounds. Bounded ambiguous alignment
 omits unsafe ruby rather than inventing character readings or phoneme timing.
 
-Each source case can inherit its text effects or independently configure reading
+Each display mode can inherit its text effects or independently configure reading
 highlight, scale, motion, glow and inactive blur. Character emphasis is disabled
 for mapped readings. Per-view relative row/ruby sizes, row gap, letter spacing,
-opacity and alignment reuse completed conversion results. Changing the inactive
-case does no rendering work. Adding another requested form retains an unchanged
-pending primary lease/result; closing or disabling releases obsolete demand.
+opacity and alignment reuse completed conversion results. Edits to an inactive
+reading override are remembered without updating visible readings. Adding another
+requested form retains an unchanged pending primary lease/result; closing or
+disabling releases obsolete demand.
 Ruby bases and readings have separate effect roots under a neutral wrapper, so
 one cannot multiply the other's opacity/filter/scale. Safe source character
 clipping retains each original timing interval; it never invents token timestamps.

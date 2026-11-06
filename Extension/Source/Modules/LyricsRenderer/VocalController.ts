@@ -3,7 +3,7 @@ import { Signal } from "@Universal/Modules/Signal.ts";
 import type { LyricDocument, LyricVoice } from "../LyricDocument.ts";
 import { LayoutVoice, type DisplayRun } from "../TextLayout.ts";
 import { LineProjection, ResolveDetail } from "../RenderProjection.ts";
-import { ApplyRenderingAttributes } from "./RenderEffects.ts";
+import { ApplyRenderingAttributes, OnlyAnimationChanged } from "./RenderEffects.ts";
 import type { RenderingCounters, RenderingProfile } from "../../RenderingSettings.ts";
 import type { SyncedVocals } from "./Types.d.ts";
 import SyllableVocals from "./Components/SyllableVocals.ts";
@@ -11,7 +11,6 @@ import LineVocals from "./Components/LineVocals.ts";
 import StaticVocals from "./Components/StaticVocals.ts";
 import { RubyVocals, CreateTextChild, IsTimedChild, type TextChild } from "./Components/RubyVocals.ts";
 import { AnnotationRendering, NormalizeAnnotations, type AnnotationProfile } from "../../AnnotationSettings.ts";
-import { SourceCaseFor } from "../../RenderingSettings.ts";
 
 // One stable voice identity owns source activity, scrolling and seeking. Detail
 // switches replace only its content strategy, leaving root/listeners/signals and
@@ -74,7 +73,10 @@ export class VocalController implements SyncedVocals {
     layer.Destroy(); // Invalid ranges add neither reading work nor blank clearance.
     return undefined;
   }
-  private annotationRendering() { return AnnotationRendering(this.annotations, SourceCaseFor(this.document.precision), this.profile); }
+  private annotationRendering() {
+    const readingCase = this.kind === "plain" ? undefined : this.kind === "line" ? "Line" : "Word";
+    return AnnotationRendering(this.annotations, readingCase, this.profile);
+  }
   private clearAnnotationStyle(target: HTMLElement) {
     for (const property of ["--annotation-secondary-size", "--annotation-ruby-size", "--annotation-gap", "--annotation-spacing", "--annotation-opacity"]) target.style.removeProperty(property);
     target.removeAttribute("data-annotation-align");
@@ -127,7 +129,9 @@ export class VocalController implements SyncedVocals {
     // Remember choices while Off without touching primary DOM/animation. A font
     // edit only changes CSS and is measured by the existing group observer.
     if (!shapeChanged && !this.secondary && !this.rubyRuns) return false;
-    const effectsChanged = JSON.stringify(previousEffects) !== JSON.stringify(this.annotationRendering());
+    const nextEffects = this.annotationRendering();
+    const effectsChanged = JSON.stringify(previousEffects) !== JSON.stringify(nextEffects);
+    const animationOnly = !shapeChanged && OnlyAnimationChanged(previousEffects, nextEffects);
     if (shapeChanged) {
       if (rubyChanged) {
         this.ruby?.Destroy(); this.ruby = undefined;
@@ -136,15 +140,20 @@ export class VocalController implements SyncedVocals {
       if (secondaryChanged) this.createSecondary();
     }
     if (effectsChanged) {
-      this.ruby?.SetRendering(this.profile, this.annotationRendering());
+      this.ruby?.SetRendering(this.profile, nextEffects, time, animationOnly);
       if (this.secondary) {
-        ApplyRenderingAttributes(this.secondary.root, this.annotationRendering());
-        if (IsTimedChild(this.secondary.child)) this.secondary.child.SetRendering(this.annotationRendering());
+        if (!animationOnly) ApplyRenderingAttributes(this.secondary.root, nextEffects);
+        if (IsTimedChild(this.secondary.child)) this.secondary.child.SetRendering(nextEffects, time);
       }
     }
     const styleChanged = previousStyle !== JSON.stringify({ ...settings, cases: undefined });
     if (shapeChanged || styleChanged) this.styleAnnotations();
-    if (shapeChanged || effectsChanged) {
+    if (animationOnly) {
+      if (this.presentationVisible) {
+        this.ruby?.Reconcile(time);
+        if (this.secondary && IsTimedChild(this.secondary.child)) this.secondary.child.Reconcile(time);
+      }
+    } else if (shapeChanged || effectsChanged) {
       // New reading children reconcile to the current clock locally. Touching
       // primary Animate(..., immediate) here would snap its in-flight springs.
       this.SetBlur(this.blurDistance); this.ruby?.Animate(time, 0, true);
@@ -164,18 +173,37 @@ export class VocalController implements SyncedVocals {
     this.Animate(time, 0);
   }
   SetRendering(profile: RenderingProfile, time = this.lastTime) {
+    const animationOnly = OnlyAnimationChanged(this.profile, profile);
+    const previousReading = this.annotationRendering();
     this.profile = profile;
     const kind = ResolveDetail(this.document, profile.detail);
+    if (animationOnly) {
+      if (IsTimedChild(this.child)) this.child.SetRendering(profile, time);
+      const reading = this.annotationRendering();
+      const updateReadings = OnlyAnimationChanged(previousReading, reading);
+      if (updateReadings) {
+        this.ruby?.SetRendering(profile, reading, time, true);
+        if (this.secondary && IsTimedChild(this.secondary.child)) this.secondary.child.SetRendering(reading, time);
+      }
+      if (this.presentationVisible) {
+        if (IsTimedChild(this.child)) this.child.Reconcile(time);
+        if (updateReadings) {
+          this.ruby?.Reconcile(time);
+          if (this.secondary && IsTimedChild(this.secondary.child)) this.secondary.child.Reconcile(time);
+        }
+      }
+      return;
+    }
     if (kind !== this.kind) { this.kind = kind; this.createContent(); this.createSecondary();
       if (this.rubyRuns) { this.ruby?.Destroy(); this.ruby = this.createRubyLayer(this.rubyRuns); }
       if (this.secondary || this.rubyRuns) this.styleAnnotations(); }
     else {
       ApplyRenderingAttributes(this.root, profile);
-      if (!(this.child instanceof StaticVocals)) this.child.SetRendering(profile);
-      this.ruby?.SetRendering(profile, this.annotationRendering());
+      if (!(this.child instanceof StaticVocals)) this.child.SetRendering(profile, time);
+      this.ruby?.SetRendering(profile, this.annotationRendering(), time);
       if (this.secondary) {
         ApplyRenderingAttributes(this.secondary.root, this.annotationRendering());
-        if (IsTimedChild(this.secondary.child)) this.secondary.child.SetRendering(this.annotationRendering());
+        if (IsTimedChild(this.secondary.child)) this.secondary.child.SetRendering(this.annotationRendering(), time);
       }
     }
     this.SetBlur(this.blurDistance);

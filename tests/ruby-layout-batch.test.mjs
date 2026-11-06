@@ -36,19 +36,19 @@ test('80-voice changing-width layout batches stay bounded, reuse metrics, and re
   }
   await document.fonts.ready;
   const verifyAnchors=()=>{
-    const layer=controllers[0].ruby;if(!layer)return;const frame=layer.sourceFrame(),owner=layer.Element.getBoundingClientRect();
+    const layer=controllers[0].ruby;if(!layer)return;const frame=layer.sourceFrame(1),owner=layer.Element.getBoundingClientRect();
     for(const entry of layer.entries.filter(entry=>!entry.host.hidden)){
       const rects=entry.pieces.flatMap(piece=>[...piece.range().getClientRects()].filter(rect=>rect.width&&rect.height).map(rect=>frame(rect,piece.parent)));
-      const expected=Math.min(...rects.map(rect=>rect.top))-owner.top-entry.metrics.height*Number(entry.root.style.getPropertyValue('--ruby-fit'))-1.28;
+      const expected=Math.min(...rects.map(rect=>rect.top))-owner.top-entry.metrics.inkBottom*Number(entry.root.style.getPropertyValue('--ruby-fit'))-1.28;
       check(Math.abs(parseFloat(entry.host.style.translate.split(' ')[1])-expected)<.12,'multi-item reading position matches real post-reserve source glyphs');
     }
   };
   const batch=(width,font=0)=>{shell.style.width=width+'px';RunAnnotationLayout(controllers.map(controller=>controller.PrepareAnnotations(font)).filter(Boolean));const heights=groups.map(group=>group.offsetHeight);verifyAnchors();return heights};
   batch(340);batch(360);batch(340);
   let clones=0,readingWidths=0;
-  const clone=Node.prototype.cloneNode,descriptor=Object.getOwnPropertyDescriptor(Element.prototype,'scrollWidth');
+  const clone=Node.prototype.cloneNode,measure=Element.prototype.getBoundingClientRect;
   Node.prototype.cloneNode=function(...args){clones++;return clone.apply(this,args)};
-  Object.defineProperty(Element.prototype,'scrollWidth',{...descriptor,get(){if(this.classList.contains('RubyReading'))readingWidths++;return descriptor.get.call(this)}});
+  Element.prototype.getBoundingClientRect=function(){if(this.classList.contains('RubyReading'))readingWidths++;return measure.call(this)};
   globalThis.resizeFixture={
     batch(width){batch(width);return {clones,readingWidths}},
     finish(){
@@ -57,7 +57,7 @@ test('80-voice changing-width layout batches stay bounded, reuse metrics, and re
       const count=readingWidths;batch(340,1);check(readingWidths===count,'same font/width does zero metric work');
       for(const controller of controllers)controller.SetAnnotations(NormalizeAnnotations(),undefined,undefined,0);
       batch(320,2);check(readingWidths===count,'Off releases all source/metric work');
-      controllers.forEach(controller=>controller.Destroy());Node.prototype.cloneNode=clone;Object.defineProperty(Element.prototype,'scrollWidth',descriptor);
+      controllers.forEach(controller=>controller.Destroy());Node.prototype.cloneNode=clone;Element.prototype.getBoundingClientRect=measure;
       // A single-row Line must not pay both top clearance and added leading.
       for(const detail of ['auto','line']){
         shell.style.width='700px';const group=document.createElement('button');group.className='VocalsGroup';lyrics.append(group);

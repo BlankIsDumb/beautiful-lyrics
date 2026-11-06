@@ -202,7 +202,13 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       Animate(...args){this.calls.push(args);if(this.frames>0)this.frames--}
       NeedsFrame(){return this.frames>0} Destroy(){this.destroyed=true}
     }`,
-    'cue-stub':'export class CueController {RequestedTimeSkip={Connect:()=>()=>{}};calls=[];constructor(){globalThis.__timingHarness.cues.push(this)}Animate(){}SetSettings(...args){this.calls.push(args)}NeedsFrame(){return false}RequiresContinuous(){return false}Destroy(){}}',
+    'cue-stub':`export class CueController {
+      RequestedTimeSkip={Connect:()=>()=>{}};calls=[];
+      constructor(_root,cue,profile,_counters,gap){this.cue=cue;this.gap=gap;this.profile=profile;globalThis.__timingHarness.cues.push(this)}
+      GetDisplayInterval(){return this.profile.threshold>0&&this.gap>=this.profile.threshold?{...this.cue,StartTime:Math.max(this.cue.StartTime,this.cue.EndTime-(this.profile.lastSeconds??Infinity))}:undefined}
+      Animate(){} SetSettings(profile,time){const before=this.GetDisplayInterval()?.StartTime;this.calls.push([profile,time]);this.profile=profile;return before!==this.GetDisplayInterval()?.StartTime}
+      NeedsFrame(){return false} RequiresContinuous(){return false} Destroy(){}
+    }`,
     'style-stub': '',
   };
   try {
@@ -277,12 +283,19 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     assert.equal(lyricsNode.dataset.effectivePrecision,'word');
     PresentationSettings.saveRendering('NowPlaying', 'Word',{...PresentationSettings.getProfile('NowPlaying').renderingCases.Word,detail:'line'});
     assert.equal(lyricsNode.dataset.effectivePrecision,'line');
-    const projectedWord=harness.visuals.at(-1),beforeInactive=projectedWord.renderChanges;
+    const projectedWord=harness.visuals.at(-1),beforeLineEdit=projectedWord.renderChanges;
     PresentationSettings.saveRendering('NowPlaying','Line',{...PresentationSettings.getRendering('NowPlaying','Line'),glow:true});
-    assert.equal(projectedWord.renderChanges,beforeInactive); // Word source stays Word case when displayed as Line.
+    assert.equal(projectedWord.renderChanges,beforeLineEdit+1);
+    assert.equal(projectedWord.rendering.glow,true);
+    const wordProfile=PresentationSettings.getRendering('NowPlaying','Word');
+    PresentationSettings.saveRendering('NowPlaying','Line',{...PresentationSettings.getRendering('NowPlaying','Line'),animationEasing:'ease-in',animationResponse:'direct'});
+    assert.equal(projectedWord.renderChanges,beforeLineEdit+2);
+    assert.deepEqual(projectedWord.rendering,{...PresentationSettings.getRendering('NowPlaying','Line'),detail:'line'});
+    PresentationSettings.saveRendering('NowPlaying','Word',{...wordProfile,animationEasing:'ease-out'});
+    assert.equal(projectedWord.renderChanges,beforeLineEdit+2);
     const cue=harness.cues.at(-1),cueBefore=cue.calls.length,scroller=harness.scrollers.at(-1),forcedBefore=scroller.forced.length;
     PresentationSettings.saveCues('NowPlaying',{threshold:0,motion:false});
-    assert.equal(cue.calls.length,cueBefore+1);assert.equal(projectedWord.renderChanges,beforeInactive);
+    assert.equal(cue.calls.length,cueBefore+1);assert.equal(projectedWord.renderChanges,beforeLineEdit+2);
     assert.equal(scroller.forced.length,forcedBefore);assert.equal(scroller.cueRefreshes,1);
     const otherCueBefore=cue.calls.length;PresentationSettings.saveCues('FullLyrics',{threshold:100,motion:true});assert.equal(cue.calls.length,otherCueBefore);
 
@@ -398,6 +411,11 @@ test('actual Classic line animator keeps zero-duration states and CSS values fin
   class Element {
     classes = new Set();
     properties = new Map();
+    attributes = new Map();
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
+    hasAttribute(name) { return this.attributes.has(name); }
+    setAttribute(name,value) { this.attributes.set(name,value); }
+    removeAttribute(name) { this.attributes.delete(name); }
     classList = { add: value => this.classes.add(value), remove: value => this.classes.delete(value), contains: value => this.classes.has(value) };
     style = { getPropertyValue: key => this.properties.get(key)||"", setProperty: (key, value) => this.properties.set(key, value) };
     appendChild() {} addEventListener() {} removeEventListener() {} remove() {}

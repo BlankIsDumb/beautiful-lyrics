@@ -628,6 +628,16 @@
   &.Background { --annotation-state-opacity: var(--background-active-opacity); }
 }
 
+// A completed vocal keeps its active contrast during a compensated gap while
+// remaining Sung for timing, movement, glow, following and effect scheduling.
+.Lyrics .RichSyncHold .Vocals.Sung {
+  --text-blur: 0px !important;
+  &.Lead:not(.AnnotationText) { opacity: var(--vocal-active-opacity) !important; }
+  &.Background:not(.AnnotationText) { opacity: var(--background-active-opacity) !important; }
+  &.AnnotationText.Lead { --annotation-state-opacity: var(--vocal-active-opacity); }
+  &.AnnotationText.Background { --annotation-state-opacity: var(--background-active-opacity); }
+}
+
 // Our cached source anchor owns reflow preservation; native browser anchoring
 // would otherwise apply a second correction before the owned layout batch.
 .LyricsScrollContainer .simplebar-content-wrapper { overflow-anchor: none; }

@@ -8,6 +8,8 @@ import {
   GetSpicyToken,
   GetBehaviorSettings,
   SaveBehaviorSettings,
+  GetRichSyncSettings,
+  SaveRichSyncSetting,
   SetSpicyToken,
   Providers,
 } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts";
@@ -135,6 +137,15 @@ export function OpenProviderSettings() {
     const input = toggle(behaviorSection, name, "BL-Provider-" + name, GetBehaviorSettings().providers[name], "Available lyric source. Changes reload the current source choices.", "On");
     checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
   }
+  heading(behaviorSection, "Rich sync compensation", "h4");
+  numeric(behaviorSection, "Hold highlight across gaps (s)", "BL-RichSyncHoldSeconds",
+    () => GetRichSyncSettings().holdSeconds, value => SaveRichSyncSetting("holdSeconds", value),
+    "Musixmatch only. Holds the completed line’s highlight across shorter gaps. Gaps at or above the limit use normal dimming and dots. Set to 0 to disable.",
+    "", 0, undefined, "any");
+  numeric(behaviorSection, "Minimum timed segments per line", "BL-RichSyncMinimumSegments",
+    () => GetRichSyncSettings().minimumSegmentsPerLine, value => SaveRichSyncSetting("minimumSegmentsPerLine", value),
+    "Musixmatch only. Uses Line sync when the average number of distinct timed starts per lyric line falls below this value. Set to 0 to disable.",
+    "", 0, undefined, "any");
   const lyricsSection = document.createElement("section"); content.append(lyricsSection); heading(lyricsSection, "Lyrics");
   const family=document.createElement("input");family.id="JEL-FontFamily";family.type="text";family.value=PresentationSettings.getFontFamily();family.placeholder="Spotify / theme font";family.disabled=presentationReadOnly;
   row(lyricsSection,"Lyric font family",family,"One local CSS font-family list for both viewers, including readings. Empty follows Spotify and your theme (including Comfy). No font downloads; a family must already be available.","Spotify / theme font");
@@ -570,14 +581,16 @@ export function SetupProviderControls(controls: HTMLElement, maid: Maid) {
     for (const lyrics of SongLyricChoices) {
       const option = document.createElement("option");
       option.value = lyrics.Source!.Provider;
+      const selected = option.value === SongLyrics?.Source?.Provider;
+      const effective = selected ? SongLyrics! : lyrics;
       option.textContent =
         option.value +
-        (lyrics.Source?.HasWordSync
+        (effective.Source?.HasWordSync
           ? " (word sync)"
-          : lyrics.Type === "Static"
+          : effective.Type === "Static"
             ? " (plain text)"
             : "");
-      option.selected = option.value === SongLyrics?.Source?.Provider;
+      option.selected = selected;
       select.append(option);
     }
     select.disabled = !SongLyricChoices.length;

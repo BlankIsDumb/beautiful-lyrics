@@ -1,6 +1,6 @@
 # Just Enough Lyrics local build notes
 
-Current local build is **5.1.0-local.29**. See [VALIDATION.md](VALIDATION.md) for
+Current local build is **5.1.0-local.31**. See [VALIDATION.md](VALIDATION.md) for
 build and installation evidence. Pass 6 typography, context and
 following controls live under Lyrics → Now Playing / Full Lyrics. Fullscreen/cinema and the ordinary lyrics page share Full Lyrics typography,
 context and scrolling. Horizontal spacing alone has three independent surfaces.

@@ -73,6 +73,7 @@ export type Lyrics = (StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyri
 	Attribution?: { Source: string; People: { Name: string; URL?: string }[] };
 	Source?: {
 		Provider: string; TrackId: string; UniqueTimings: number; CacheKey: string; HasWordSync?: boolean;
+		RichSyncHoldSeconds?: number;
 		Candidates: { Provider: string; TrackId: string; UniqueTimings: number; Type?: "Syllable" | "Line" | "Static" }[];
 		Warnings: string[];
 	};

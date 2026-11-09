@@ -10,7 +10,7 @@ import { type TransformedLyrics } from "@Spices/Spicetify/Services/Player/mod.ts
 import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
 
-import { GetLyricDocument, ProjectClassic, DeriveCueCandidates } from "./LyricDocument.ts"
+import { GetLyricDocument, ProjectClassic, DeriveCueCandidates, HoldsRichSyncGap } from "./LyricDocument.ts"
 import { TransportTime, type TimelineInterval } from "./LyricTimeline.ts"
 import { ResolveDetail } from "./RenderProjection.ts"
 import { PlayerLyricClock, type LyricClock } from "./LyricClock.ts"
@@ -49,7 +49,10 @@ export default class LyricsRenderer implements Giveable {
         // demand now owns alternate text instead of preconverted source fields.
         const lyricDocument = GetLyricDocument(sourceLyrics)
         const availableLanguages = new Set(lyricDocument.groups.flatMap(group => group.voices.map(voice => VoiceLanguage(voice, sourceLyrics.Language))))
-        const candidates = DeriveCueCandidates(lyricDocument)
+        const allGaps = DeriveCueCandidates(lyricDocument)
+        const holdLimit = lyricDocument.source?.RichSyncHoldSeconds ?? 0
+        const heldGaps = holdLimit > 0 ? allGaps.filter(gap => HoldsRichSyncGap(gap, holdLimit)) : []
+        const candidates = heldGaps.length ? allGaps.filter(gap => !HoldsRichSyncGap(gap, holdLimit)) : allGaps
         const gaps = new Map(candidates.map(cue => [cue.start, cue.gapSeconds]))
         const transformedLyrics = { ...ProjectClassic(lyricDocument, candidates), NaturalAlignment: sourceLyrics.NaturalAlignment }
         const bindings = new Map<string, { voice: (typeof lyricDocument.groups)[number]["voices"][number]; base: readonly DisplayRun[]; current: readonly DisplayRun[]; vocal: VocalController }>()
@@ -221,9 +224,30 @@ export default class LyricsRenderer implements Giveable {
             }
             return intervals
         }
+        let heldGroup: HTMLElement | undefined
+        const updateHold = (time: number) => {
+            let next: HTMLElement | undefined
+            if (!activeLogical.length) {
+                // Called only at existing timeline boundaries and seeks. The
+                // hold occupies real silence, so it needs no scheduled effect.
+                let lo = 0, hi = heldGaps.length
+                while (lo < hi) {
+                    const mid = (lo + hi) >>> 1
+                    if (heldGaps[mid].start < time) lo = mid + 1
+                    else hi = mid
+                }
+                const gap = heldGaps[lo - 1]
+                if (gap && time < gap.nextVocalStart) next = sourceSlots[context.getNavigationSpan()[1]]?.element
+            }
+            if (heldGroup === next) return
+            heldGroup?.classList.remove("RichSyncHold")
+            next?.classList.add("RichSyncHold")
+            heldGroup = next
+        }
         const scheduler = new RenderScheduler(visuals, timelineIntervals(), owners, counters, (active,time,seek) => {
             activeLogical=[...new Set([...active].map(id=>logicalOwners.get(id)).filter((id):id is number=>id!==undefined))]
             contextTime=time;contextSeek=seek;updateContext()
+            if (heldGaps.length) updateHold(time)
         })
         let clickTarget: number | undefined
         let clickPendingAt = 0

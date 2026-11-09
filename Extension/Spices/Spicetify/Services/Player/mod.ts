@@ -23,7 +23,8 @@ import {
 } from "./LyricUtilities.ts"
 
 import { FetchLyricCandidates } from "./LyricsProviders.ts"
-import { OnProviderSettingsChanged, OnBehaviorSettingsChanged, GetBehaviorSettings } from "./ProviderSettings.ts"
+import { OnProviderSettingsChanged, OnBehaviorSettingsChanged, GetBehaviorSettings, GetRichSyncSettings, OnRichSyncSettingsChanged } from "./ProviderSettings.ts"
+import { SelectCompensatedLyrics } from "../../../../Source/Modules/RichSyncCompensation.ts"
 import { lyricsRequired } from "./LyricDemand.mjs"
 import { createLyricRequestGate } from "./LyricRequestGate.mjs"
 
@@ -348,20 +349,30 @@ const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let SongLyricsError: string | undefined
 export let SongLyricChoices: TransformedLyrics[] = []
+let manualProvider: string | undefined
 let lyricLoadGeneration = 0
 let lyricsDeferred = false
 let lyricsPending = false
 let latestDetailsReady: Promise<void> | void
 const IsLyricsRequired = () => lyricsRequired(GetBehaviorSettings(), SpotifyHistory?.location.pathname || '')
+const GetSelectedLyrics = () => SelectCompensatedLyrics(SongLyricChoices, GetRichSyncSettings(), manualProvider)
 export function SelectLyricsProvider(provider: string) {
-  const choice = SongLyricChoices.find(l=>l.Source?.Provider===provider);
-  if (!choice) return;
-  SongLyrics = choice;
+  if (!SongLyricChoices.some(l=>l.Source?.Provider===provider)) return;
+  manualProvider = provider;
+  SongLyrics = GetSelectedLyrics();
   SongLyricsError = undefined;
   SongLyricsLoadedSignal.Fire();
 }
 export function ReloadLyrics() { LoadSongLyrics(latestDetailsReady); }
 PlayerMaid.Give(OnProviderSettingsChanged(ReloadLyrics))
+PlayerMaid.Give(OnRichSyncSettingsChanged(() => {
+  // Re-select from prepared candidates; a presentation preference does not
+  // invalidate provider caches or restart the track's lookup.
+  const next = GetSelectedLyrics();
+  if (SongLyrics === next) return;
+  SongLyrics = next;
+  SongLyricsLoadedSignal.Fire();
+}))
 export let HaveSongLyricsLoaded: boolean = false
 const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
 	latestDetailsReady = detailsReady;
@@ -369,6 +380,7 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
 	lyricsPending = false;
 	lyricsDeferred = false;
 	SongLyricChoices = [];
+	manualProvider = undefined;
 	// Register at song-change time, before metadata IO can reorder the burst.
 	// Local/DJ transitions also cancel any older pending provider dispatch.
 	const dispatchReady = lyricRequestGate.change()
@@ -429,18 +441,18 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
         lyrics.Source!.Candidates = summaries;
         lyrics.Source!.Warnings = [...lyrics.Source!.Warnings,...preparationWarnings];
       }
-      SongLyricChoices = usable;
-      return usable[0];
+      return usable;
     })
 		.then(
-			transformedLyrics => {
+			usable => {
 				// Make sure we still have the same song active
 				if (Song !== songAtUpdate || generation !== lyricLoadGeneration || PlayerMaid.IsDestroyed()) {
 					return
 				}
 
 				// Update our lyrics
-				SongLyrics = transformedLyrics, HaveSongLyricsLoaded = true
+				SongLyricChoices = usable ?? []
+				SongLyrics = GetSelectedLyrics(), HaveSongLyricsLoaded = true
 				lyricsPending = false
 				SongLyricsLoadedSignal.Fire()
 			}

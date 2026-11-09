@@ -1,5 +1,44 @@
 # Validation
 
+## Disabled cue fixture and local install — 5.1.0-local.31, 2026-11-06
+
+The Chromium fixture now checks the cue's browser rectangle, current cached
+top/bottom bounds and actual lyric flow. It still verifies that disabling the
+cue leaves manual-scroll grace intact. The full serial suite passed 140 of 140.
+The dictionary audit made no change to the build or integrity checks.
+
+All four bundle aliases passed syntax and dictionary checks. Their SHA-256
+matches all three installed copies.
+`449E0FC1D79BCF2BB44D61C37CF67EB63C127970668B6B70A93A011F8AF2A622`
+
+Spotify mounted local.31 with Cosmos, Platform, Player and a track with lyrics
+loaded before and after a normal relaunch. The loopback DevTools listener on
+127.0.0.1:8088 remained active after relaunch. The Spicetify configuration,
+theme and unrelated extension hashes matched their pre-install values. The
+local.28 rollback copies were backed up before installation. Playback and
+visual acceptance for the card edges, Line profile and rich-sync changes
+remain separate.
+
+## Musixmatch rich sync compensation — 5.1.0-local.30, 2026-11-06
+
+The baseline was committed as `4f8dcaa` before implementation. The current
+candidate is built and tested in isolation. Native Spotify playback acceptance
+is pending.
+
+The audited timing data resolves Afterlife to Word with a short-gap hold and
+脳裏上のクラッカー to Line. On this machine, the first selection took 5.0 ms and
+1.1 ms respectively in Node with placeholder glyphs. A repeat selection from
+the same prepared data averaged under 0.01 ms for both. Holds reuse existing
+timeline events and the original source times.
+
+Tests exercise equal-resolution Auto ties, manual selection, independent zero
+values, exact cutoffs, overlapping backing vocals, effective Line profile,
+visible hold, cue priority, and seeks. The full suite passed 139 of 140 checks.
+The same disabled-cue height assertion that failed before this change remains
+the sole failure. All four bundle aliases passed syntax
+and dictionary checks and match SHA-256
+`9513EF965568BCA1E1BF5570962D305940890C37B433674CF113CE29E7396C93`.
+
 ## Whole-line display profile — 5.1.0-local.29, 2026-11-06
 
 The isolated Chromium renderer used conflicting Word and Line profiles on the

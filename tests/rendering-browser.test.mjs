@@ -129,11 +129,19 @@ test('real controllers retain cases/lifetime; universal cue eligibility removes 
         for(const callback of frames.values())callback();frames.clear();
         check(scroller.AnnotationFontGeneration===fontGeneration+1&&scrollWrites===fontMoves&&scroller.AutoScrollBlocked&&scroller.PreserveManualGrace,'font fit arrival preserves manual grace after physical scrolling stops');
         scroller.SetBlurEnabled(false);
+        const cueBoxBefore=cueRoot.getBoundingClientRect().height, cueStyle=getComputedStyle(cueRoot);
+        const cueFlowBefore=cueBoxBefore+parseFloat(cueStyle.marginTop)+parseFloat(cueStyle.marginBottom);
+        const lyricHeightBefore=parseFloat(lyrics.style.height);
+        check(scroller.GeometryValid&&cueBoxBefore>0,'enabled cue occupies space before measuring its removal');
         cue.SetSettings({threshold:0,motion:true},.5);const afterDisable={updates:counters.springUpdates,writes:counters.effectWrites,allocations:counters.springsAllocated};scroller.RefreshCueLayout();
         cue.Animate(.6,.1);check(!cue.RequiresContinuous()&&!cue.NeedsFrame()&&!cueRoot.querySelector('.InterludeDot')&&counters.springUpdates===afterDisable.updates&&counters.effectWrites===afterDisable.writes&&counters.springsAllocated===afterDisable.allocations,'zero threshold destroys animated cue state and further effect work');
         await Promise.resolve(); // Flush ActivityChanged's queued active reconciliation.
         for(const callback of frames.values())callback();frames.clear();
-        check(cueRoot.hidden&&getComputedStyle(cueRoot).display==='none'&&scroller.GroupDimensions[1].Height===0,'disabled cue contributes zero height including CSS margins');
+        const cueBounds=scroller.GroupDimensions[1];
+        check(scroller.GeometryValid&&cueRoot.hidden&&getComputedStyle(cueRoot).display==='none'&&cueRoot.getBoundingClientRect().height===0&&cueBounds.Top===cueBounds.Bottom,'disabled cue has no browser box or measured height');
+        // The scroller sums integer offsetHeight values. Allow the subpixel
+        // difference from the browser rect while checking both margins vanish.
+        check(Math.abs(lyricHeightBefore-parseFloat(lyrics.style.height)-cueFlowBefore)<1,'disabled cue removes its box and both margins from lyric flow');
         check(scrollWrites===0&&scroller.AutoScrollBlocked,'hiding active cue preserves manual-scroll grace after physical scroll stops');
         controllers.forEach(v=>v.Animate(-1,0,true)); // Existing timeout lands in silence.
         timers.delete(grace[0]);grace[1].callback();

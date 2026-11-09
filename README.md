@@ -151,6 +151,13 @@ viewer. Zero disables dots; positive values mean minimum real silence across all
 voices (100 means 100 seconds). Very short eligible gaps use static dots. Minimal
 is a text preset; it does not turn off independently enabled dots or backgrounds.
 
+**Behavior → Rich sync compensation** applies to Musixmatch rich sync. By
+default, internal gaps shorter than 5 seconds hold the completed lyric's
+highlight instead of showing dots. Below 2 distinct timed starts per lyric line
+on average, Musixmatch uses the viewer's Line sync profile. Set either field to
+0 to disable it. Auto prefers an equally detailed Word-sync alternative when
+Musixmatch needs a hold. A manual Musixmatch selection stays selected.
+
 Each view has one **Conversions** group: enable a language, choose its conversion,
 then choose **Replace** or **Above**. Japanese supports **Romaji**, orthographic
 **Kana**, and **Furigana** attached above kanji. Furigana preserves the original;

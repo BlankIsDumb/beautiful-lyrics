@@ -148,6 +148,18 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       }
       const shared=form.querySelector('#JEL-Shared-TimingOffset'),full=form.querySelector('#JEL-FullLyrics-TimingOffset');
       check(shared.closest('section').querySelector('h3').textContent==='Behavior','shared delay under Behavior');
+      const hold=form.querySelector('#BL-RichSyncHoldSeconds'),minimum=form.querySelector('#BL-RichSyncMinimumSegments');
+      check(hold.value==='5'&&minimum.value==='2'&&hold.closest('section')===shared.closest('section'),'rich-sync fields default to 5 and 2 under Behavior');
+      check([...hold.closest('section').querySelectorAll('h4')].some(h=>h.textContent==='Rich sync compensation'),'compensation uses a subheader');
+      for(const field of [hold,minimum]) {
+        const help=field.previousElementSibling;
+        help.dispatchEvent(new MouseEvent('mouseenter'));
+        const text=document.querySelector('.BL-SettingsHelpPopup')?.textContent;
+        check(text?.includes('Musixmatch only')&&text.includes('0 to disable')&&!/\\byou\\b/i.test(text),'hover help explains the zero gate without second person');
+        help.dispatchEvent(new MouseEvent('mouseleave'));
+        type(field,'0');check(field.value==='0','zero is accepted by both fields');
+      }
+      check(sourceEvents===0&&demandEvents===0,'compensation settings do not publish source or demand reload events');
       const wordPreset=form.querySelector('#JEL-FullLyrics-Word-TextPreset'),wordGlow=form.querySelector('#JEL-FullLyrics-Word-glow');
       form.querySelector('#JEL-FullLyrics-Word-Settings').open=true;
       const help=wordPreset.previousElementSibling,label=wordPreset.labels[0];

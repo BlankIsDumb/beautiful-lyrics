@@ -2,6 +2,7 @@
 const key = "BeautifulLyricsLocal/SpicyToken";
 const listeners = new Set<() => void>();
 const behaviorListeners = new Set<() => void>();
+const richSyncListeners = new Set<() => void>();
 export const Providers = ["Musixmatch", "AMLL", "LRCLIB", "Spotify", "Spicy"] as const;
 export type BehaviorSettings = {
   fetchMode: "change" | "required";
@@ -9,6 +10,25 @@ export type BehaviorSettings = {
   providers: Record<(typeof Providers)[number], boolean>;
 };
 const behaviorKey = "BeautifulLyricsLocal/Behavior";
+const richSyncKey = "BeautifulLyricsLocal/RichSyncCompensation";
+export type RichSyncSettings = { holdSeconds: number; minimumSegmentsPerLine: number };
+const nonnegative = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+export function GetRichSyncSettings(): RichSyncSettings {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(richSyncKey) || "{}"); } catch { /* Keep defaults for an invalid saved record. */ }
+  return { holdSeconds: nonnegative(saved?.holdSeconds, 5), minimumSegmentsPerLine: nonnegative(saved?.minimumSegmentsPerLine, 2) };
+}
+export function SaveRichSyncSetting(key: keyof RichSyncSettings, value: number) {
+  const current = GetRichSyncSettings();
+  const next = nonnegative(value, current[key]);
+  if (next === current[key]) return;
+  localStorage.setItem(richSyncKey, JSON.stringify({ ...current, [key]: next }));
+  for (const listener of richSyncListeners) listener();
+}
+export function OnRichSyncSettingsChanged(listener: () => void) {
+  richSyncListeners.add(listener);
+  return () => { richSyncListeners.delete(listener); };
+}
 export function GetBehaviorSettings(): BehaviorSettings {
   let saved: any;
   try {

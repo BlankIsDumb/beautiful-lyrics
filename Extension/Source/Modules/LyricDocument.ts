@@ -74,7 +74,12 @@ export function NormalizeLyrics(lyrics: Lyrics): LyricDocument {
   });
 }
 
-export type LyricCue = Readonly<Interval & { id: string; gapSeconds: number }>;
+export type LyricCue = Readonly<Interval & { id: string; gapSeconds: number; nextVocalStart: number; internal: boolean }>;
+export function HoldsRichSyncGap(cue: LyricCue, limit: number) {
+  // Musixmatch offsets are in seconds. Compare at millisecond precision so an
+  // exact cutoff is not accidentally admitted by floating-point subtraction.
+  return cue.internal && Math.round(cue.gapSeconds * 1000) < limit * 1000;
+}
 export function CueDisplayStart(start: number, end: number, lastSeconds: number | null) {
   return lastSeconds == null ? start : Math.max(start, end - lastSeconds);
 }
@@ -86,15 +91,17 @@ export function DeriveCueCandidates(document: LyricDocument, endLead = 0.25): re
     .sort((a, b) => a.start - b.start || a.end - b.end);
   const cues: LyricCue[] = [];
   let end = 0;
+  let internal = false;
   for (const interval of intervals) {
     const gapSeconds = interval.start - end;
     if (gapSeconds > 0) {
       // Keep the Classic .25s lead for ordinary gaps. A small positive gap still
       // gets positive display time instead of a reversed/zero-duration cue.
       cues.push(Object.freeze({ id: `${document.id}/cue${cues.length}`, start: end,
-        end: interval.start - Math.min(endLead, gapSeconds / 2), gapSeconds }));
+        end: interval.start - Math.min(endLead, gapSeconds / 2), gapSeconds, nextVocalStart: interval.start, internal }));
     }
     end = Math.max(end, interval.end);
+    internal = true;
   }
   // Preserve Classic intro/internal gaps, without adding trailing/outro cues.
   return Object.freeze(cues);

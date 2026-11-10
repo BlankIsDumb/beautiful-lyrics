@@ -1,7 +1,7 @@
 {
   "name": "just-enough-lyrics",
   "private": true,
-  "version": "5.1.0-local.31",
+  "version": "5.1.0-local.32",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",

@@ -1,5 +1,24 @@
 # Validation
 
+## Read-only playback clock — 5.1.0-local.32, 2026-11-09
+
+All 142 tests passed, including the paused handoff and Connect snapshot fixtures.
+The four production bundles passed syntax and dictionary checks. They match
+the three Windows install copies at SHA-256
+`52EC787AE1E4FC85769C3A37DC68F0849CAD619A2DC5477F42D21E00DB60C6CD`.
+
+The Windows client was traced with the MacBook as a real Connect output. Both
+builds were tested through PC playback, seeks, pause/resume and handoffs in both
+directions. The local.31 clock sent eight extra Resume commands. Local.32 sent
+zero and still used the native position read on the PC. Its clock matched the
+playing and paused remote seeks 10 ms and 12 ms after their Spotify state
+updates, respectively, and stayed still through the paused interval.
+
+A separate local.32 trace verified an actual MacBook track change and replayed
+a same-track songchange while paused. The clock followed both with zero
+playback writes. The original track, queue order, MacBook output, pause state
+and position were restored. The trace used temporary DevTools instrumentation.
+
 ## Disabled cue fixture and local install — 5.1.0-local.31, 2026-11-06
 
 The Chromium fixture now checks the cue's browser rectangle, current cached

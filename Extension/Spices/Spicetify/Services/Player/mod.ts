@@ -659,11 +659,6 @@ export const PlayerReady = OnSpotifyReady.then(
 					// Trigger an update and reflect our new state
 					IsPlaying = !isPaused
 					IsPlayingChangedSignal.Fire()
-
-					// If we pause then stop our automatic-sync since we are guaranteed to be synced on play
-					if (IsPlaying === false) {
-						PlayerMaid.Clean("AutomaticSync")
-					}
 				}
 			}
 			Update()
@@ -677,64 +672,30 @@ export const PlayerReady = OnSpotifyReady.then(
 			type SyncedPostiion = ({ StartedSyncAt?: number; Position: number; })
 			let syncedPosition: (SyncedPostiion | undefined)
 
-			const syncTimings = [0.05, 0.1, 0.15, 0.75]
-			let canSyncNonLocalTimestamp = (IsPlaying ? syncTimings.length : 0)
-			SongChangedSignal.Connect(() => canSyncNonLocalTimestamp = syncTimings.length)
-			IsPlayingChangedSignal.Connect(() => canSyncNonLocalTimestamp = (IsPlaying ? syncTimings.length : 0))
-
-			const RequestPositionSync = () => {
+			const RequestPositionSync = async () => {
 				const startedAt = performance.now()
-				const isLocallyPlaying = SpotifyPlatform.PlaybackAPI._isLocal
-				return (
-					/*
-						IsLocal determines whether or not we are playing on the current device
-						OR if we are playing on a different device (device switching).
-
-						For local playback, we can use the Clients C++ Transport to get the current position.
-						Otherwise, we have to request for a timestamp resync to get the current position.
-					*/
-					isLocallyPlaying
-					? (
-						(SpotifyPlatform.PlayerAPI._contextPlayer.getPositionState({}) as Promise<{position: bigint}>)
-						.then(({ position }) => ({ StartedSyncAt: startedAt, Position: Number(position) }))
-					)
-					: (
-						(
-							(canSyncNonLocalTimestamp > 0) ? SpotifyPlatform.PlayerAPI._contextPlayer.resume({})
-							: Promise.resolve()
-						)
-						.then(
-							() => {
-								canSyncNonLocalTimestamp = Math.max(0, (canSyncNonLocalTimestamp - 1))
-								return (
-									IsPlaying ? {
-										StartedSyncAt: startedAt,
-										Position: (
-											SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp
-											+ (Date.now() - SpotifyPlatform.PlayerAPI._state.timestamp)
-										)
-									}
-									: { Position: SpotifyPlatform.PlayerAPI._state.positionAsOfTimestamp }
-								)
+				if (SpotifyPlatform.PlaybackAPI._isLocal) {
+					const { position } = await (SpotifyPlatform.PlayerAPI._contextPlayer.getPositionState({}) as Promise<{position: bigint}>)
+					syncedPosition = { StartedSyncAt: startedAt, Position: Number(position) }
+				} else {
+					// Connect updates this snapshot through its state stream. The local
+					// device flag is also false during handoff, so reading the clock
+					// here must never send a playback command.
+					const state = SpotifyPlatform.PlayerAPI._state
+					syncedPosition = undefined
+					if (state && Number.isFinite(state.positionAsOfTimestamp)) {
+						if (!IsPlaying) {
+							syncedPosition = { Position: state.positionAsOfTimestamp }
+						} else if (Number.isFinite(state.timestamp) && state.timestamp > 0) {
+							syncedPosition = {
+								StartedSyncAt: startedAt,
+								Position: state.positionAsOfTimestamp + (Date.now() - state.timestamp)
 							}
-						)
-					)
-				)
-				.then((position: SyncedPostiion) => syncedPosition = position )
-				.then(
-					() => PlayerMaid.Give(
-						Timeout(
-							(
-								isLocallyPlaying ? (1 / 30)
-								: (
-									(canSyncNonLocalTimestamp === 0) ? (1 / 30)
-									: syncTimings[syncTimings.length - canSyncNonLocalTimestamp]
-								)
-							), RequestPositionSync
-						),
-						"TimestampPositionSync"
-					)
-				)
+						}
+					}
+				}
+
+				PlayerMaid.Give(Timeout(1 / 30, RequestPositionSync), "TimestampPositionSync")
 			}
 
 			// Handle frame updating

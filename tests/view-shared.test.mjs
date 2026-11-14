@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { build } from 'esbuild';
 
-test('real shared view module initializes its artwork signal and owns subscriptions', async () => {
+test('importing Shared allocates no artwork or GlobalMaid subscriptions', async () => {
   const built = await build({ stdin: {
     contents: `export * from './Extension/Source/LyricViews/Shared.ts'; export {GlobalMaid} from '@Spices/Spicetify/Services/Session.ts';`,
     resolveDir: process.cwd(),
@@ -24,18 +24,14 @@ test('real shared view module initializes its artwork signal and owns subscripti
     }));
   } }] });
   const previous = globalThis.Image;
-  globalThis.Image = class { async decode() { throw new Error('fixture image unavailable'); } };
+  let images = 0;
+  globalThis.Image = class { constructor() { images++; } async decode() { throw new Error('fixture image unavailable'); } };
   try {
-    // Execute the real module, including top-level Signal construction. A build
-    // alone cannot catch missing imports referenced as browser globals.
+    // Execute the real module: importing view helpers alone must stay idle.
     const module = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
     assert.equal(module.Store.Items.CardLyricsVisible, false);
-    assert.equal(module.GlobalMaid.items.length, 2);
-    for (const connection of module.GlobalMaid.items) {
-      assert.equal(connection.IsDisconnected(), false);
-      connection.Disconnect();
-      assert.equal(connection.IsDisconnected(), true);
-    }
+    assert.equal(module.GlobalMaid.items.length, 0);
+    assert.equal(images, 0);
   } finally {
     globalThis.Image = previous;
   }

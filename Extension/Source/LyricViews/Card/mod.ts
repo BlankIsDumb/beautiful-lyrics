@@ -12,6 +12,7 @@ import {
 import { SongLyrics } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Our Modules
+import BackgroundController from "../../Modules/Background/BackgroundController.ts"
 import LyricsRenderer from "../../Modules/LyricsRenderer.ts"
 import {
 	CreateElement,
@@ -204,6 +205,9 @@ export default class CardView implements Giveable {
 				)
 			}
 		}
+
+		// Background owns only this card; Off leaves its DOM and classes untouched.
+		this.Maid.Give(new BackgroundController(this.Container, {view:"NowPlaying", surface:"Card"}))
 
 		// Handle our overall state
 		this.ReactToLyricsVisibility()

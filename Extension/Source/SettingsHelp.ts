@@ -1,5 +1,14 @@
 import { Spotify, GlobalMaid } from "@Spices/Spicetify/Services/Session.ts";
 
+export const BackgroundHelp = {
+  mode: "Animated moves the artwork gradient. Static draws only when artwork or dimensions change. Off releases all background resources. Full Lyrics pages share one profile; Now Playing styles only the lyrics card.",
+  motion: "Gradient motion speed: Slow is 0.5 times, Classic is 1 times, Fast is 2 times the original speed. Available only in Animated mode.",
+  brightness: "50–150% in steps of 5, multiplying this surface's original brightness. Applies immediately without redrawing the shader.",
+  paused: "Freeze stops background animation while playback is paused, preserving its position. Animate keeps moving, as the original background did.",
+  fps: "Maximum animation draws per second. Uncapped follows the display refresh rate. Classic background preserves this quality choice.",
+  resolution: "Drawing resolution relative to device pixel ratio: Full, Half or Quarter. Lower values reduce rendering work. Classic background preserves this quality choice.",
+};
+
 let disposeActiveHelp: (() => void) | undefined;
 let nextHelpId = 0;
 GlobalMaid.Give(() => disposeActiveHelp?.());

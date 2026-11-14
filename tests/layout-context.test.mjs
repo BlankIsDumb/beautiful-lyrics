@@ -12,7 +12,7 @@ test('schema11 isolates two layouts/shared family, exact7 recovery, stale legacy
  assert.equal(settings.getLayout('NowPlaying').primaryRatio,1);assert.equal(data.get(key),seed);
  settings.subscribeLayout((...args)=>events.push(['layout',...args]));settings.subscribeFontFamily(()=>events.push(['family']));settings.subscribe(()=>events.push(['conversion']));
  settings.saveLayout('NowPlaying',{...settings.getLayout('NowPlaying'),primaryRatio:1.35,before:1,after:2});
- assert.equal(data.get(key+'/Migration/schema7'),seed);assert.equal(JSON.parse(data.get(key)).version,11);
+ assert.equal(data.get(key+'/Migration/schema7'),seed);assert.equal(JSON.parse(data.get(key)).version,12);
  settings.saveProfile('NowPlaying',old);assert.equal(settings.getLayout('NowPlaying').primaryRatio,1.35);
  assert.equal(settings.getLayout('FullLyrics').primaryRatio,1);
  assert.equal(events.length,1);assert.equal(events[0][0],'layout');
@@ -85,7 +85,7 @@ test('schema1-8 lazy exact migration, backup collision/retry and horizontal prev
   const retryKey=writes.at(-1);failBackup=false;failMain=true;
   assert.throws(()=>store.saveHorizontalSpacing('Fullscreen',-100));assert.equal(store.getHorizontalSpacing('Fullscreen'),0);assert.equal(data.get(key),raw);
   failMain=false;store.saveHorizontalSpacing('Fullscreen',-100);
-  assert.equal(data.get(retryKey),raw);assert.equal(data.get(key+'/Migration/schema'+version),'OLDER RAW');assert.equal(JSON.parse(data.get(key)).version,11);
+  assert.equal(data.get(retryKey),raw);assert.equal(data.get(key+'/Migration/schema'+version),'OLDER RAW');assert.equal(JSON.parse(data.get(key)).version,12);
   assert.equal(store.getHorizontalSpacing('Fullscreen'),-100);assert.equal(store.getHorizontalSpacing('Card'),0);
   preview.dispose();const reopened=CreatePresentationSettings({getItem:k=>data.get(k)??null,setItem(){}});assert.equal(reopened.getHorizontalSpacing('Fullscreen'),-100);
  }

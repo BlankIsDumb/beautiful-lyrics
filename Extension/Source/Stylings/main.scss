@@ -6,9 +6,9 @@ body:has(.SliderBar.Active) {
 // Extension styles must not recolor its cards, buttons, or artwork.
 
 // Improves scroll-bar
-.os-host:has(.BeautifulLyricsBackground),
+.os-host:has(.BeautifulLyricsPage.BeautifulLyricsBackground),
 #lyrics-cinema,
-.Root__main-view:has(.BeautifulLyricsBackground) {
+.Root__main-view:has(.BeautifulLyricsPage.BeautifulLyricsBackground) {
 	.os-scrollbar {
 		padding: 5px;
 
@@ -33,12 +33,13 @@ body:has(.SliderBar.Active) {
 
 	// These are full-screen background specific classes to make the gradient-background work/show properly
 	&.BeautifulLyricsPage &-Container {
-		filter: saturate(2.5) brightness(0.65); // Blur-related
+		filter: saturate(2.5) brightness(calc(0.65 * var(--jel-background-brightness, 1))); // Blur-related
 	}
 
 	// These are right-side card background specific classes to adjust for contrast issues
-	&:is(aside) &-Container {
-		filter: saturate(2) brightness(0.7); // Blur-related
+	&:is(aside) &-Container,
+	&#BeautifulLyrics-CardView > &-Container {
+		filter: saturate(2) brightness(calc(0.7 * var(--jel-background-brightness, 1))); // Blur-related
 	}
 
 	// Gradient Background Container
@@ -52,6 +53,6 @@ body:has(.SliderBar.Active) {
 		overflow: hidden;
 		border-radius: var(--section-border-radius, 8px);
 
-		filter: saturate(1.5) brightness(0.8); // Blur-related
+		filter: saturate(1.5) brightness(calc(0.8 * var(--jel-background-brightness, 1))); // Blur-related
 	}
 }

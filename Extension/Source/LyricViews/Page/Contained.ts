@@ -15,11 +15,12 @@ import { Song, SongChanged } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Our Modules
 import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
-import { CreateElement, ApplyDynamicBackground } from "../Shared.ts"
+import { CreateElement } from "../Shared.ts"
+import BackgroundController from "../../Modules/Background/BackgroundController.ts"
 
 // Templates
 const Container = `
-	<div class="BeautifulLyricsPage Contained">
+	<div class="BeautifulLyricsPage BeautifulLyricsBackground Contained">
 		<div class="Content"></div>
 	</div>
 `
@@ -68,7 +69,7 @@ export default class PageView implements Giveable {
 		SetupProviderControls(header, this.Maid)
 
 		// Apply our dynamic background
-		ApplyDynamicBackground(container, this.Maid)
+		this.Maid.Give(new BackgroundController(container, {view:"FullLyrics", surface:"Contained"}))
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!

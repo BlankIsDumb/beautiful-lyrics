@@ -23,6 +23,69 @@ function memoryStorage(initial = {}) {
 }
 const languages = { Chinese: false, Japanese: true, Korean: false };
 
+test('schema 11 migrates background only, backs up exact raw and isolates notifications', async () => {
+  const storage=memoryStorage(), original=CreatePresentationSettings(storage);
+  original.setRomanized('FullLyrics','Japanese',true);
+  original.saveLayout('FullLyrics',{...original.getLayout('FullLyrics'),anchor:37});
+  const old=JSON.parse(storage.getItem(key)); old.version=11;
+  for(const view of ['NowPlaying','FullLyrics']) delete old.profiles[view].background;
+  const raw=JSON.stringify(old,null,2);storage.setItem(key,raw);
+  const settings=CreatePresentationSettings(storage);
+  assert.equal(settings.getBackground('NowPlaying').mode,'off');
+  assert.equal(settings.getBackground('FullLyrics').fps,'30');
+  assert.equal(storage.getItem(key),raw);
+  const events=[],other=[];
+  for(const name of ['subscribe','subscribeLayout','subscribeRendering','subscribeAnnotations','subscribeCues','subscribeContextAppearance','subscribeFontFamily','subscribeHorizontalSpacing']) settings[name](()=>other.push(name));
+  const providers=await load(providerCode);const stopProvider=providers.OnProviderSettingsChanged(()=>other.push('provider'));
+  const stop=settings.subscribeBackground((view,fields)=>events.push([view,fields]));
+  settings.saveBackground('FullLyrics',{...settings.getBackground('FullLyrics'),mode:'static'});
+  settings.saveBackground('FullLyrics',settings.getBackground('FullLyrics'));
+  assert.deepEqual(events,[['FullLyrics',['mode']]]);assert.deepEqual(other,[]);
+  assert.equal(storage.getItem(key+'/Migration/schema11'),raw);
+  const saved=JSON.parse(storage.getItem(key));assert.equal(saved.version,12);
+  for(const view of ['NowPlaying','FullLyrics']) {delete saved.profiles[view].background;assert.equal(JSON.stringify(saved.profiles[view]),JSON.stringify(old.profiles[view]));}
+  stop();stopProvider();
+  settings.saveBackground('NowPlaying',{...settings.getBackground('NowPlaying'),mode:'animated'});
+  assert.equal(events.length,1);
+});
+
+test('lyric presentation saves never notify background listeners in either view', () => {
+  const settings=CreatePresentationSettings(memoryStorage()),backgroundEvents=[];
+  const stop=settings.subscribeBackground((view,fields)=>backgroundEvents.push([view,fields]));
+  for(const view of ['NowPlaying','FullLyrics']) {
+    const background=settings.getBackground(view),events=[];
+    const stops=[settings.subscribeLayout(()=>events.push('layout')),settings.subscribeRendering(()=>events.push('rendering')),
+      settings.subscribeCues(()=>events.push('cue')),settings.subscribeAnnotations(()=>events.push('annotation')),
+      settings.subscribe(()=>events.push('conversion')),settings.subscribeContextAppearance(()=>events.push('context'))];
+    settings.saveLayout(view,{...settings.getLayout(view),anchor:37});
+    settings.saveRendering(view,'Word',{...settings.getRendering(view,'Word'),glow:false});
+    settings.saveCues(view,{...settings.getCues(view),threshold:12});
+    settings.saveAnnotations(view,{...settings.getAnnotations(view),rubySize:.8});
+    settings.saveConversions(view,{...settings.getConversions(view),enabled:true});
+    settings.saveContextAppearance(view,{...settings.getContextAppearance(view),mode:'muted'});
+    // Confirm real changes reached their own channels; no-op saves would make
+    // the negative notification assertion pass without exercising isolation.
+    assert.deepEqual(events,['layout','rendering','cue','annotation','conversion','context']);
+    assert.deepEqual(backgroundEvents,[]);
+    assert.deepEqual(settings.getBackground(view),background);
+    for(const dispose of stops)dispose();
+  }
+  stop();
+});
+
+test('background persistence failure, stale legacy edits and future protection preserve live state', () => {
+  const storage=memoryStorage(), settings=CreatePresentationSettings(storage), stale=settings.getProfile('FullLyrics');
+  settings.saveBackground('FullLyrics',{...settings.getBackground('FullLyrics'),brightness:125});
+  settings.saveProfile('FullLyrics',stale);assert.equal(settings.getBackground('FullLyrics').brightness,125);
+  let notified=0;
+  const failed=CreatePresentationSettings({getItem:()=>null,setItem(){throw Error('quota')}});
+  failed.subscribeBackground(()=>notified++);
+  assert.throws(()=>failed.saveBackground('FullLyrics',{...failed.getBackground('FullLyrics'),mode:'off'}),/quota/);
+  assert.equal(failed.getBackground('FullLyrics').mode,'animated');assert.equal(notified,0);
+  const future=CreatePresentationSettings(memoryStorage({[key]:JSON.stringify({version:99})}));
+  assert.throws(()=>future.saveBackground('NowPlaying',future.getBackground('NowPlaying')),/newer version/);
+});
+
 test('shared legacy languages seed independent profiles without rewriting rollback state', () => {
   const old = JSON.stringify({ Version: 1, Items: { CardLyricsVisible: true, RomanizedLanguages: languages } });
   const storage = memoryStorage({ [legacyKey]: old });
@@ -102,7 +165,7 @@ test('master Off remembers choices, persists independently and notifies only eff
   assert.deepEqual(events.at(-1), ['NowPlaying', []]);
   const reopened = CreatePresentationSettings(storage);
   assert.equal(reopened.getProfile('NowPlaying').romanizationEnabled, false);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 11);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 12);
   draft.romanizationEnabled = true;
   reopened.saveProfile('NowPlaying', draft);
   assert.equal(reopened.isRomanized('NowPlaying', 'Japanese'), true);
@@ -228,7 +291,7 @@ test('schema5 defaults and v4 migration split four independent text cases withou
   const draft=settings.getProfile('NowPlaying');settings.saveProfile('NowPlaying',{...draft,japaneseForm:'kana'});draft.renderingCases.Word.glow=true;
   assert.equal(settings.getRendering('NowPlaying','Word').glow,false); // Detached save boundary.
   assert.deepEqual(settings.getCues('NowPlaying'),{threshold:100,motion:false,lastSeconds:null});
-  assert.equal(JSON.parse(storage.getItem(key)).version,11);
+  assert.equal(JSON.parse(storage.getItem(key)).version,12);
 });
 
 test('schema5 partial/corrupt Line maps use muted defaults and edited v4 presets/detail survive both cases', () => {
@@ -263,7 +326,7 @@ test('schema6 annotations preserve primary choices and isolate views, cases, cha
   settings.saveAnnotations('NowPlaying',{...next,secondarySize:NaN,rubySize:10,gap:-1,spacing:Infinity,opacity:2,cases:{Word:{inherit:false},Line:{inherit:false}}});
   const valid=settings.getAnnotations('NowPlaying');assert.equal(valid.secondarySize,.6);assert.equal(valid.rubySize,.5);assert.equal(valid.gap,.15);assert.equal(valid.opacity,.8);
   assert.equal(valid.cases.Line.effects.scale,false);assert.equal(valid.cases.Line.effects.glow,false);
-  assert.equal(JSON.parse(storage.getItem(key)).version,11);
+  assert.equal(JSON.parse(storage.getItem(key)).version,12);
 });
 
 
@@ -278,7 +341,7 @@ test('schema7 migration is per-language, lazy, recoverable and preserves indepen
   assert.equal(storage.getItem(key),raw);assert.equal(storage.getItem(key+'/Migration/schema6'),null);
   settings.saveConversions('NowPlaying',now);assert.equal(storage.getItem(key),raw,'no-op is not a migration write');
   now.languages.Japanese.placement='above';settings.saveConversions('NowPlaying',now);
-  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,11);
+  assert.equal(storage.getItem(key+'/Migration/schema6'),raw);assert.equal(JSON.parse(storage.getItem(key)).version,12);
   assert.equal(settings.getCues('NowPlaying').threshold,9);assert.equal(settings.getAnnotations('NowPlaying').rubySize,.8);assert.equal(settings.getRendering('NowPlaying','Line').highlight,'off');
   const reopened=CreatePresentationSettings(storage);reopened.setRomanized('NowPlaying','Japanese',false);reopened.setRomanized('NowPlaying','Japanese',true);
   assert.equal(reopened.getConversions('NowPlaying').languages.Japanese.placement,'above');
@@ -324,7 +387,7 @@ test('schema 10 animation and cue preferences migrate lazily, survive a stale le
   const line = settings.getRendering('NowPlaying', 'Line');
   settings.saveRendering('NowPlaying', 'Line', { ...line, animationResponse: 'fast' });
   assert.equal(storage.getItem(key + '/Migration/schema10'), raw);
-  assert.equal(JSON.parse(storage.getItem(key)).version, 11);
+  assert.equal(JSON.parse(storage.getItem(key)).version, 12);
   const readings = settings.getAnnotations('NowPlaying');
   readings.cases.Word.effects.animationEasing = 'ease-in-out';
   settings.saveAnnotations('NowPlaying', readings);

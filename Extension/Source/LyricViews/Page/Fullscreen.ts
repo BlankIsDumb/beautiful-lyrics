@@ -48,7 +48,8 @@ import Button from "../../Components/Button.ts"
 
 // Our Modules
 import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
-import { CreateElement, GetCoverArtForSong, ApplyDynamicBackground } from "../Shared.ts"
+import { CreateElement, GetCoverArtForSong } from "../Shared.ts"
+import BackgroundController from "../../Modules/Background/BackgroundController.ts"
 import LyricViewIcons from "../Icons.ts"
 import Icons from "./Icons.ts"
 import { RunAnimation } from "./Animator.ts"
@@ -93,7 +94,7 @@ const FolderPathBranchTemplate = `
 	</div>
 `
 const Container = `
-	<div class="BeautifulLyricsPage Fullscreen">
+	<div class="BeautifulLyricsPage BeautifulLyricsBackground Fullscreen">
 		<div class="Content">
 			<div class="PlayPanelMouseArea"></div>
 			<div class="PlayPanel">
@@ -215,7 +216,7 @@ export default class PageView implements Giveable {
 		const container = this.Maid.Give(CreateElement<HTMLDivElement>(Container))
 
 		// Apply our dynamic background
-		ApplyDynamicBackground(container, this.Maid)
+		this.Maid.Give(new BackgroundController(container, {view:"FullLyrics", surface:"Fullscreen"}))
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!

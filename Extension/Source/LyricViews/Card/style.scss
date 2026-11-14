@@ -24,6 +24,18 @@
 
 	z-index: 1;
 
+	// Scope the opt-in background to our card. Keep existing padding, scroll
+	// masks and follow geometry; siblings in the theme's sidebar are untouched.
+	&.BeautifulLyricsBackground {
+		isolation: isolate;
+		border-radius: 8px;
+
+		> .BeautifulLyricsBackground-Container {
+			z-index: -1;
+			border-radius: 8px;
+		}
+	}
+
 	.Header {
 		display: flex;
 		height: 25px;

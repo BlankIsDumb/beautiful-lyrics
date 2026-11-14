@@ -72,6 +72,24 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const change=control=>control.dispatchEvent(new Event('change',{bubbles:true}));
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
       const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const background=(view,key)=>form.querySelector('#JEL-'+view+'-Background-'+key);
+      const backgroundEvents=[];const stopBackground=PresentationSettings.subscribeBackground((view,fields)=>backgroundEvents.push([view,fields]));
+      for(const view of ['NowPlaying','FullLyrics']) {
+        const mode=background(view,'mode'),motion=background(view,'motion'),brightness=background(view,'brightness'),paused=background(view,'paused'),fps=background(view,'fps'),resolution=background(view,'resolution');
+        check(mode.value===(view==='NowPlaying'?'off':'animated'),'per-view background defaults');
+        check(brightness.step==='5'&&brightness.min==='50'&&brightness.max==='150','background brightness bounds');
+        check(!mode.matches(':disabled')&&brightness.matches(':disabled')===(view==='NowPlaying'),'Off disables amounts');
+        check(mode.closest('.BL-HelpRow').querySelector('.BL-HelpDescription').textContent.includes('only the lyrics card'),'card scope help');
+        mode.value='static';change(mode);check(motion.matches(':disabled')&&paused.matches(':disabled')&&fps.matches(':disabled')&&!brightness.matches(':disabled')&&!resolution.matches(':disabled'),'Static disables motion controls only');
+        type(brightness,'125');resolution.value='quarter';change(resolution);
+        motion.value='fast';change(motion);check(PresentationSettings.getBackground(view).motion==='classic','disabled background event ignored');
+        mode.value='animated';change(mode);fps.value='60';change(fps);
+        const group=mode.closest('fieldset');[...group.querySelectorAll('button')].find(b=>b.textContent==='Classic background').click();
+        const classic=PresentationSettings.getBackground(view);check(classic.mode==='animated'&&classic.motion==='classic'&&classic.brightness===100&&classic.paused==='animate'&&classic.fps==='60'&&classic.resolution==='quarter','Classic restores look and keeps quality');
+        failStorage=true;mode.value='off';change(mode);failStorage=false;check(mode.value==='animated','failed background save restores UI');
+        [...group.querySelectorAll('button')].find(b=>b.textContent==='Reset background').click();check(mode.value===(view==='NowPlaying'?'off':'animated')&&fps.value==='30'&&resolution.value==='half'&&paused.value==='freeze','per-view reset');
+      }
+      check(backgroundEvents.length>0&&sourceEvents===0&&demandEvents===0&&languageEvents===0&&renderEvents===0&&cueEvents===0,'background saves isolated from lyrics/providers');stopBackground();
       const spacing=surface=>form.querySelector('#JEL-'+surface+'-HorizontalSpacing');
       const spacingNumber=surface=>form.querySelector('#JEL-'+surface+'-HorizontalSpacing-Number');
       check(form.querySelectorAll('input[type=range]').length===3,'one horizontal slider per surface');

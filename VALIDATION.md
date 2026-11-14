@@ -1,5 +1,22 @@
 # Validation
 
+## Independent background — 5.1.0-local.33, 2026-11-14
+
+All 167 tests passed, including a real-WebGL Chromium fixture. That fixture
+covers Static and paused sleep, context loss and restore, and 15 toggle and
+remount cycles with no live contexts left. The four production bundles passed
+syntax and dictionary checks. They match the three Windows install copies at
+SHA-256 `E556726CBDD9326FB249CB9444570F179F4EDD6EC3062D7A64571093FC5F91FE`.
+
+In Spotify on Windows, Off, Static and paused Freeze made zero background draws.
+Frame caps held at 30 and 15 fps. Off removed the canvas, and the opt-in
+Now Playing background left the theme's sidebar unchanged. On the Full Lyrics
+page at a fixed size, the defaults lowered renderer→GPU traffic. Playing, it
+fell from 25.5 MB/s to 4.95 MB/s against the original-cost Classic look. Paused,
+it fell from 34.8 MB/s to 30 KB/s. GPU-process CPU fell from 61.6% to 10.3%
+playing and from 45.5% to 3.2% paused. Classic look and settings remain
+selectable.
+
 ## Read-only playback clock — 5.1.0-local.32, 2026-11-09
 
 All 142 tests passed, including the paused handoff and Connect snapshot fixtures.

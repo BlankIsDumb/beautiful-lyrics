@@ -26,7 +26,8 @@ import { PresentationSettings, PresentationLanguages, type PresentationView } fr
 import type { HorizontalSurface } from "./HorizontalSpacing.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
 import { ApplyTextPreset, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
-import { CreateSettingsHelp } from "./SettingsHelp.ts";
+import { CreateSettingsHelp, BackgroundHelp } from "./SettingsHelp.ts";
+import { ClassicBackground, DefaultBackgrounds, type BackgroundProfile } from "./BackgroundSettings.ts";
 import { DefaultLayouts, NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import type { ContextAppearance } from "./ContextAppearance.ts";
 import { CreateTypographyPreview, TypographyMeasured } from "./Modules/LyricsRenderer/TypographyPreview.ts";
@@ -168,6 +169,43 @@ export function OpenProviderSettings() {
     }
     const delay = addTiming(view, fields); delay.setAttribute("aria-label", `${viewTitle} delay offset in seconds`);
     if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
+    const backgroundGroup = document.createElement("details"), backgroundSummary = document.createElement("summary"), backgroundFields = document.createElement("fieldset");
+    backgroundGroup.className = "BL-CaseSettings"; backgroundSummary.textContent = "Background";
+    backgroundFields.className = "BL-GroupOptions"; backgroundFields.disabled = presentationReadOnly;
+    backgroundGroup.append(backgroundSummary, backgroundFields); fields.append(backgroundGroup);
+    const backgroundRead = () => PresentationSettings.getBackground(view);
+    const backgroundWrite = <K extends keyof BackgroundProfile>(key: K, value: BackgroundProfile[K]) =>
+      PresentationSettings.saveBackground(view, { ...backgroundRead(), [key]: value });
+    const backgroundInputs = new Map<keyof BackgroundProfile, HTMLInputElement | HTMLSelectElement>();
+    const syncBackground = () => {
+      const value = backgroundRead();
+      for (const [key, input] of backgroundInputs) {
+        input.value = String(value[key]); input.removeAttribute("aria-invalid");
+        input.disabled = presentationReadOnly || (key !== "mode" && value.mode === "off") ||
+          (value.mode === "static" && ["motion", "paused", "fps"].includes(key));
+      }
+    };
+    const backgroundSelect = <K extends Exclude<keyof BackgroundProfile, "brightness">>(key: K, label: string, choices: readonly (readonly [string, string])[], classic: string) => {
+      const input = select(backgroundFields, label, `JEL-${view}-Background-${key}`, choices, backgroundRead()[key], BackgroundHelp[key], classic);
+      backgroundInputs.set(key, input);
+      listen(input, "change", () => { apply(() => backgroundWrite(key, input.value as BackgroundProfile[K])); syncBackground(); });
+    };
+    backgroundSelect("mode", "Mode", [["animated", "Animated"], ["static", "Static"], ["off", "Off"]], "Animated");
+    backgroundSelect("motion", "Motion speed", [["slow", "Slow (0.5×)"], ["classic", "Classic (1×)"], ["fast", "Fast (2×)"]], "1×");
+    backgroundInputs.set("brightness", numeric(backgroundFields, "Brightness (%)", `JEL-${view}-Background-brightness`,
+      () => backgroundRead().brightness, value => backgroundWrite("brightness", value), BackgroundHelp.brightness, "100%", 50, 150, "5"));
+    backgroundSelect("paused", "When paused", [["freeze", "Freeze"], ["animate", "Animate"]], "Animate");
+    backgroundSelect("fps", "Frame rate", [["uncapped", "Uncapped"], ["60", "60 fps"], ["30", "30 fps"], ["15", "15 fps"]], "Preserves quality choice");
+    backgroundSelect("resolution", "Resolution", [["full", "Full"], ["half", "Half"], ["quarter", "Quarter"]], "Preserves quality choice");
+    for (const classic of [true, false]) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = classic ? "Classic background" : "Reset background";
+      backgroundFields.append(button);
+      listen(button, "click", () => {
+        apply(() => PresentationSettings.saveBackground(view, classic ? ClassicBackground(backgroundRead()) : { ...DefaultBackgrounds[view] }));
+        syncBackground();
+      });
+    }
+    syncBackground();
     const defaults=DefaultLayouts[view];
     const layoutRead=()=>PresentationSettings.getLayout(view);
     const layoutWrite=<K extends keyof LayoutProfile>(key: K,value: LayoutProfile[K])=>PresentationSettings.saveLayout(view,{...layoutRead(),[key]:value});

@@ -4,27 +4,11 @@ import type { RomanizedLanguage } from "@Spices/Spicetify/Services/Player/mod.ts
 // NPM Packages
 import seedrandom from "npm:seedrandom"
 
-// JSR
-import * as THREE from "jsr:@3d/three"
-
-// Web-Modules
-import { Signal } from "@Universal/Modules/Signal.ts"
-import type { Maid } from "@Universal/Modules/Maid.ts"
-import { GlobalMaid } from "@Spices/Spicetify/Services/Session.ts"
-import { OnPreRender } from "@Universal/Modules/Scheduler.ts"
-
 // Spices
 import { GetInstantStore } from "@Spices/Spicetify/Services/Cache.ts"
 import {
-	Song, SongChanged,
-	SongContext, SongContextChanged
+	Song, SongContext
 } from "@Spices/Spicetify/Services/Player/mod.ts"
-
-// Shaders
-import {
-	GetShaderUniforms, type ShaderUniforms,
-	VertexShader, FragmentShader
-} from "./Shaders.ts"
 
 // Our store
 export const Store = GetInstantStore<
@@ -53,9 +37,6 @@ export const CreateElement = <E = HTMLElement>(text: string) => {
 	return element.firstElementChild as E
 }
 
-// Handle applying our dynamic-background
-const BackgroundClassName = "BeautifulLyricsBackground"
-
 export const GetCoverArtForSong = (): [string, (number | undefined)] => {
 	// DJ is ALWAYS guaranteed to have a cover-art
 	if (Song?.Type === "DJ") {
@@ -82,165 +63,4 @@ export const GetCoverArtForSong = (): [string, (number | undefined)] => {
 	} else {
 		return [coverArt, undefined]
 	}
-}
-
-// Blurred Cover Art Generation
-let Blurred_CovertArt: OffscreenCanvas
-const CoverArtBlurred = new Signal()
-const GenerateBlurredCoverArt = async () => {
-	const [coverArt, placeholderHueShift] = GetCoverArtForSong()
-
-	const image = new Image()
-	image.src = coverArt
-	await image.decode()
-
-	const originalSize = Math.min(image.width, image.height) // Crop to a square
-	const blurExtent = Math.ceil(3 * 40) // Blur spread extent
-
-	// Create a square canvas to crop the image into a circle
-	const circleCanvas = new OffscreenCanvas(originalSize, originalSize)
-	const circleCtx = circleCanvas.getContext('2d')!
-
-	// Create circular clipping mask
-	circleCtx.beginPath()
-	circleCtx.arc(originalSize / 2, originalSize / 2, originalSize / 2, 0, Math.PI * 2)
-	circleCtx.closePath()
-	circleCtx.clip()
-
-	// Draw the original image inside the circular clip
-	circleCtx.drawImage(
-		image,
-		((image.width - originalSize) / 2), ((image.height - originalSize) / 2),
-		originalSize, originalSize,
-		0, 0,
-		originalSize, originalSize
-	)
-
-	// Expand canvas to accommodate blur effect
-	const padding = (blurExtent * 1.5)
-	const expandedSize = originalSize + padding
-	const blurredCanvas = new OffscreenCanvas(expandedSize, expandedSize)
-	const blurredCtx = blurredCanvas.getContext('2d')!
-
-	blurredCtx.filter = `hue-rotate(${placeholderHueShift ?? 0}deg) blur(${40}px)`
-
-	// Draw the cropped circular image in the center of the expanded canvas
-	blurredCtx.drawImage(circleCanvas, (padding / 2), (padding / 2))
-
-	if (GetCoverArtForSong()[0] === coverArt) {
-		Blurred_CovertArt = blurredCanvas
-		CoverArtBlurred.Fire()
-	}
-}
-// Artwork decoding can fail for unavailable/local images. Keep lyric rendering
-// alive, and detach these singleton listeners when a local build is disposed.
-const RefreshCoverArt = () => GenerateBlurredCoverArt().catch(() => {});
-RefreshCoverArt()
-GlobalMaid.Give(SongChanged.Connect(RefreshCoverArt))
-GlobalMaid.Give(SongContextChanged.Connect(RefreshCoverArt))
-
-// Setup Referential Renderer Objects
-const RenderCamera = new THREE.OrthographicCamera(
-	-1, 1, 1, -1, 0.1, 10
-) as ( THREE.OrthographicCamera & { position: THREE.Vector3 } )
-RenderCamera.position.z = 1
-const MeshGeometry = new THREE.PlaneGeometry(2, 2)
-
-export const ApplyDynamicBackground = (element: HTMLElement, maid: Maid) => {
-	// Give our element the class
-	{
-		element.classList.toggle(BackgroundClassName, true)
-		maid.Give(() => element.classList.toggle(BackgroundClassName, false))
-
-		// Handle re-adding our class IF we are removed
-		const observer = maid.Give(new MutationObserver(() => element.classList.toggle(BackgroundClassName, true)))
-		observer.observe(
-			element,
-			{ attributes: true, attributeFilter: ['class'], childList: false, subtree: false }
-		)
-	}
-
-	const renderScene = new THREE.Scene()
-	const materialUniforms = GetShaderUniforms()
-	const meshMaterial = new THREE.ShaderMaterial(
-		{
-			uniforms: materialUniforms,
-			vertexShader: VertexShader,
-			fragmentShader: FragmentShader,
-		}
-	) as (THREE.MeshBasicMaterial & THREE.ShaderMaterial & { uniforms: ShaderUniforms })
-	const sceneMesh = new THREE.Mesh(MeshGeometry, meshMaterial)
-	renderScene.add(sceneMesh)
-
-	const renderer = new THREE.WebGLRenderer({ alpha: true })
-	const rendererElement = renderer.domElement
-	renderer.setPixelRatio(globalThis.devicePixelRatio)
-	rendererElement.classList.add(`${BackgroundClassName}-Container`)
-	maid.Give(
-		() => {
-			materialUniforms.BlurredCoverArt.value?.dispose()
-			meshMaterial.dispose()
-			renderer.dispose()
-			renderer.forceContextLoss()
-		}
-	)
-	maid.Give(rendererElement)
-
-	const UpdateBackgroundImages = () => {
-		if (!Blurred_CovertArt) return;
-		// Replacing cover art otherwise leaves the old GPU texture allocated.
-		materialUniforms.BlurredCoverArt.value?.dispose()
-		const texture = new THREE.CanvasTexture(Blurred_CovertArt)
-		texture.minFilter = THREE.NearestFilter
-		texture.magFilter = THREE.NearestFilter
-		materialUniforms.BlurredCoverArt.value = texture
-		renderer.render(renderScene, RenderCamera)
-	}
-	UpdateBackgroundImages()
-	maid.Give(CoverArtBlurred.Connect(UpdateBackgroundImages))
-
-	{
-		const UpdateDimensions = () => {
-			const width = element.clientWidth
-			const height = element.clientHeight
-			renderer.setSize(width, height)
-	
-			const scaledWidth = (width * globalThis.devicePixelRatio)
-			const scaledHeight = (height * globalThis.devicePixelRatio)
-	
-			const largestAxis = ((scaledWidth > scaledHeight) ? "X" : "Y")
-			const largestAxisSize = ((scaledWidth > scaledHeight) ? scaledWidth : scaledHeight)
-
-			materialUniforms.BackgroundCircleOrigin.value.set((scaledWidth / 2), (scaledHeight / 2))
-			materialUniforms.BackgroundCircleRadius.value = (largestAxisSize * 1.5)
-
-			materialUniforms.CenterCircleOrigin.value.set((scaledWidth / 2), (scaledHeight / 2))
-			materialUniforms.CenterCircleRadius.value = (
-				largestAxisSize
-				* ((largestAxis === "X") ? 1 : 0.75)
-			)
-	
-			materialUniforms.LeftCircleOrigin.value.set(0, scaledHeight)
-			materialUniforms.LeftCircleRadius.value = (largestAxisSize * 0.75)
-			
-			materialUniforms.RightCircleOrigin.value.set(scaledWidth, 0)
-			materialUniforms.RightCircleRadius.value = (
-				largestAxisSize
-				* ((largestAxis === "X") ? 0.65 : 0.5)
-			)
-		}
-		maid.Give(OnPreRender(UpdateDimensions))
-		const sizeObserver = maid.Give(new ResizeObserver(UpdateDimensions))
-		sizeObserver.observe(element)
-	}
-
-	const RenderUpdate = () => {
-		materialUniforms.Time.value = (performance.now() / 3500)
-		renderer.render(renderScene, RenderCamera)
-		// Replace the completed frame instead of retaining one cleanup entry per frame.
-		maid.Give(OnPreRender(RenderUpdate), "BackgroundFrame")
-	}
-	RenderUpdate()
-
-	element.prepend(renderer.domElement)
 }

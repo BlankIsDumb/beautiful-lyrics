@@ -1,4 +1,5 @@
 import { NormalizeContextAppearance, type ContextAppearance } from "./ContextAppearance.ts";
+import { NormalizeBackground, DefaultBackgrounds, BackgroundFields, type BackgroundProfile } from "./BackgroundSettings.ts";
 import { HorizontalSurfaces, NormalizeHorizontalSpacing, type HorizontalSurface } from "./HorizontalSpacing.ts";
 import { NormalizeLayout, NormalizeFontFamily, LayoutFields, LayoutCategories, DefaultLayouts, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import { NormalizeAnnotations, NormalizeConversions, EffectiveConversion, type ConversionProfile, type AnnotationProfile } from "./AnnotationSettings.ts";
@@ -9,14 +10,15 @@ export type PresentationView = "NowPlaying" | "FullLyrics";
 export const PresentationLanguages = ["Chinese", "Japanese", "Korean"] as const;
 export type PresentationLanguage = (typeof PresentationLanguages)[number];
 type RenderingCases = Record<SourceCase, RenderingProfile>;
-type Profile = { contextAppearance: ContextAppearance; layout: LayoutProfile; conversions: ConversionProfile; annotations: AnnotationProfile; cues: CueSettings; renderingCases: RenderingCases; japaneseForm: "romaji" | "kana"; romanizationEnabled: boolean; romanizedLanguages: Record<PresentationLanguage, boolean> };
-const schemaVersion = 11;
+type Profile = { background: BackgroundProfile; contextAppearance: ContextAppearance; layout: LayoutProfile; conversions: ConversionProfile; annotations: AnnotationProfile; cues: CueSettings; renderingCases: RenderingCases; japaneseForm: "romaji" | "kana"; romanizationEnabled: boolean; romanizedLanguages: Record<PresentationLanguage, boolean> };
+const schemaVersion = 12;
 type Settings = { version: typeof schemaVersion; fontFamily: string; horizontalSpacing: Record<HorizontalSurface, number>; profiles: Record<PresentationView, Profile> };
 const storageKey = "JustEnoughLyrics/Presentation";
 const legacyKey = "BeautifulLyrics/LyricViews";
 
 export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "setItem">) {
   const contextAppearanceListeners = new Set<(view: PresentationView) => void>();
+  const backgroundListeners = new Set<(view: PresentationView, fields: readonly (keyof BackgroundProfile)[]) => void>();
   const layoutListeners = new Set<(view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void>();
   const spacingListeners = new Set<(surface: HorizontalSurface) => void>();
   const previews = new Map<HorizontalSurface, {owner: object; value: number}>();
@@ -63,7 +65,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
       }
     }
     migrated.enabled = migrationEnabled;
-    return { contextAppearance: NormalizeContextAppearance(), layout: NormalizeLayout(undefined, DefaultLayouts[view]), conversions: conversions ? NormalizeConversions(conversions) : migrated, annotations: oldAnnotations, cues: NormalizeCues(cues), renderingCases: cases ? migrateCases(cases) : defaults(), japaneseForm: japaneseForm === "kana" ? "kana" : "romaji", romanizationEnabled: typeof enabled === "boolean" ? enabled : Object.values(romanizedLanguages).some(Boolean), romanizedLanguages };
+    return { background: NormalizeBackground(undefined, DefaultBackgrounds[view]), contextAppearance: NormalizeContextAppearance(), layout: NormalizeLayout(undefined, DefaultLayouts[view]), conversions: conversions ? NormalizeConversions(conversions) : migrated, annotations: oldAnnotations, cues: NormalizeCues(cues), renderingCases: cases ? migrateCases(cases) : defaults(), japaneseForm: japaneseForm === "kana" ? "kana" : "romaji", romanizationEnabled: typeof enabled === "boolean" ? enabled : Object.values(romanizedLanguages).some(Boolean), romanizedLanguages };
   };
   const parse = (key: string) => {
     try { return JSON.parse(storage.getItem(key) || "null"); }
@@ -95,6 +97,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     };
     if (saved?.version >= 8) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].layout = NormalizeLayout(saved.profiles?.[view]?.layout, DefaultLayouts[view]);
     if (supported && saved.version >= 10) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].contextAppearance = NormalizeContextAppearance(saved.profiles?.[view]?.contextAppearance);
+    if (supported && saved.version >= 12) for (const view of ["NowPlaying", "FullLyrics"] as const) settings.profiles[view].background = NormalizeBackground(saved.profiles?.[view]?.background, DefaultBackgrounds[view]);
     return settings;
   };
   // All save families share the same lazy transaction: exact old raw first,
@@ -146,6 +149,8 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     const cueFields = (["threshold", "motion", "lastSeconds"] as const).filter(key => previous.cues[key] !== next.cues[key]);
     if (cueFields.length) for (const listener of cueListeners) listener(view, cueFields);
     if (JSON.stringify(previous.contextAppearance) !== JSON.stringify(next.contextAppearance)) for (const listener of contextAppearanceListeners) listener(view);
+    const backgroundFields = BackgroundFields(previous.background, next.background);
+    if (backgroundFields.length) for (const listener of backgroundListeners) listener(view, backgroundFields);
     const layoutFields = LayoutFields(previous.layout, next.layout);
     if (layoutFields.length) for (const listener of layoutListeners) listener(view, layoutFields);
     for (const sourceCase of SourceCases) {
@@ -155,6 +160,9 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     }
   };
   return {
+    getBackground: (view: PresentationView) => ({ ...read().profiles[view].background }),
+    saveBackground: (view: PresentationView, value: BackgroundProfile) => save(view, { ...read().profiles[view], background: NormalizeBackground(value, DefaultBackgrounds[view]) }),
+    subscribeBackground: (listener: (view: PresentationView, fields: readonly (keyof BackgroundProfile)[]) => void) => { backgroundListeners.add(listener); return () => { backgroundListeners.delete(listener); }; },
     getHorizontalSpacing: (surface: HorizontalSurface) => read().horizontalSpacing[surface],
     getEffectiveHorizontalSpacing: (surface: HorizontalSurface) => previews.get(surface)?.value ?? read().horizontalSpacing[surface],
     saveHorizontalSpacing: saveSpacing,
@@ -243,7 +251,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
         annotations.cases[sourceCase].effects.animationEasing = reading.animationEasing;
         annotations.cases[sourceCase].effects.animationResponse = reading.animationResponse;
       }
-      save(view, { ...current, ...values, layout: current.layout, contextAppearance: current.contextAppearance, conversions: NormalizeConversions(conversions), annotations,
+      save(view, { ...current, ...values, background: current.background, layout: current.layout, contextAppearance: current.contextAppearance, conversions: NormalizeConversions(conversions), annotations,
         renderingCases, cues: NormalizeCues({ ...values.cues, lastSeconds: current.cues.lastSeconds }) });
     },
     saveLanguages: (view: PresentationView, values: Profile["romanizedLanguages"]) => {

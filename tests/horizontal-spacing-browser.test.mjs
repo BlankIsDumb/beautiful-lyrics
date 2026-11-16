@@ -32,7 +32,9 @@ test('signed surface columns retain fonts/owners, protect boundaries, measure li
    {Type:'Vocal',OppositeAligned:opposite,Lead:{StartTime:89.204,EndTime:91.185,Syllables:[{Text:'この',StartTime:89.204,EndTime:89.7,IsPartOfWord:false},{Text:'見えない',StartTime:89.7,EndTime:90.4,IsPartOfWord:false},{Text:'世界',StartTime:90.4,EndTime:91.185,IsPartOfWord:false}]}}
   ]};
  }
- const parse=output=>{const match=output.textContent.match(/left gap ([0-9.]+) CSS px · right gap ([0-9.]+) CSS px · width ([0-9.]+) CSS px/);check(match,'measured readout '+output.textContent);return match.slice(1).map(Number)};
+ // Compare layout against full-precision diagnostics, and verify the rounded
+ // public label separately. Whole-pixel wording must not loosen parity checks.
+ const parse=output=>{const values=['left','right','width'].map(key=>Number(output.dataset[key]));check(values.every(Number.isFinite),'exact measured readout '+output.textContent);const rounded='Width '+Math.round(values[2])+' px · left gap '+Math.round(values[0])+' px · right gap '+Math.round(values[1])+' px';check(output.textContent===rounded||output.textContent===rounded+' · at limit','rounded readout wording '+output.textContent);return values};
  try{
   for(const surface of ['Card','Contained','Fullscreen'])for(const direction of ['Left','Right'])for(const opposite of [false,true]){
    const width=surface==='Fullscreen'?document.documentElement.clientWidth:surface==='Card'?620:900,height=surface==='Fullscreen'?window.innerHeight:800;
@@ -72,10 +74,10 @@ test('signed surface columns retain fonts/owners, protect boundaries, measure li
     const wordRect=word.getBoundingClientRect(),rows=[];for(const syllable of word.querySelectorAll('.Syllable')){const rect=syllable.getBoundingClientRect();let row=rows.find(row=>Math.abs(row.top-rect.top)<2);if(!row){row={top:rect.top,left:rect.left,right:rect.right};rows.push(row)}else{row.left=Math.min(row.left,rect.left);row.right=Math.max(row.right,rect.right)}}
     if(adjustment===100)check(rows.length>=2,'actual nested Word wraps for alignment control');
     if(rows.length>1){const last=rows.at(-1),right=(getComputedStyle(voice).justifyContent==='flex-end')!==(getComputedStyle(voice).direction==='rtl');near(right?last.right:last.left,right?wordRect.right:wordRect.left,'AL02 final wrapped row follows outer alignment',beforeFont*.6)}
-    const measured=parse(output);near(measured[0],group.left-box.left,'live left gap readout');near(measured[1],box.right-group.right,'live right gap readout');near(measured[2],group.width,'live width readout');check(output.textContent.includes('Live'),'mounted readout labelled Live');cases++;
+    const measured=parse(output);near(measured[0],group.left-box.left,'live left gap readout');near(measured[1],box.right-group.right,'live right gap readout');near(measured[2],group.width,'live width readout');check(output.title.includes('Live'),'mounted readout title labelled Live');if(Math.abs(adjustment)===100)check(output.textContent.endsWith(' · at limit'),'endpoint limit suffix');cases++;
    }
-   scrollHost.style.height='0px';await frame();await frame();check(output.textContent.includes('unavailable'),'collapsed mounted viewport reports unavailable instead of stale/probe metrics');
-   scrollHost.style.height='';await frame();await frame();check(root.dataset.columnAvailable==='true','reopened viewport remeasures '+surface+' '+direction+' '+opposite);check(output.textContent.includes('Live'),'reopened viewport refreshes measured live metrics '+surface+' '+direction+' '+opposite+' '+output.textContent);
+   scrollHost.style.height='0px';await frame();await frame();check(output.textContent==='Unavailable while the lyrics column is hidden'&&['left','right','width'].every(key=>output.dataset[key]===undefined),'collapsed mounted viewport reports unavailable instead of stale/probe metrics');
+   scrollHost.style.height='';await frame();await frame();check(root.dataset.columnAvailable==='true','reopened viewport remeasures '+surface+' '+direction+' '+opposite);parse(output);check(output.title.includes('Live'),'reopened viewport refreshes measured live metrics '+surface+' '+direction+' '+opposite+' '+output.textContent);
    // Put an Above reading before the FIRST actual source in document order.
    // Its smaller .Vocals.Lead font must never become the primary-em clamp basis.
    const aboveRuns=LayoutVoice(doc.groups[0].voices[0]).map(run=>({...run,AnnotationDerived:true}));
@@ -100,7 +102,7 @@ test('signed surface columns retain fonts/owners, protect boundaries, measure li
    // With no mounted document the probe cannot infer opposite alignment. Its
    // .95 default is exact for ordinary groups; live .75 coverage is above.
    if(!opposite){near(predicted[0],actual.left-box.left,'preview left parity');near(predicted[1],box.right-actual.right,'preview right parity');near(predicted[2],actual.width,'preview width parity')}
-   check(output.textContent.includes('Preview at this window size'),'unmounted readout labelled preview');
+   check(output.title.includes('Preview at this window size'),'unmounted readout title labelled preview');
    dispose();check(!document.querySelector('.JEL-TypographyPreview'),'probe disposal');form.remove();unsubscribe();scroller.Destroy();controllers.forEach(controller=>controller.Destroy());host.remove();
   }
   check(cases===60,'complete surface/direction/opposite/spacing matrix');jelTestComplete('HORIZONTAL_BROWSER_PASS '+cases);

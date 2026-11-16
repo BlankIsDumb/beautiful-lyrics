@@ -33,45 +33,64 @@
 .BL-Settings {
   padding: 0;
   font-size: 16px;
-  h3, h4 {
+  h3 {
     text-align: center;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 700;
-    margin: 24px 0 12px;
-    padding: 5px 0;
+    margin: 28px 0 12px;
+    padding: 0;
   }
-  h3:first-child { margin-top: 4px; }
-  .BL-ViewSettings { margin-top: 24px; }
-  label {
-    margin: 8px 0;
-    padding: 20px 16px;
-    min-height: 64px;
+  > section:first-of-type > h3 { margin-top: 4px; }
+  // Put the trailing gap before the status line, so a visible sticky footer can
+  // still reach the scroll boundary instead of stopping above form padding.
+  > section:last-of-type { padding-bottom: 28px; }
+  .BL-Block {
+    --BL-Indent: 16px;
     background: var(--background-tinted-base, rgba(255,255,255,.07));
     border-radius: 10px;
+    overflow: hidden;
+  }
+  label {
+    margin: 0;
+    padding: 0;
+    background: none;
+    border-radius: 0;
     font-size: 16px;
     font-weight: 600;
+    line-height: 20px;
     cursor: pointer;
   }
-  select { max-width: 60%; min-width: 0; }
-  input[type="number"] { width: 100px; min-width: 0; }
+  input[type="number"], input[type="text"], input[type="password"], select {
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    font-size: 14px;
+  }
+  select { max-width: 55%; min-width: 0; }
+  input[type="number"] { flex: 0 0 80px; width: 80px; min-width: 0; }
   .BL-HelpRow {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin: 8px 0;
-    padding: 16px;
-    min-height: 64px;
+    margin: 0;
+    padding: 12px 16px 12px var(--BL-Indent, 16px);
+    height: 56px;
     box-sizing: border-box;
-    border-radius: 10px;
-    background: var(--background-tinted-base, rgba(255,255,255,.07));
-    label { flex: 0 1 auto; min-width: 0; margin: 0; padding: 0; min-height: 0; background: none; border-radius: 0; }
+    border-radius: 0;
+    background: none;
+    label { flex: 0 1 auto; min-width: 0; }
     > input, > select { margin-left: auto; }
     > input[type="text"] { min-width: 0; width: 50%; }
-    &:has(> output) {
+    // Keep label + help together; only the number consumes the remaining space.
+    // Credentials use the second line for their full-width input instead.
+    &:has(> output), &.BL-TokenTile {
+      height: 88px;
+      padding: 8px 16px 8px var(--BL-Indent, 16px);
       flex-wrap: wrap;
-      > label { flex: 1 1 120px; }
-      > input[type="number"] { flex: 0 0 100px; }
-      > output { flex-basis: 100%; font-size: 13px; color: var(--spice-subtext, #bbb); }
+      align-content: center;
+      gap: 8px 12px;
+      > input[type="number"] { flex: 0 0 80px; }
+      > output { flex-basis: 100%; font-size: 13px; line-height: 18px; color: var(--spice-subtext, #bbb); }
     }
     .BL-HelpButton {
       display: inline-flex;
@@ -80,6 +99,7 @@
       flex: 0 0 32px;
       width: 32px;
       height: 32px;
+      box-sizing: border-box;
       padding: 8px;
       border-radius: 4px;
       background: none;
@@ -89,6 +109,7 @@
       svg { flex: 0 0 16px; }
     }
   }
+  .BL-GroupHeader { background: rgba(255,255,255,.05); }
   // Stable accessible descriptions remain available before a tooltip opens.
   .BL-HelpDescription {
     position: absolute;
@@ -99,37 +120,6 @@
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
-  }
-  .BL-SettingGroup {
-    margin: 8px 0;
-    border-radius: 10px;
-    overflow: hidden;
-    background: var(--background-tinted-base, rgba(255,255,255,.07));
-    .BL-GroupHeader {
-      margin: 0;
-      border-radius: 0;
-      background: var(--spice-sidebar, rgba(255,255,255,.04));
-    }
-    .BL-GroupOptions {
-      border: 0;
-      padding: 0;
-      margin: 0;
-      min-inline-size: 0;
-      // Keep collapsed controls out of layout and keyboard focus, including if
-      // a host/theme stylesheet assigns display to fieldsets.
-      &[hidden] { display: none; }
-      label { margin: 0; background: none; border-radius: 0; padding: 16px; min-height: 56px; }
-      p { margin: 12px 16px 0; }
-      button { margin: 8px 16px 16px; padding: 10px 16px; }
-      .BL-HelpRow {
-        margin: 0;
-        border-radius: 0;
-        background: none;
-        min-height: 56px;
-        label { padding: 0; min-height: 0; }
-        .BL-HelpButton { margin: 0; padding: 8px; }
-      }
-    }
   }
   // Keep a real checkbox for keyboard/form semantics; only its presentation changes.
   input[type="checkbox"] {
@@ -164,15 +154,29 @@
   // The checkbox's margin reset above must not consume the help row's free space.
   // Keep the switch at the right edge while title + question icon stay together.
   .BL-HelpRow > input[type="checkbox"] { margin-left: auto; }
-  .BL-TokenTile { flex-wrap: wrap; }
   .BL-TokenTile input { flex: 0 0 100%; }
   input[type="password"] { width: 100%; box-sizing: border-box; font-weight: 400; }
-  p { font-size: .9rem; line-height: 1.5; color: var(--spice-subtext, #bbb); margin: 12px 4px; }
+  p { font-size: .9rem; line-height: 1.5; color: var(--spice-subtext, #bbb); }
+  .BL-Block p { margin: 0; padding: 12px 16px 12px var(--BL-Indent, 16px); }
+  p[role="status"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: 0;
+    padding: 8px 12px;
+    background: var(--spice-main, #181818);
+    font-size: 12px;
+    &:empty { display: none; }
+  }
+  .BL-ButtonRow { display: flex; flex-wrap: wrap; justify-content: flex-end; padding: 12px 16px 12px var(--BL-Indent, 16px); gap: 8px; }
   button {
     border: 0;
     border-radius: 8px;
-    padding: 10px 24px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0 14px;
     font: inherit;
+    font-size: 14px;
     font-weight: 600;
     background: var(--spice-button, #777);
     color: var(--spice-text, #fff);
@@ -253,32 +257,69 @@
 .BL-Settings {
   .BL-ViewOptions { border: 0; padding: 0; margin: 0; min-inline-size: 0; }
   .BL-ViewOptions[hidden] { display: none; }
+  .BL-GroupOptions {
+    border: 0;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    background: rgba(0,0,0,.15);
+    // Shared reading styles inherit the language-row depth and add no shade.
+    &.BL-ReadingStyle { background: none; }
+  }
+  // Bands always cover the whole block. Only their row contents are indented;
+  // the right inset stays fixed, including for nested summaries and buttons.
+  // Count real bands (not the shared Reading style fieldset). Six levels cover
+  // the current tree without a self-referential custom-property calculation.
+  $band: ".BL-GroupOptions:not(.BL-ReadingStyle)";
+  $bands: $band;
+  @for $depth from 1 through 6 {
+    #{$bands} { --BL-Indent: #{16px * ($depth + 1)}; }
+    $bands: "#{$bands} #{$band}";
+  }
   .BL-CaseSettings {
-    margin: 8px 0; border-radius: 10px; overflow: hidden;
-    background: var(--background-tinted-base, rgba(255,255,255,.07));
-    > summary { cursor: pointer; padding: 18px 16px; font-weight: 700; }
+    margin: 0;
+    border-radius: 0;
+    background: none;
+    > summary {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      height: 56px;
+      box-sizing: border-box;
+      cursor: pointer;
+      padding: 12px 16px 12px var(--BL-Indent, 16px);
+      font-weight: 700;
+      list-style: none;
+      &::-webkit-details-marker { display: none; }
+      &::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        flex: 0 0 7px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg);
+        transition: transform .15s;
+      }
+    }
+    &[open] > summary::before { transform: rotate(45deg); }
     > summary:focus-visible { outline: 2px solid var(--spice-button-active, #fff); outline-offset: -2px; }
-    > fieldset { border: 0; min-inline-size: 0; padding: 0; margin: 0; }
-    .BL-HelpRow { margin: 0; border-radius: 0; background: none; }
   }
 }
 
-// The form assigns flex/block display to help rows, details and fieldsets.
-// Those author rules outrank the browser's [hidden] default, so relevance flags
-// must explicitly remove their boxes even under a host/theme display reset.
+// Author display rules outrank the browser's [hidden] default. Relevance flags
+// must remove layout and focus boxes even under host/theme display resets.
 .BL-Settings [hidden] { display: none !important; }
 
-.BL-Settings .BL-HorizontalSpacing {
-  flex-wrap: wrap;
-  > label { flex: 1 1 180px; }
-  > input[type="range"] { flex: 1 1 150px; min-width: 80px; margin-left: 0; padding: 0; accent-color: var(--spice-button, #1db954); }
-  > input[type="number"] { flex: 0 0 90px; width: 90px; margin-left: 0; }
-  > output { flex: 1 1 100%; font-size: 13px; line-height: 1.5; color: var(--spice-subtext, #bbb); }
-  > button:not(.BL-HelpButton) { margin: 0; padding: 8px 12px; }
+.BL-Settings .BL-HelpRow.BL-HorizontalSpacing {
+  // Three lines keep the slider and measured output readable without changing
+  // ordinary row heights. Per-column resets live in the Typography button row.
+  height: 104px;
+  > input[type="range"] { order: 1; flex: 0 0 100%; width: 100%; height: 16px; box-sizing: border-box; min-width: 0; margin: 0; padding: 0; accent-color: var(--spice-button, #1db954); }
+  > output { order: 2; }
 }
 
-// A separate fieldset lets Hide disable all remembered appearance controls,
-// including their native keyboard interaction, without disabling the mode menu.
+// Hide disables remembered appearance controls without disabling the mode menu.
 .BL-Settings .BL-ContextAppearance {
   border: 0;
   min-inline-size: 0;

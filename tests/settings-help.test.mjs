@@ -49,7 +49,8 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
     const caches={keys:async()=>[...disk.keys()],open:async name=>{if(!disk.has(name))disk.set(name,new Map());const entries=disk.get(name);return {keys:async()=>[...entries.keys()],put:async(key,response)=>entries.set(key,await response.text()),delete:async key=>entries.delete(key)}}};
     let fixtureForm;
     const modal=document.createElement('div');
-    const fixtureModal={display({content}){modal.replaceChildren(content);document.body.append(modal);fixtureForm=content},hide(){modal.remove()}};
+    modal.className='spicetify-popup-container';
+    const fixtureModal={display({content}){const scroll=document.createElement('div');scroll.className='spicetify-popup-content';scroll.append(content);modal.replaceChildren(scroll);document.body.append(modal);fixtureForm=content},hide(){modal.remove()}};
     const popups=[];
     // Only the host Tippy service is substituted. Form/settings/help code, native
     // label activation, focus, styles and custom-element disconnection are real
@@ -81,6 +82,83 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
       const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       await frame();
+      const sections=[...form.querySelectorAll(':scope > section')];
+      check(sections.map(section=>section.querySelector(':scope > h3')?.textContent).join('|')==='Behavior|Timings|Now Playing|Fullscreen|Providers|Lyrics Font|Spicy','top-level section order and centered h3 hierarchy');
+      check(sections.every(section=>section.children.length===2&&section.lastElementChild.matches('div.BL-Block')),'each section owns one continuous block');
+      check(!form.querySelector('h4,h5'),'obsolete hierarchy headings removed');
+      check([...sections[0].querySelectorAll('input,select')].map(input=>input.id).join(',')==='BL-FetchMode,BL-LyricsCache','Behavior contains only fetch and cache');
+      check(sections[4].querySelectorAll('input[role=switch]').length===5,'Providers owns five source toggles');
+      const fontFamily=form.querySelector('#JEL-FontFamily');
+      check(fontFamily.labels[0].textContent==='Font family'&&fontFamily.placeholder==='Spotify font'&&fontFamily.closest('section')===sections[5],'font field label, placeholder and section');
+      check(form.querySelector('#BL-SpicyToken').placeholder==='Client token'&&form.querySelector('#BL-SpicyToken').closest('section')===sections[6],'Spicy field placeholder and section');
+      for(const description of form.querySelectorAll('.BL-HelpDescription'))check(!/\\b(?:you|your|Comfy)\\b/i.test(description.textContent),'all help avoids second person and theme references: '+description.textContent);
+      for(const view of ['NowPlaying','FullLyrics']) {
+        const section=form.querySelector('#JEL-'+view+'-Heading').parentElement,block=section.lastElementChild,fields=form.querySelector('#JEL-'+view+'-Options');
+        check(section.matches('section.BL-ViewSettings')&&section.parentElement===form&&section.getAttribute('aria-labelledby')==='JEL-'+view+'-Heading'&&section.firstElementChild.tagName==='H3','top-level accessible view section '+view);
+        check([...fields.children].filter(element=>element.matches('details')).map(details=>details.querySelector('summary').textContent).join('|')==='Background|Typography|Context|Scrolling|Gap dots|Word sync|Line sync|Conversions','view group order '+view);
+        const dots=form.querySelector('#JEL-'+view+'-GapThreshold').closest('details');
+        check(dots.querySelector('summary').textContent==='Gap dots'&&[...dots.querySelectorAll('input')].map(input=>input.id).join(',')==='JEL-'+view+'-GapThreshold,JEL-'+view+'-CueMotion,JEL-'+view+'-CueLastSeconds','Gap dots owns three existing ids '+view);
+        check(!fields.querySelector('[id$="-TimingOffset"]'),'view options contain no offset '+view);
+        if(view==='NowPlaying')check(block.firstElementChild.matches('.BL-HelpRow.BL-GroupHeader')&&block.firstElementChild.querySelector('#BL-SidebarEnabled')&&block.children.length===2&&fields.previousElementSibling===block.firstElementChild,'Enabled is first row in the same block as options');
+        else check(block.firstElementChild===fields&&!block.querySelector('.BL-GroupHeader')&&fields.firstElementChild.querySelector('summary').textContent==='Background','Fullscreen block starts with groups and has no band');
+      }
+      const helpText=id=>form.querySelector(id).closest('.BL-HelpRow').querySelector('.BL-HelpDescription').textContent;
+      check(helpText('#BL-FetchMode')==='On song change loads lyrics as each song starts. When required waits until a view shows lyrics. Now Playing counts while enabled. Classic: On song change','fetch help');
+      check(helpText('#BL-LyricsCache')==='Clears saved lyrics for one provider, or All. All also clears track details and provider cooldowns. Tokens stay saved. The current song reloads.','cache help has no footer');
+      check(helpText('#JEL-FullLyrics-TimingOffset')==='Added to Lyric delay in Fullscreen only. Classic: 0 s','Fullscreen offset help');
+      check(helpText('#JEL-FullLyrics-Layout-leading').endsWith('Classic: 1.18')&&helpText('#JEL-FullLyrics-Layout-groupGap').endsWith('Classic: Original'),'typography Classic footers');
+      // Open native groups before measuring: closed details intentionally have no
+      // row boxes. Use the real modal width, styles and Chromium layout engine.
+      form.querySelectorAll('details').forEach(details=>details.open=true);
+      const nearLayout=(actual,expected,message)=>check(Math.abs(actual-expected)<=1,message+' '+actual+' / '+expected);
+      const visibleLayout=element=>element.getClientRects().length>0&&getComputedStyle(element).display!=='none';
+      const bandDepth=element=>{let depth=0;for(let parent=element.parentElement;parent&&!parent.matches('.BL-Block');parent=parent.parentElement)if(parent.matches('.BL-GroupOptions:not(.BL-ReadingStyle)'))depth++;return depth;};
+      for(const band of form.querySelectorAll('.BL-GroupOptions'))if(visibleLayout(band)) {
+        const bounds=band.getBoundingClientRect(),block=band.closest('.BL-Block').getBoundingClientRect(),style=getComputedStyle(band);
+        nearLayout(bounds.left,block.left,'band starts at block left');nearLayout(bounds.right,block.right,'band ends at block right');nearLayout(bounds.width,block.width,'band fills block width');
+        for(const property of ['paddingLeft','paddingRight','marginLeft','marginRight'])nearLayout(parseFloat(style[property]),0,'band has no horizontal inset '+property);
+        check(style.backgroundColor===(band.matches('.BL-ReadingStyle')?'rgba(0, 0, 0, 0)':'rgba(0, 0, 0, 0.15)'),'only real depth bands add shade');
+      }
+      const measuredDepths=new Set();
+      for(const row of form.querySelectorAll('.BL-Block .BL-HelpRow,.BL-Block details > summary,.BL-Block .BL-ButtonRow,.BL-Block p'))if(visibleLayout(row)) {
+        const depth=bandDepth(row),leftInset=16+16*depth,style=getComputedStyle(row),bounds=row.getBoundingClientRect(),block=row.closest('.BL-Block').getBoundingClientRect();
+        nearLayout(parseFloat(style.paddingLeft),leftInset,'row content inset at depth '+depth);nearLayout(parseFloat(style.paddingRight),16,'right inset stays fixed at depth '+depth);
+        if(row.matches('.BL-HelpRow')) {
+          measuredDepths.add(depth);nearLayout(row.querySelector('label').getBoundingClientRect().left-block.left,leftInset,'label inset at depth '+depth);
+          const controls=row.querySelectorAll(':scope > input:not([type=range]),:scope > select,:scope > button:not(.BL-HelpButton)');
+          nearLayout(block.right-controls[controls.length-1].getBoundingClientRect().right,16,'trailing control aligns across depths');
+          nearLayout(bounds.height,row.matches('.BL-HorizontalSpacing')?104:row.matches('.BL-TokenTile')||row.querySelector(':scope > output')?88:56,'row height stays fixed at depth '+depth);
+        } else if(row.matches('.BL-ButtonRow'))nearLayout(block.right-row.lastElementChild.getBoundingClientRect().right,16,'group buttons share the control right edge');
+      }
+      check([0,1,2,3].every(depth=>measuredDepths.has(depth)),'measured real controls at depths zero through three');
+      const lastSection=sections.at(-1),lastBlock=lastSection.querySelector(':scope > .BL-Block');
+      nearLayout(lastSection.getBoundingClientRect().bottom-lastBlock.getBoundingClientRect().bottom,28,'last block has 28px bottom space before footer');
+      nearLayout(parseFloat(getComputedStyle(lastSection).paddingBottom),parseFloat(getComputedStyle(sections[1].querySelector('h3')).marginTop),'bottom space matches section gap');
+      const ordinary=['#BL-SidebarEnabled','#BL-FetchMode','#JEL-Shared-TimingOffset','#JEL-FontFamily'].map(id=>form.querySelector(id).closest('.BL-HelpRow'));
+      const heights=ordinary.map(row=>row.getBoundingClientRect().height);
+      check(heights.every(height=>Math.abs(height-56)<=1)&&Math.max(...heights)-Math.min(...heights)<=1,'switch/select/number/text rows share 56px height: '+heights.join(','));
+      check(ordinary.every(row=>getComputedStyle(row).backgroundColor==='rgba(0, 0, 0, 0)'||row.classList.contains('BL-GroupHeader')),'ordinary rows have no card background');
+      const twoLine=['#BL-SpicyToken',...['NowPlaying','FullLyrics'].flatMap(view=>['primaryRatio','backingRatio'].map(key=>'#JEL-'+view+'-Layout-'+key))].map(id=>form.querySelector(id).closest('.BL-HelpRow'));
+      check(twoLine.every(row=>Math.abs(row.getBoundingClientRect().height-88)<=1),'size readout and token rows are 88px');
+      const spacingRows=[...form.querySelectorAll('.BL-HorizontalSpacing')];
+      check(spacingRows.length===3&&spacingRows.every(row=>Math.abs(row.getBoundingClientRect().height-104)<=1),'all three spacing rows are 104px');
+      for(const row of [...twoLine,...spacingRows]) {
+        const label=row.querySelector('label').getBoundingClientRect(),help=row.querySelector('.BL-HelpButton').getBoundingClientRect(),bounds=row.getBoundingClientRect();
+        check(Math.abs(help.left-label.right-12)<=1&&Math.abs((help.top+help.bottom-label.top-label.bottom)/2)<=1,'readout/token help stays adjacent to label on line one');
+        const second=row.querySelector('output,input[type=password]').getBoundingClientRect();
+        check(second.top>=help.bottom&&bounds.bottom-second.bottom<=20,'second/last line fits without an empty band');
+        const number=row.querySelector('input[type=number]');
+        if(number){const rect=number.getBoundingClientRect();check(Math.abs(rect.top-help.top)<=1&&Math.abs(rect.right-(bounds.right-16))<=1,'number stays right-aligned on line one');}
+        else {const rect=row.querySelector('input[type=password]').getBoundingClientRect();check(Math.abs(rect.left-(bounds.left+16))<=1&&Math.abs(rect.right-(bounds.right-16))<=1,'token input fills line two');}
+        const slider=row.querySelector('input[type=range]');if(slider){const rect=slider.getBoundingClientRect();check(rect.top>=help.bottom&&rect.bottom<=second.top,'slider occupies line two before readout');}
+      }
+      const statusLine=form.querySelector('p[role=status]');
+      check(getComputedStyle(statusLine).display==='none','empty status is hidden');statusLine.textContent='Applied.';
+      check(getComputedStyle(statusLine).position==='sticky'&&getComputedStyle(statusLine).bottom==='0px','status is a sticky footer');statusLine.textContent='';
+      for(const fields of form.querySelectorAll('.BL-GroupOptions')) {
+        const buttons=fields.querySelector(':scope > .BL-ButtonRow');if(buttons)check(buttons===fields.lastElementChild,'group buttons stay at the end');
+      }
+      form.querySelectorAll('details').forEach(details=>details.open=false);
       const cacheScope=form.querySelector('#BL-LyricsCache'),clearCache=form.querySelector('#BL-ClearLyricsCache');
       check(cacheScope.options[0].textContent==='All (7)'&&cacheScope.options[5].textContent==='Spicy (1)','open computes disk Spicy counts and label');
       cacheScope.value='Spotify';clearCache.click();check(clearCache.disabled&&cacheScope.disabled,'clear rejects duplicate clicks');
@@ -93,7 +171,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
         check(mode.value===(view==='NowPlaying'?'off':'animated'),'per-view background defaults');
         check(brightness.step==='5'&&brightness.min==='50'&&brightness.max==='150','background brightness bounds');
         check(!mode.matches(':disabled')&&brightness.matches(':disabled')===(view==='NowPlaying'),'Off disables amounts');
-        check(mode.closest('.BL-HelpRow').querySelector('.BL-HelpDescription').textContent.includes('only the lyrics card'),'card scope help');
+        check(helpText('#JEL-'+view+'-Background-mode')==='Animated moves the artwork gradient. Static draws it once. Off removes it. Classic: Animated','background help');
         mode.value='static';change(mode);check(motion.matches(':disabled')&&paused.matches(':disabled')&&fps.matches(':disabled')&&!brightness.matches(':disabled')&&!resolution.matches(':disabled'),'Static disables motion controls only');
         type(brightness,'125');resolution.value='quarter';change(resolution);
         motion.value='fast';change(motion);check(PresentationSettings.getBackground(view).motion==='classic','disabled background event ignored');
@@ -129,7 +207,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       check(PresentationSettings.getHorizontalSpacing('Contained')===0&&PresentationSettings.getHorizontalSpacing('Fullscreen')===0&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'typography reset cancels previews and resets both associated page surfaces');
       check(PresentationSettings.getHorizontalSpacing('Card')===12,'FullLyrics reset leaves Card spacing alone');
       const cardRow=spacing('Card').closest('.BL-HorizontalSpacing');
-      [...cardRow.querySelectorAll('button')].find(button=>button.textContent.startsWith('Reset ')).click();
+      [...cardRow.closest('fieldset').querySelectorAll('.BL-ButtonRow button')].find(button=>button.textContent==='Reset sidecard spacing').click();
       check(PresentationSettings.getHorizontalSpacing('Card')===0,'per-surface reset');
       const beforeFailure=JSON.stringify([...data]);type(spacing('Contained'),'55');failStorage=true;change(spacing('Contained'));failStorage=false;
       check(JSON.stringify([...data])===beforeFailure&&PresentationSettings.getHorizontalSpacing('Contained')===0&&PresentationSettings.getEffectiveHorizontalSpacing('Contained')===0&&spacingNumber('Contained').value==='0','failed commit restores canonical spacing and controls');
@@ -172,18 +250,19 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const beforeBlank=JSON.stringify([...data]);type(anchor,'');check(JSON.stringify([...data])===beforeBlank,'empty anchor does not save legacy mode');anchor.dispatchEvent(new FocusEvent('blur'));check(anchor.value==='34.125','empty anchor blur restores exact percentage');
       type(anchor,'45');
       check(!form.querySelector('button[type=submit]'),'no Save button');
-      check([...form.querySelectorAll('h3')].some(h=>h.textContent==='Lyrics'),'Lyrics hierarchy');
+      check(![...form.querySelectorAll('h3')].some(h=>h.textContent==='Lyrics'),'old Lyrics wrapper removed');
       check(form.querySelectorAll('.BL-ViewOptions > details.BL-CaseSettings[id$="-Settings"]').length===4,'four native collapsible source cases');
       for(const view of ['NowPlaying','FullLyrics']){
         check(!form.querySelector('#JEL-'+view+'-Line-TextDetail')&&!form.querySelector('#JEL-'+view+'-Line-verticalMotion')&&!form.querySelector('#JEL-'+view+'-Line-emphasis'),'Line case omits unsupported word capabilities');
         check(form.querySelector('#JEL-'+view+'-CueMotion')&&!form.querySelector('#JEL-'+view+'-Word-cueAnimation'),'cue options view-wide only');
       }
       const shared=form.querySelector('#JEL-Shared-TimingOffset'),full=form.querySelector('#JEL-FullLyrics-TimingOffset');
-      check(shared.closest('section').querySelector('h3').textContent==='Behavior','shared delay under Behavior');
+      check([shared,full,form.querySelector('#JEL-NowPlaying-TimingOffset')].every(input=>input.closest('section')===sections[1]),'all offsets under Timings');
       const hold=form.querySelector('#BL-RichSyncHoldSeconds'),holdWord=form.querySelector('#BL-RichSyncHoldWordSync'),minimum=form.querySelector('#BL-RichSyncMinimumSegments');
-      check(hold.value==='5'&&minimum.value==='2'&&holdWord.checked&&hold.closest('section')===shared.closest('section'),'rich-sync fields default to 5, 2 and On under Behavior');
+      check(hold.value==='5'&&minimum.value==='2'&&holdWord.checked&&hold.closest('section')===sections[1],'rich-sync fields default to 5, 2 and On under Timings');
+      check(hold.step==='0.1'&&minimum.step==='0.1'&&hold.min==='0'&&minimum.min==='0'&&!hold.hasAttribute('max')&&!minimum.hasAttribute('max'),'rich-sync numbers use 0.1 steps with zero minimum and no maximum');
       const holdGroup=hold.closest('details.BL-CaseSettings'),holdOptions=hold.closest('fieldset.BL-GroupOptions');
-      check(holdGroup&&holdGroup.previousElementSibling.textContent==='Rich sync compensation'&&holdGroup.querySelector('summary').textContent==='Hold highlight across gaps','hold group is directly under compensation heading');
+      check(holdGroup&&holdGroup.previousElementSibling.contains(full)&&holdGroup.querySelector('summary').textContent==='Hold highlight across gaps','hold group follows all three offsets');
       check(!holdGroup.open&&holdGroup.children[0].tagName==='SUMMARY'&&holdOptions.parentElement===holdGroup,'native collapsible group uses summary then options fieldset');
       check(holdWord.closest('fieldset')===holdOptions&&[...holdOptions.querySelectorAll('input')].map(input=>input.id).join(',')==='BL-RichSyncHoldSeconds,BL-RichSyncHoldWordSync','gap limit precedes word toggle inside group');
       check(hold.getAttribute('aria-label')==='Gap limit (s)'&&holdWord.getAttribute('role')==='switch'&&holdWord.getAttribute('aria-label')==='Apply to word sync','labels and toggle semantics');
@@ -204,13 +283,13 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       holdOptions.disabled=false;holdWord.checked=GetRichSyncSettings().holdWordSync;
       const wordHelp=holdWord.previousElementSibling;wordHelp.dispatchEvent(new MouseEvent('mouseenter'));
       const wordHelpText=document.querySelector('.BL-SettingsHelpPopup')?.textContent;
-      check(wordHelpText?.includes('On also holds rich sync that passes')&&wordHelpText.includes('Off holds line sync only'),'toggle help explains both modes');
+      check(wordHelpText==='Off holds line-synced lyrics only. On also holds word-synced lyrics.Classic: On','toggle help explains both modes');
       wordHelp.dispatchEvent(new MouseEvent('mouseleave'));
       for(const field of [hold,minimum]) {
         const help=field.previousElementSibling;
         help.dispatchEvent(new MouseEvent('mouseenter'));
         const text=document.querySelector('.BL-SettingsHelpPopup')?.textContent;
-        check(text?.includes('Musixmatch, LRCLIB and Spotify')&&text.includes('0 to disable')&&text.includes('falls back to Line')&&text.includes('passes the minimum')&&!/\\byou\\b/i.test(text),'hover help explains eligible providers, resolution and the zero gate without second person');
+        check(text?.includes('Musixmatch, LRCLIB and Spotify only.')&&text.includes('0 turns')&&!text.includes('Classic:')&&!/\\b(?:you|your|Comfy)\\b/i.test(text),'rich-sync help explains eligible providers and zero gate without a footer');
         help.dispatchEvent(new MouseEvent('mouseleave'));
         type(field,'0');check(field.value==='0','zero is accepted by both fields');
       }
@@ -245,7 +324,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const stable=JSON.stringify([...data]);for(const invalid of ['', '-1'])type(gap,invalid);
       check(JSON.stringify([...data])===stable,'partial/negative threshold never persisted');gap.dispatchEvent(new FocusEvent('blur'));check(gap.value==='0','invalid blur restores committed value');
       const cueWindow=form.querySelector('#JEL-FullLyrics-CueLastSeconds');
-      check(cueWindow.value===''&&cueWindow.placeholder==='Full gap','blank cue window uses the full gap');
+      check(cueWindow.value===''&&cueWindow.placeholder==='Full'&&helpText('#JEL-FullLyrics-CueLastSeconds').endsWith('Classic: Full gap'),'blank cue window uses compact placeholder and keeps Full gap footer');
       type(cueWindow,'0.125');
       check(PresentationSettings.getCues('FullLyrics').lastSeconds===.125&&PresentationSettings.getCues('FullLyrics').threshold===0&&PresentationSettings.getCues('NowPlaying').lastSeconds===null,'fractional window is saved while cues are off, within its viewer');
       const windowBytes=JSON.stringify([...data]);
@@ -304,11 +383,15 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
         const row=form.querySelector('#JEL-'+view+'-Reading-secondarySize').closest('.BL-HelpRow');
         const ruby=form.querySelector('#JEL-'+view+'-Reading-rubySize').closest('.BL-HelpRow');
         const alignRow=alignment.closest('.BL-HelpRow');
+        const sharedStyles=alignment.closest('fieldset'),styleHint=sharedStyles.querySelector(':scope > p');
+        check(sharedStyles.matches('.BL-ReadingStyle')&&styleHint?.textContent==='Reading style'&&styleHint===sharedStyles.firstElementChild,'reading styles have their own hint');
         const readingEffects=form.querySelector('#JEL-'+view+'-Word-ReadingInherit').closest('details');
         const visible=element=>getComputedStyle(element).display!=='none'&&element.getClientRects().length>0;
         const checkVisibility=(above,attached)=>{
           check(visible(row)===above&&visible(ruby)===attached,'computed reading size visibility '+view);
           check(visible(alignRow)===(above||attached)&&visible(readingEffects)===(above||attached),'computed alignment/effect visibility '+view);
+          check(visible(styleHint)===(above||attached),'Reading style hint follows shared style visibility '+view);
+          if(above||attached){const languageLabel=form.querySelector('#JEL-'+view+'-Japanese').labels[0].getBoundingClientRect().left;nearLayout(alignRow.querySelector('label').getBoundingClientRect().left,languageLabel,'shared reading labels align with language toggles '+view);nearLayout(styleHint.getBoundingClientRect().left+parseFloat(getComputedStyle(styleHint).paddingLeft),languageLabel,'Reading style hint aligns with language toggles '+view);}
           for(const element of [row,ruby,alignRow,readingEffects])if(element.hidden)check(getComputedStyle(element).display==='none'&&element.getClientRects().length===0,'hidden relevance has no layout box '+view);
         };
         for(const kind of ['romaji','kana'])for(const value of ['replace','above']) {
@@ -348,17 +431,26 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       fetch.value='change';change(fetch);check(data.get('BeautifulLyricsLocal/SpicyToken')==='fixture_new_key','later behavior cannot restore stale token');
       const sidebar=form.querySelector('#BL-SidebarEnabled');sidebar.click();
       const nowFields=form.querySelector('#JEL-NowPlaying-Options');check(nowFields.hidden&&nowFields.disabled&&sidebar.getAttribute('aria-expanded')==='false','whole disabled Now Playing subtree collapsed');
+      check(Math.abs(sidebar.closest('.BL-Block').getBoundingClientRect().height-56)<=1,'disabled Now Playing block collapses to the Enabled band');
       const hiddenGlow=form.querySelector('#JEL-NowPlaying-Word-glow'),beforeHidden=JSON.stringify([...data]);hiddenGlow.checked=false;change(hiddenGlow);
-      const hiddenOffset=form.querySelector('#JEL-NowPlaying-TimingOffset');type(hiddenOffset,'2');check(beforeHidden===JSON.stringify([...data]),'inherited disabled fieldset blocks late synthetic changes');
+      check(beforeHidden===JSON.stringify([...data]),'inherited disabled fieldset blocks late synthetic option changes');
+      const nowOffset=form.querySelector('#JEL-NowPlaying-TimingOffset');type(nowOffset,'2');check(!nowOffset.matches(':disabled')&&TimingSettings.get('NowPlaying')===2,'Now Playing offset stays enabled and applies with Now Playing off');
       sidebar.click();check(!nowFields.hidden&&!nowFields.disabled,'Now Playing reopens retained subtree');
       // A detached form must stay inert even if later reattached and dispatched.
-      type(spacing('Contained'),'63');await frame();check([...form.querySelectorAll('.BL-HorizontalSpacing output')].every(output=>output.textContent.includes('CSS px')||output.textContent.includes('unavailable')),'surface readouts report measured units or unavailable geometry');
+      type(spacing('Contained'),'63');await frame();check([...form.querySelectorAll('.BL-HorizontalSpacing output')].every(output=>/^Width \\d+ px \\u00b7 left gap \\d+ px \\u00b7 right gap \\d+ px(?: \\u00b7 at limit)?$/.test(output.textContent)||output.textContent==='Unavailable while the lyrics column is hidden'),'spacing readouts use rounded px or the hidden-column message');
+      check([...form.querySelectorAll('.BL-HelpRow:not(.BL-HorizontalSpacing) > output')].every(output=>/^\\d+(?:\\.\\d+)? px$/.test(output.textContent)||output.textContent==='Unavailable while the lyrics column is hidden'),'size readouts use px without CSS');
       const old=form,oldPreset=wordPreset,oldBytes=JSON.stringify([...data]);help.focus();fixtureModal.hide();
       check(PresentationSettings.getEffectiveHorizontalSpacing('Contained')===PresentationSettings.getHorizontalSpacing('Contained')&&!document.querySelector('.JEL-TypographyPreview'),'close cancels preview and removes probes');
       check(popups.every(p=>p.destroyed)&&!document.querySelector('.BL-SettingsHelpPopup'),'disconnect cleans all tooltips');
       fixtureModal.display({content:old});oldPreset.value='classic';change(oldPreset);holdWord.checked=false;change(holdWord);check(oldBytes===JSON.stringify([...data]),'reattached disposed form cannot persist, including word hold');
       const submit=new Event('submit',{cancelable:true});old.dispatchEvent(submit);check(submit.defaultPrevented,'disposed form cannot navigate');
-      OpenProviderSettings();form=fixtureForm;type(spacing('Fullscreen'),'72');const beforeReplacement=popups.slice();fixtureModal.display({content:document.createElement('div')});check(beforeReplacement.every(p=>p.destroyed)&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'replacement releases help/handlers and spacing preview');
+      // Values predating the spinner step remain exact on open, including blur.
+      data.set('BeautifulLyricsLocal/RichSyncCompensation',JSON.stringify({holdSeconds:3.57,minimumSegmentsPerLine:2.345,holdWordSync:true}));
+      const fractionalBytes=JSON.stringify([...data]),fractionalWrites=storageWrites;
+      OpenProviderSettings();form=fixtureForm;
+      for(const [id,value] of [['#BL-RichSyncHoldSeconds','3.57'],['#BL-RichSyncMinimumSegments','2.345']]){const input=form.querySelector(id);check(input.value===value&&input.step==='0.1','saved non-step value displays exactly');input.dispatchEvent(new FocusEvent('blur'));check(input.value===value,'blur preserves saved non-step value');}
+      check(JSON.stringify([...data])===fractionalBytes&&storageWrites===fractionalWrites,'opening non-step values performs no writes');
+      type(spacing('Fullscreen'),'72');const beforeReplacement=popups.slice();fixtureModal.display({content:document.createElement('div')});check(beforeReplacement.every(p=>p.destroyed)&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'replacement releases help/handlers and spacing preview');
       OpenProviderSettings();form=fixtureForm;const beforeDispose=JSON.stringify([...data]);GlobalMaid.Destroy();
       const disposed=form.querySelector('#JEL-FullLyrics-GapThreshold');type(disposed,'50');
       const disposedWordHold=form.querySelector('#BL-RichSyncHoldWordSync');disposedWordHold.checked=false;change(disposedWordHold);

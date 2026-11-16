@@ -67,6 +67,13 @@ export function OpenProviderSettings() {
   const heading = (parent: HTMLElement, text: string, tag = "h3") => {
     const element = document.createElement(tag); element.textContent = text; parent.append(element); return element;
   };
+  const sectionBlock = (text: string) => {
+    const section = document.createElement("section"); content.append(section); heading(section, text);
+    const block = document.createElement("div"); block.className = "BL-Block"; section.append(block); return block;
+  };
+  const buttonRow = (parent: HTMLElement) => {
+    const buttons = document.createElement("div"); buttons.className = "BL-ButtonRow"; parent.append(buttons); return buttons;
+  };
   const row = (parent: HTMLElement, text: string, control: HTMLElement, help: string, classic: string) => {
     const label = document.createElement("label"); label.textContent = text; label.append(control); parent.append(label);
     return addHelp(label, control, help, classic);
@@ -106,10 +113,10 @@ export function OpenProviderSettings() {
     write: (value: RenderingProfile) => void, after?: () => void) => {
     const easing = select(parent, "Easing", prefix + "AnimationEasing", [["classic", "Classic"], ["linear", "Linear"],
       ["ease-in", "Ease in"], ["ease-out", "Ease out"], ["ease-in-out", "Ease in/out"]], read().animationEasing,
-      `${scope}. Shapes enabled scale, vertical motion and glow between their existing keyframes. Linear with Direct follows the keyframes without spring lag or extra easing.`, "Classic");
+      "How effect animations ease between states. Linear moves at a constant rate.", "Classic");
     const response = select(parent, "Response", prefix + "AnimationResponse", [["classic", "Classic"], ["slow", "Slow"],
       ["fast", "Fast"], ["direct", "Direct"]], read().animationResponse,
-      `${scope}. Slow and Fast change how quickly enabled effects react. Direct applies the current effect immediately without spring lag or bounce. Lyric timing and highlighting keep their own progress.`, "Classic");
+      "How quickly effects react. Direct has no lag or bounce. Lyric timing isn't affected.", "Classic");
     easing.setAttribute("aria-label", `${scope} easing`);
     response.setAttribute("aria-label", `${scope} response`);
     const sync = () => {
@@ -125,9 +132,9 @@ export function OpenProviderSettings() {
     }
     return sync;
   };
-  const behaviorSection = document.createElement("section"); content.append(behaviorSection); heading(behaviorSection, "Behavior");
+  const behaviorSection = sectionBlock("Behavior");
   const fetchMode = select(behaviorSection, "Fetch lyrics", "BL-FetchMode", [["change", "On song change"], ["required", "When required"]], GetBehaviorSettings().fetchMode,
-    "When required loads on the lyrics page. An enabled sidebar also loads on song change.", "On song change");
+    "On song change loads lyrics as each song starts. When required waits until a view shows lyrics. Now Playing counts while enabled.", "On song change");
   listen(fetchMode, "change", () => apply(() => SaveBehaviorSettings({ ...GetBehaviorSettings(), fetchMode: fetchMode.value as "change" | "required" }), () => { fetchMode.value = GetBehaviorSettings().fetchMode; }));
   const cacheScope = select(behaviorSection, "Lyrics cache", "BL-LyricsCache", LyricsCacheScopes.map(scope => [scope, scope] as const), "All", LyricsCacheHelp, "");
   const clearCache = document.createElement("button"); clearCache.type = "button"; clearCache.id = "BL-ClearLyricsCache"; clearCache.textContent = "Clear";
@@ -160,55 +167,50 @@ export function OpenProviderSettings() {
     }
   });
   const timingReadOnly = TimingSettings.isReadOnly(), presentationReadOnly = PresentationSettings.isReadOnly();
+  const timings = sectionBlock("Timings");
   const addTiming = (scope: "Shared" | PresentationView, parent: HTMLElement) => numeric(parent,
-    scope === "Shared" ? "Lyric delay (s)" : "Delay offset (s)", `JEL-${scope}-TimingOffset`, () => TimingSettings.get(scope),
+    scope === "Shared" ? "Lyric delay (s)" : scope === "NowPlaying" ? "Now Playing offset (s)" : "Fullscreen offset (s)", `JEL-${scope}-TimingOffset`, () => TimingSettings.get(scope),
     value => TimingSettings.save({ Shared: TimingSettings.get("Shared"), NowPlaying: TimingSettings.get("NowPlaying"), FullLyrics: TimingSettings.get("FullLyrics"), [scope]: value }),
-    scope === "Shared" ? "Both views. Positive = later; negative = earlier. View offsets add to this delay." : "This view only, added to the shared delay. Positive = later; negative = earlier.", "0 s", -TimingOffsetLimit, TimingOffsetLimit, "0.05", timingReadOnly);
-  const shared = addTiming("Shared", behaviorSection); shared.setAttribute("aria-label", "Shared lyric delay in seconds");
-  if (timingReadOnly) heading(behaviorSection, "Timing settings require a newer version.", "p");
-  heading(behaviorSection, "Enabled providers", "h4");
-  for (const name of Providers) {
-    const input = toggle(behaviorSection, name, "BL-Provider-" + name, GetBehaviorSettings().providers[name], "Available lyric source. Changes reload the current source choices.", "On");
-    checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
+    scope === "Shared" ? "Shifts lyrics in every view. Positive is later, negative is earlier." : scope === "NowPlaying" ? "Added to Lyric delay in Now Playing only." : "Added to Lyric delay in Fullscreen only.", "0 s", -TimingOffsetLimit, TimingOffsetLimit, "0.05", timingReadOnly);
+  const shared = addTiming("Shared", timings); shared.setAttribute("aria-label", "Shared lyric delay in seconds");
+  // Timing controls live outside the optional Now Playing subtree so its switch
+  // cannot disable offsets. Existing timing storage and read-only rules still apply.
+  for (const view of ["NowPlaying", "FullLyrics"] as const) {
+    const delay = addTiming(view, timings);
+    delay.setAttribute("aria-label", `${view === "NowPlaying" ? "Now Playing" : "Fullscreen"} offset in seconds`);
+    if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
   }
-  heading(behaviorSection, "Rich sync compensation", "h4");
   const holdDetails = document.createElement("details"); holdDetails.className = "BL-CaseSettings";
   const holdTitle = document.createElement("summary"); holdTitle.textContent = "Hold highlight across gaps";
-  holdDetails.append(holdTitle); behaviorSection.append(holdDetails);
+  holdDetails.append(holdTitle); timings.append(holdDetails);
   const holdOptions = document.createElement("fieldset"); holdOptions.className = "BL-GroupOptions"; holdDetails.append(holdOptions);
   numeric(holdOptions, "Gap limit (s)", "BL-RichSyncHoldSeconds",
     () => GetRichSyncSettings().holdSeconds, value => SaveRichSyncSetting("holdSeconds", value),
-    "Musixmatch, LRCLIB and Spotify. Holds the completed highlight across shorter gaps for line sync, including rich sync that falls back to Line. Apply to word sync also holds rich sync that passes the minimum. Gaps at or above the limit use normal dimming and dots. Set to 0 to disable all holds.",
-    "", 0, undefined, "any");
+    "Keeps the finished line lit through pauses shorter than this, instead of dimming and showing dots. 0 turns holding off. Musixmatch, LRCLIB and Spotify only.",
+    "", 0, undefined, "0.1");
   const holdWordSync = toggle(holdOptions, "Apply to word sync", "BL-RichSyncHoldWordSync", GetRichSyncSettings().holdWordSync,
-    "Musixmatch, LRCLIB and Spotify. On also holds rich sync that passes the minimum segments per line, keeping word precision. Off holds line sync only, including rich sync that falls back to Line. The gap limit must be greater than 0.", "On");
+    "Off holds line-synced lyrics only. On also holds word-synced lyrics.", "On");
   checkbox(holdWordSync, value => SaveRichSyncSetting("holdWordSync", value), () => GetRichSyncSettings().holdWordSync);
-  numeric(behaviorSection, "Minimum timed segments per line", "BL-RichSyncMinimumSegments",
+  numeric(timings, "Minimum timed segments per line", "BL-RichSyncMinimumSegments",
     () => GetRichSyncSettings().minimumSegmentsPerLine, value => SaveRichSyncSetting("minimumSegmentsPerLine", value),
-    "Musixmatch, LRCLIB and Spotify. Uses Line sync when the average number of distinct timed starts per lyric line falls below this value. Line sync and rich sync that falls back to Line can hold shorter gaps. Rich sync that passes the minimum is held only when Apply to word sync is On. Set to 0 to disable the resolution test; the gap limit and Apply to word sync still control holds.",
-    "", 0, undefined, "any");
-  const lyricsSection = document.createElement("section"); content.append(lyricsSection); heading(lyricsSection, "Lyrics");
-  const family=document.createElement("input");family.id="JEL-FontFamily";family.type="text";family.value=PresentationSettings.getFontFamily();family.placeholder="Spotify / theme font";family.disabled=presentationReadOnly;
-  row(lyricsSection,"Lyric font family",family,"One local CSS font-family list for both viewers, including readings. Empty follows Spotify and your theme (including Comfy). No font downloads; a family must already be available.","Spotify / theme font");
-  listen(family,"change",()=>{
-    const next=NormalizeFontFamily(family.value);
-    if(next!==family.value.trim()||(next&&!CSS.supports("font-family",next))){family.setAttribute("aria-invalid","true");status.textContent="Enter a valid local font-family list; the previous font is still active.";return;}
-    family.removeAttribute("aria-invalid");apply(()=>PresentationSettings.saveFontFamily(next),()=>{family.value=PresentationSettings.getFontFamily()});
-  });
+    "Word-synced lyrics averaging fewer timed segments per line than this are shown as line sync. 0 turns this off. Musixmatch, LRCLIB and Spotify only.",
+    "", 0, undefined, "0.1");
+  if (timingReadOnly) heading(timings, "Timing settings require a newer version.", "p");
   for (const view of ["NowPlaying", "FullLyrics"] as const) {
-    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Full Lyrics";
-    const section = document.createElement("section"); section.className = "BL-ViewSettings"; lyricsSection.append(section);
-    const title = heading(section, viewTitle, "h4"); title.id = `JEL-${view}-Heading`; section.setAttribute("aria-labelledby", title.id);
+    const viewTitle = view === "NowPlaying" ? "Now Playing" : "Fullscreen";
+    const block = sectionBlock(viewTitle), section = block.parentElement!; section.className = "BL-ViewSettings";
+    const title = section.querySelector("h3")!; title.id = `JEL-${view}-Heading`; section.setAttribute("aria-labelledby", title.id);
     let sidebar: HTMLInputElement | undefined;
-    if (view === "NowPlaying") sidebar = toggle(section, "Enabled", "BL-SidebarEnabled", GetBehaviorSettings().sidebarEnabled, "Show lyrics in Now Playing. Off keeps your settings and collapses all options below.", "On");
-    const fields = document.createElement("fieldset"); fields.className = "BL-ViewOptions"; fields.id = `JEL-${view}-Options`; section.append(fields);
+    if (view === "NowPlaying") {
+      sidebar = toggle(block, "Enabled", "BL-SidebarEnabled", GetBehaviorSettings().sidebarEnabled, "Shows lyrics in the Now Playing panel. Off hides the options below and keeps them.", "On");
+      sidebar.closest(".BL-HelpRow")!.classList.add("BL-GroupHeader");
+    }
+    const fields = document.createElement("fieldset"); fields.className = "BL-ViewOptions"; fields.id = `JEL-${view}-Options`; block.append(fields);
     if (sidebar) {
       sidebar.setAttribute("aria-label", "Now Playing enabled"); sidebar.setAttribute("aria-controls", fields.id);
       const expansion = () => { fields.hidden = !sidebar!.checked; fields.disabled = !sidebar!.checked; sidebar!.setAttribute("aria-expanded", String(sidebar!.checked)); TypographyMeasured(); };
       checkbox(sidebar, value => SaveBehaviorSettings({ ...GetBehaviorSettings(), sidebarEnabled: value }), () => GetBehaviorSettings().sidebarEnabled, expansion); expansion();
     }
-    const delay = addTiming(view, fields); delay.setAttribute("aria-label", `${viewTitle} delay offset in seconds`);
-    if (view === "FullLyrics") delay.setAttribute("aria-description", "Fullscreen, cinema and lyrics page share this viewer.");
     const backgroundGroup = document.createElement("details"), backgroundSummary = document.createElement("summary"), backgroundFields = document.createElement("fieldset");
     backgroundGroup.className = "BL-CaseSettings"; backgroundSummary.textContent = "Background";
     backgroundFields.className = "BL-GroupOptions"; backgroundFields.disabled = presentationReadOnly;
@@ -235,11 +237,12 @@ export function OpenProviderSettings() {
     backgroundInputs.set("brightness", numeric(backgroundFields, "Brightness (%)", `JEL-${view}-Background-brightness`,
       () => backgroundRead().brightness, value => backgroundWrite("brightness", value), BackgroundHelp.brightness, "100%", 50, 150, "5"));
     backgroundSelect("paused", "When paused", [["freeze", "Freeze"], ["animate", "Animate"]], "Animate");
-    backgroundSelect("fps", "Frame rate", [["uncapped", "Uncapped"], ["60", "60 fps"], ["30", "30 fps"], ["15", "15 fps"]], "Preserves quality choice");
-    backgroundSelect("resolution", "Resolution", [["full", "Full"], ["half", "Half"], ["quarter", "Quarter"]], "Preserves quality choice");
+    backgroundSelect("fps", "Frame rate", [["uncapped", "Uncapped"], ["60", "60 fps"], ["30", "30 fps"], ["15", "15 fps"]], "");
+    backgroundSelect("resolution", "Resolution", [["full", "Full"], ["half", "Half"], ["quarter", "Quarter"]], "");
+    const backgroundButtons = buttonRow(backgroundFields);
     for (const classic of [true, false]) {
       const button = document.createElement("button"); button.type = "button"; button.textContent = classic ? "Classic background" : "Reset background";
-      backgroundFields.append(button);
+      backgroundButtons.append(button);
       listen(button, "click", () => {
         apply(() => PresentationSettings.saveBackground(view, classic ? ClassicBackground(backgroundRead()) : { ...DefaultBackgrounds[view] }));
         syncBackground();
@@ -257,7 +260,7 @@ export function OpenProviderSettings() {
       const details=document.createElement("details"),summary=document.createElement("summary"),body=document.createElement("fieldset");
       details.className="BL-CaseSettings";summary.textContent=title;body.className="BL-GroupOptions";body.disabled=presentationReadOnly;
       details.append(summary,body);fields.append(details);
-      const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?`Reset scrolling (${defaults.anchor}% anchor)`:category==="context"?"Reset context":`Classic ${title.toLowerCase()}`;body.append(reset);
+      const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?`Reset scrolling (${defaults.anchor}% anchor)`:category==="context"?"Reset context":`Classic ${title.toLowerCase()}`;buttonRow(body).append(reset);
       listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}if(category==="context")syncContextAppearance();});
       return body;
     };
@@ -275,15 +278,15 @@ export function OpenProviderSettings() {
       listen(input,"blur",()=>{if(input.getAttribute("aria-invalid")){const value=layoutRead()[key];input.value=value===null?"":String(value);input.removeAttribute("aria-invalid")}});return input;
     };
     const typography=layoutSection("Typography","typography");
-    const primary=layoutNumber(typography,"primaryRatio","Primary size (×)",.5,2,"0.05","Multiplier .5–2 over this viewer's complete responsive default, after its clamp resolves. Word and Line share this layout; CSS px below resolve at the current column size.","1×");
+    const primary=layoutNumber(typography,"primaryRatio","Primary size (×)",.5,2,"0.05","Scales lyric text, 0.5–2×. The resulting pixel size is shown below.","1×");
     const primaryOutput=document.createElement("output");primaryOutput.htmlFor=primary.id;primaryOutput.setAttribute("aria-label",`${viewTitle} resolved primary CSS pixels`);primary.closest(".BL-HelpRow")!.append(primaryOutput);
-    const backing=layoutNumber(typography,"backingRatio","Backing size (× primary)",.5,1,"0.05","Backing voices use .5–1 of the resolved primary size. Independent of primary scaling and reading size.",".75×");
+    const backing=layoutNumber(typography,"backingRatio","Backing size (× primary)",.5,1,"0.05","Size of background vocals, 0.5–1× of the primary size.",".75×");
     const backingOutput=document.createElement("output");backingOutput.htmlFor=backing.id;backingOutput.setAttribute("aria-label",`${viewTitle} resolved backing CSS pixels`);backing.closest(".BL-HelpRow")!.append(backingOutput);sizeOutputs.set(view,{primary:primaryOutput,backing:backingOutput});
-    layoutNumber(typography,"leadWeight","Lead weight",100,900,"100","CSS weight 100–900, in 100 steps. The selected font must support the weight; the browser may synthesize or choose the nearest face.","700");
-    layoutNumber(typography,"backingWeight","Backing weight",100,900,"100","Independent CSS backing weight, 100–900. Actual appearance depends on the available font faces.","500");
-    layoutNumber(typography,"leading","Source line height",1,2.5,"any","Ratio 1–2.5 of the source font size between wrapped source rows. Does not change the independent reading row gap.","1.1818181818");
-    nullable(typography,"groupGap","Between groups (em)",0,2,"0.05","Classic","Total gap 0–2 primary-source em between logical source groups. Reading rows and wrapped rows do not become groups. Empty preserves the responsive Classic margins.","Responsive 1cqw on each side");
-    for (const [surface, surfaceTitle] of (view === "NowPlaying" ? [["Card", "Sidecard"]] : [["Contained", "Ordinary lyrics page"], ["Fullscreen", "Fullscreen/cinema"]]) as [HorizontalSurface, string][]) {
+    layoutNumber(typography,"leadWeight","Lead weight",100,900,"100","Boldness of main lyrics, 100–900. The font must include that weight.","700");
+    layoutNumber(typography,"backingWeight","Backing weight",100,900,"100","Boldness of background vocals, 100–900.","500");
+    layoutNumber(typography,"leading","Line height",1,2.5,"any","Space between wrapped rows of one lyric line, 1–2.5×.","1.18");
+    nullable(typography,"groupGap","Between lines (em)",0,2,"0.05","Classic","Space between lyric lines, 0–2 em. Empty uses the original spacing.","Original");
+    for (const [surface, surfaceTitle] of (view === "NowPlaying" ? [["Card", "Sidecard"]] : [["Contained", "Lyrics page"], ["Fullscreen", "Fullscreen"]]) as [HorizontalSurface, string][]) {
       const lease = PresentationSettings.createHorizontalPreview(surface);
       const range = document.createElement("input"), number = document.createElement("input");
       range.type = "range"; number.type = "number";
@@ -292,13 +295,13 @@ export function OpenProviderSettings() {
       number.required=true;
       range.setAttribute("aria-label", `${surfaceTitle} horizontal spacing`);
       number.setAttribute("aria-label", `${surfaceTitle} horizontal spacing adjustment`);
-      const help = `${surfaceTitle} only. Signed adjustment −100–100: −100 uses the widest allowed column, 0 preserves the surface default, +100 narrows toward four primary-font em where possible. Source font size stays unchanged. ${surface==="Fullscreen" ? "The left gap includes the protected artwork/control reservation." : surface==="Card" ? "The sidecard's inner padding is protected; negative values may already be at the outward limit." : "The widest column reaches this lyrics viewport's edges."} Readouts describe column edges in CSS pixels, not glyph ink.`;
-      row(typography,`${surfaceTitle} horizontal spacing`,range,help,"0 (surface default)");
+      const help = "Positive narrows the lyrics column, negative widens it, −100 to 100. 0 is the default width." + (surface === "Contained" ? " Lyrics page only." : surface === "Fullscreen" ? " Fullscreen and cinema only." : "");
+      row(typography,`${surfaceTitle} horizontal spacing`,range,help,"0");
       // The help helper owns one accessible row. Both editing controls share it;
       // synchronization assigns values directly, never synthetic input events.
       const container=range.closest<HTMLElement>(".BL-HelpRow")!;container.classList.add("BL-HorizontalSpacing");number.setAttribute("aria-describedby",range.getAttribute("aria-describedby")!);container.append(number);
       const output=document.createElement("output");output.htmlFor=`${range.id} ${number.id}`;output.setAttribute("aria-label",`${surfaceTitle} resolved horizontal column CSS pixels`);container.append(output);spacingOutputs.set(surface,output);
-      const reset=document.createElement("button");reset.type="button";reset.textContent=`Reset ${surfaceTitle.toLowerCase()} spacing`;reset.disabled=presentationReadOnly;container.append(reset);
+      const reset=document.createElement("button");reset.type="button";reset.textContent=`Reset ${surfaceTitle.toLowerCase()} spacing`;reset.disabled=presentationReadOnly;typography.querySelector(".BL-ButtonRow")!.append(reset);
       const sync=()=>{const value=PresentationSettings.getEffectiveHorizontalSpacing(surface);range.value=number.value=String(value);number.removeAttribute("aria-invalid");};
       const valid=()=>number.value.trim()!==""&&number.validity.valid&&Number.isInteger(number.valueAsNumber);
       const cancel=()=>{lease.cancel();sync();};
@@ -316,25 +319,24 @@ export function OpenProviderSettings() {
       spacingControls.set(surface,{cancel,sync,dispose:()=>lease.dispose()});sync();
     }
     const contextFields=layoutSection("Context","context");
-    nullable(contextFields,"before","Groups before",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole source-group count before the earliest active group. Empty = All. Concurrent activity and all intervening source groups form one block; cues/readings/wrapped rows do not count.",String(defaults.before ?? "All"));
-    nullable(contextFields,"after","Groups after",0,Number.MAX_SAFE_INTEGER,"1","All","Nonnegative whole groups after the latest active group. Empty = All. Manual browsing and Auto-follow Off reveal All while remembering these counts. Untimed text always shows All.","All");
-    heading(contextFields,"Outside context","h5");
+    nullable(contextFields,"before","Lines before",0,Number.MAX_SAFE_INTEGER,"1","All","Lines shown before the current one. Empty shows all.",String(defaults.before ?? "All"));
+    nullable(contextFields,"after","Lines after",0,Number.MAX_SAFE_INTEGER,"1","All","Lines shown after the current one. Empty shows all. Manual scrolling shows the whole song.","All");
     const appearanceRead = () => PresentationSettings.getContextAppearance(view);
     const appearanceWrite = <K extends keyof ContextAppearance>(key: K, value: ContextAppearance[K]) =>
       PresentationSettings.saveContextAppearance(view, { ...appearanceRead(), [key]: value });
     const appearanceMode = select(contextFields,"Outside context",`JEL-${view}-Context-mode`,[["hide","Hide"],["muted","Show muted lyrics"]],appearanceRead().mode,
-      "Hide stops outside-context visual effects and hides those groups. Show muted lyrics keeps them static and clickable; hover/focus lightens only that group without restarting animation. Both counts All, Auto-follow Off and manual browsing show the full song without this treatment, while remembering these choices.","Hide");
+      "Hide removes lines outside that range. Show muted dims them and keeps them clickable.","Hide");
     const appearanceFields = document.createElement("fieldset"); appearanceFields.className="BL-ContextAppearance";contextFields.append(appearanceFields);
     const blurEnabled = toggle(appearanceFields,"Blur",`JEL-${view}-Context-blurEnabled`,appearanceRead().blurEnabled,
-      "Independently blur outside-context source text and readings. Disable to preserve the remembered amount without applying a filter.","On");
-    const blur = numeric(appearanceFields,"Blur amount (CSS px)",`JEL-${view}-Context-blur`,()=>appearanceRead().blur,value=>appearanceWrite("blur",value),
-      "Blur radius in CSS pixels, 0–12 in 0.25 steps. Zero is neutral; it does not change lyric layout.","2 CSS px",0,12,"0.25");
+      "Blurs muted lines.","On");
+    const blur = numeric(appearanceFields,"Blur amount (px)",`JEL-${view}-Context-blur`,()=>appearanceRead().blur,value=>appearanceWrite("blur",value),
+      "Blur strength for muted lines, 0–12 px.","2 px",0,12,"0.25");
     const darkeningEnabled = toggle(appearanceFields,"Darkening",`JEL-${view}-Context-darkeningEnabled`,appearanceRead().darkeningEnabled,
-      "Independently darken outside-context source text and readings toward black, without changing the background or transparency.","On");
+      "Darkens muted lines.","On");
     const darkening = numeric(appearanceFields,"Darkening (%)",`JEL-${view}-Context-darkening`,()=>appearanceRead().darkening,value=>appearanceWrite("darkening",value),
-      "Brightness reduction toward black: 0% is neutral and 100% is black. This is independent of opacity.","60%",0,100,"1");
+      "0% is no change, 100% is black.","60%",0,100,"1");
     const opacity = numeric(appearanceFields,"Opacity (%)",`JEL-${view}-Context-opacity`,()=>appearanceRead().opacity,value=>appearanceWrite("opacity",value),
-      "Transparency of each outside-context group, including its readings: 100% is opaque. Zero hides it and removes invisible hit targets. Hover/focus uses at least 60% while retaining blur and darkening; stronger saved opacity is preserved.","35%",0,100,"1");
+      "Opacity of muted lines. 0% hides them. Hovering raises it to at least 60%.","35%",0,100,"1");
     syncContextAppearance = () => {
       const value=appearanceRead();
       appearanceMode.value=value.mode;
@@ -350,25 +352,31 @@ export function OpenProviderSettings() {
     checkbox(darkeningEnabled,value=>appearanceWrite("darkeningEnabled",value),()=>appearanceRead().darkeningEnabled,syncContextAppearance);
     syncContextAppearance();
     const scrolling=layoutSection("Scrolling","scrolling");
-    const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Off shows the entire song and never follows playback/external seeks. Explicit lyric clicks still seek and recenter once. Untimed text never follows.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);
-    const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"Classic keeps the surface's CSS transition; all choices use the same fixed anchor. Native smooth uses the browser's duration and cancels on manual scroll input. Independent of the manual-resume policy.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
-    layoutNumber(scrolling,"anchor","Anchor (% from top)",0,100,"any","Preferred active center, 0–100% from the readable viewport top. Every newly active source block follows this fixed position. At 0% the block aligns with the readable top where song edges allow. Fitting active voices remain readable together; newer wins otherwise.",`${defaults.anchor}%`);
-    const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic conditionally resumes fixed-anchor following when active lyrics are in reach. After delay returns after the last actual manual scrolling, even offscreen; activity/annotations cannot end it early. Silence defers until a real target.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
-    layoutNumber(scrolling,"resumeDelay","Resume delay (s)",0,30,"0.05","Seconds 0–30 from the last actual manual scrolling. One owned timeout; more scrolling extends it. Auto-follow Off cancels it.",".75 s");
-    if(SongLyrics?.Type==="Static") { contextFields.disabled=true;scrolling.disabled=true;heading(contextFields,"Untimed lyrics show the entire song; following is unavailable.","p") }
-    const gap = numeric(fields, "Gap dots after (s)", `JEL-${view}-GapThreshold`, () => PresentationSettings.getCues(view).threshold,
+    const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Scrolls along with the song. Off shows the whole song. Clicking a line still seeks.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);
+    const transition=select(scrolling,"Transition",`JEL-${view}-Layout-transition`,[["classic","Classic"],["instant","Instant"],["smooth","Native smooth"]],layoutRead().transition,"How the view moves to the next line. Native smooth stops on manual scrolling.","Classic");layoutInputs.set("transition",transition);listen(transition,"change",()=>apply(()=>layoutWrite("transition",transition.value as LayoutProfile["transition"])));
+    layoutNumber(scrolling,"anchor","Anchor (% from top)",0,100,"any","Where the current line sits, from 0% (top) to 100% (bottom).",`${defaults.anchor}%`);
+    const resume=select(scrolling,"Resume after browsing",`JEL-${view}-Layout-resume`,[["classic","Classic"],["delay","After delay"]],layoutRead().resume,"Classic resumes following once the current line is back in reach. After delay resumes after a set time.","Classic");layoutInputs.set("resume",resume);listen(resume,"change",()=>apply(()=>layoutWrite("resume",resume.value as LayoutProfile["resume"])));
+    layoutNumber(scrolling,"resumeDelay","Resume delay (s)",0,30,"0.05","Seconds after manual scrolling before following resumes, 0–30.",".75 s");
+    if(SongLyrics?.Type==="Static") { contextFields.disabled=true;scrolling.disabled=true;heading(contextFields,"Untimed lyrics show the whole song, so following is off.","p") }
+    // Finish construction before moving reset rows to the end of their groups.
+    // Each button keeps its original disabled fieldset owner and event handler.
+    for (const body of [typography, contextFields, scrolling]) body.append(body.querySelector(":scope > .BL-ButtonRow")!);
+    const gapDetails = document.createElement("details"); gapDetails.className = "BL-CaseSettings";
+    heading(gapDetails, "Gap dots", "summary"); fields.append(gapDetails);
+    const gapFields = document.createElement("fieldset"); gapFields.className = "BL-GroupOptions"; gapDetails.append(gapFields);
+    const gap = numeric(gapFields, "Show after (s)", `JEL-${view}-GapThreshold`, () => PresentationSettings.getCues(view).threshold,
       value => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), threshold: value }),
-      "Minimum real silence across all voices. 0 disables dots; 100 means 100 seconds. Very short gaps use static dots.", "2 s", 0, undefined, "0.1", presentationReadOnly);
+      "Shows dots in pauses at least this long. 0 turns dots off.", "2 s", 0, undefined, "0.1", presentationReadOnly);
     gap.setAttribute("aria-label", `${viewTitle} gap dots threshold in seconds`);
-    const cueMotion = toggle(fields, "Dot motion", `JEL-${view}-CueMotion`, PresentationSettings.getCues(view).motion,
-      "Animated or static gap dots for this view, shared by Word and Line sources. Text presets never change this.", "On"); cueMotion.disabled = presentationReadOnly;
+    const cueMotion = toggle(gapFields, "Dot motion", `JEL-${view}-CueMotion`, PresentationSettings.getCues(view).motion,
+      "Animates the dots.", "On"); cueMotion.disabled = presentationReadOnly;
     checkbox(cueMotion, motion => PresentationSettings.saveCues(view, { ...PresentationSettings.getCues(view), motion }), () => PresentationSettings.getCues(view).motion);
     const cueWindow = document.createElement("input");
     cueWindow.id = `JEL-${view}-CueLastSeconds`;
     cueWindow.type = "number";
     cueWindow.min = "0";
     cueWindow.step = "any";
-    cueWindow.placeholder = "Full gap";
+    cueWindow.placeholder = "Full";
     cueWindow.disabled = presentationReadOnly;
     cueWindow.setAttribute("aria-label", `${viewTitle} show gap dots for last seconds`);
     const syncCueWindow = () => {
@@ -376,8 +384,8 @@ export function OpenProviderSettings() {
       cueWindow.removeAttribute("aria-invalid");
     };
     syncCueWindow();
-    row(fields, "Show dots for last (s)", cueWindow,
-      "Blank uses the full eligible gap. Enter a positive duration ending where the dots normally disappear before the next vocal. Minimum silence still decides which gaps qualify.", "Full gap");
+    row(gapFields, "Show for last (s)", cueWindow,
+      "Shows dots only for the last part of a pause. Empty shows them for the whole pause.", "Full gap");
     listen(cueWindow, "input", () => {
       const blank = cueWindow.value === "" && !cueWindow.validity.badInput;
       const value = cueWindow.valueAsNumber;
@@ -402,7 +410,7 @@ export function OpenProviderSettings() {
       const read = () => PresentationSettings.getRendering(view, sourceCase);
       const prefix = `JEL-${view}-${sourceCase}-`;
       const detail = sourceCase === "Word" ? select(body, "Text detail", prefix + "TextDetail", [["auto", "Auto"], ["line", "Line"], ["word", "Word"]], read().detail,
-        "Choose how to display word-timed lyrics. Line uses this viewer’s Line sync text and reading settings. Auto and Word use the saved Word sync settings.", "Auto") : undefined;
+        "How word-synced lyrics are shown. Line uses the Line sync settings. Auto and Word use the settings below.", "Auto") : undefined;
       const appearance = detail ? document.createElement("fieldset") : body;
       if (detail) {
         detail.setAttribute("aria-label", `${viewTitle} Word text detail`);
@@ -410,18 +418,18 @@ export function OpenProviderSettings() {
         body.append(appearance);
       }
       const preset = select(appearance, "Text preset", prefix + "TextPreset", [["classic", "Classic"], ["minimal", "Minimal"], ["balanced", "Balanced"], ["custom", "Custom"]], read().preset,
-        "Editable effects for this display mode. Applying a named preset resets its easing and response to Classic.", "Classic");
+        "Starting point for the effects below. Changing an effect switches to Custom.", "Classic");
       preset.setAttribute("aria-label", `${viewTitle} ${sourceCase} text preset`);
       const effectInputs = new Map<keyof RenderingProfile, HTMLInputElement>();
       const highlight = select(appearance, "Highlight", prefix + "TextHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], read().highlight,
-        "Whole segment changes at its start. Progressive follows available timing and freezes in gaps. Off keeps solid text.", "Classic");
+        "Whole segment lights each part at once. Progressive fills it with the timing. Off keeps text solid.", "Classic");
       highlight.setAttribute("aria-label", `${viewTitle} ${sourceCase} highlight`);
       for (const [key, text, help] of [
-        ["scale", "Scale", "Scale movement; whole-line detail uses its existing active scale."],
-        ["verticalMotion", "Vertical motion", "Word display detail only; whole-line detail stays on its baseline."],
-        ["glow", "Glow", "Animated text glow, independent of inactive blur."],
-        ["blur", "Inactive blur", "Blur vocals away from active voices."],
-        ["emphasis", "Emphasis", "In Word display, runs with at least one second of voiced source time and up to 12 source graphemes get emphasis. Text that needs to stay joined moves as one segment. Ambiguous mappings across several source runs keep ordinary animation."],
+        ["scale", "Scale", "Grows the active lyric."],
+        ["verticalMotion", "Vertical motion", "Lifts active words slightly."],
+        ["glow", "Glow", "Adds a glow to active lyrics."],
+        ["blur", "Inactive blur", "Blurs lyrics that aren't active."],
+        ["emphasis", "Emphasis", "Extra animation on long-held words."],
       ] as const) {
         if (sourceCase === "Line" && (key === "verticalMotion" || key === "emphasis")) continue;
         const input = toggle(appearance, text, prefix + key, read()[key], help, "On"); effectInputs.set(key, input);
@@ -441,10 +449,10 @@ export function OpenProviderSettings() {
         value => PresentationSettings.saveRendering(view, sourceCase, value), () => sync());
       let lineHint: HTMLElement | undefined;
       if (sourceCase === "Line") {
-        heading(appearance, "These settings also apply when word-timed lyrics are displayed as Line.", "p");
+        heading(appearance, "These settings also apply when word-synced lyrics are shown as Line.", "p");
       } else {
         lineHint = document.createElement("div");
-        heading(lineHint, "Whole-line display uses this viewer’s Line sync settings for text and readings.", "p");
+        heading(lineHint, "Line display uses the Line sync settings.", "p");
         const openLine = document.createElement("button");
         openLine.type = "button";
         openLine.textContent = "Open Line sync settings";
@@ -454,7 +462,7 @@ export function OpenProviderSettings() {
           line.open = true;
           line.querySelector("summary")?.focus();
         });
-        lineHint.append(openLine);
+        buttonRow(lineHint).append(openLine);
         body.append(lineHint);
       }
       const sync = () => {
@@ -486,22 +494,22 @@ export function OpenProviderSettings() {
         const current = readAnnotations(); PresentationSettings.saveAnnotations(view, { ...current, cases: { ...current.cases, [sourceCase]: value } });
       };
       const inherit = toggle(readingFields, "Use text effects", prefix + "ReadingInherit", readCase().inherit,
-        "Secondary text and ruby inherit the displayed text’s effects. Off enables independent reading effects for this display mode.", "On");
+        "Readings use the same effects as the lyrics. Off sets them separately.", "On");
       const custom = document.createElement("fieldset"); custom.className = "BL-GroupOptions"; readingFields.append(custom);
       const readingHighlight = select(custom, "Highlight", prefix + "ReadingHighlight", [["classic", "Classic"], ["off", "Off"], ["segment", "Whole segment"], ["progressive", "Progressive"]], readCase().effects.highlight,
-        "Reading highlight for this display mode. Grouped progress freezes in real source gaps.", "Use text effects");
+        "Highlight style for readings.", "Use text effects");
       listen(readingHighlight, "change", () => apply(() => writeCase({ ...readCase(), effects: { ...readCase().effects, highlight: readingHighlight.value as RenderingProfile["highlight"], preset: "custom" } }), () => { readingHighlight.value = readCase().effects.highlight; }));
       for (const [key, text] of [["scale", "Scale"], ["verticalMotion", "Vertical motion"], ["glow", "Glow"], ["blur", "Inactive blur"]] as const) {
         if (sourceCase === "Line" && key === "verticalMotion") continue;
         const input = toggle(custom, text, prefix + "Reading-" + key, readCase().effects[key],
-          "Independent reading effect for this display mode. Whole-line detail has no vertical motion. Off stops its effect work.", "Use text effects");
+          "Applies this effect to readings.", "Use text effects");
         checkbox(input, value => writeCase({ ...readCase(), effects: { ...readCase().effects, [key]: value, preset: "custom" } }), () => readCase().effects[key]);
       }
       const syncReadingAnimation = animationControls(custom, prefix + "Reading-", `${viewTitle} ${sourceCase} reading animation`,
         () => readCase().effects, effects => writeCase({ ...readCase(), effects }));
       if (sourceCase === "Word") {
         const emphasis = toggle(custom, "Emphasis", prefix + "Reading-emphasis", readCase().effects.emphasis,
-          "Uses the same voiced source duration and source grapheme limits as lyric emphasis. Joined text can move as one segment. Ambiguous mappings across several source runs keep ordinary animation.", "Use text effects");
+          "Extra animation on readings of long-held words.", "Use text effects");
         checkbox(emphasis, value => writeCase({ ...readCase(), effects: { ...readCase().effects, emphasis: value, preset: "custom" } }), () => readCase().effects.emphasis);
       }
       const readingExpand = () => {
@@ -536,10 +544,10 @@ export function OpenProviderSettings() {
     };
     const annotationDetails = document.createElement("details"); annotationDetails.className = "BL-CaseSettings";
     const annotationTitle = document.createElement("summary"); annotationTitle.textContent = "Conversions"; annotationDetails.append(annotationTitle); fields.append(annotationDetails);
-    const group = annotationDetails;
+    const group = document.createElement("fieldset"); group.className = "BL-GroupOptions"; annotationDetails.append(group);
     const writeConversions = (value: ReturnType<typeof readConversions>) => PresentationSettings.saveConversions(view, value);
     const enabled = toggle(group, "Enabled", `JEL-${view}-ConversionsEnabled`, readConversions().enabled,
-      "Convert supported languages in this view. Off displays original lyrics and stops this view's conversion work; choices are remembered.", "Off");
+      "Converts supported languages in this view. Off shows the original lyrics.", "Off");
     enabled.disabled = presentationReadOnly;
     const options = document.createElement("fieldset"); options.className = "BL-GroupOptions"; group.append(options);
     const expand = () => { options.hidden = !enabled.checked; options.disabled = presentationReadOnly || !enabled.checked; refreshStyles(); };
@@ -547,18 +555,18 @@ export function OpenProviderSettings() {
     for (const language of PresentationLanguages) {
       const readChoice = () => readConversions().languages[language];
       const writeChoice = (patch: Partial<ReturnType<typeof readChoice>>) => { const current = readConversions(); writeConversions({ ...current, languages: { ...current.languages, [language]: { ...current.languages[language], ...patch } } }); };
-      const input = toggle(options, language, `JEL-${view}-${language}`, readChoice().enabled, "Enable this language in this view. Unsupported text remains original.", "Off");
+      const input = toggle(options, language, `JEL-${view}-${language}`, readChoice().enabled, "Converts this language. Other text stays as is.", "Off");
       input.setAttribute("aria-label", `${viewTitle} ${language} conversion`);
       const languageFields = document.createElement("fieldset"); languageFields.className = "BL-GroupOptions"; options.append(languageFields);
       const languageExpand = () => { languageFields.hidden = !input.checked; languageFields.disabled = !input.checked; refreshStyles(); };
       checkbox(input, value => writeChoice({ enabled: value }), () => readChoice().enabled, languageExpand); languageExpand();
       const kinds: [string, string][] = language === "Japanese" ? [["romaji", "Romaji"], ["kana", "Kana"], ["furigana", "Furigana"]] : language === "Chinese" ? [["pinyin", "Pinyin"]] : [["romaja", "Romaja"]];
       const kind = select(languageFields, "Conversion", `JEL-${view}-${language}-Conversion`, kinds, readChoice().kind,
-        language === "Japanese" ? "Kana keeps written kana and particles. Romaji uses pronunciation. Furigana keeps original text with readings attached above kanji." : "Phonetic reading for this language; original text remains while loading or if unavailable.", language === "Japanese" ? "Romaji" : kinds[0][1]);
+        language === "Japanese" ? "Romaji spells by sound. Kana converts to kana. Furigana adds readings above kanji." : "Reading shown for this language.", language === "Japanese" ? "Romaji" : kinds[0][1]);
       const placements: [string, string][] = [["replace", "Replace"], ["above", "Above"]];
       if (language === "Japanese") placements.push(["attached", "Above kanji (attached)"]);
       const placement = select(languageFields, "Placement", `JEL-${view}-${language}-Placement`, placements, readChoice().placement,
-        "Replace changes the displayed main text. Above adds a reading above each real voice. Furigana is always attached to its kanji and cannot replace the original; the previous row placement is remembered.", "Replace");
+        "Replace swaps the lyric text. Above shows the reading over it. Furigana always sits above kanji.", "Replace");
       const syncPlacement = () => { const attached = readChoice().kind === "furigana"; placement.value = attached ? "attached" : readChoice().placement; for (const option of placement.options) option.disabled = attached ? option.value !== "attached" : option.value === "attached"; placement.disabled = attached; refreshStyles(); };
       listen(kind, "change", () => { apply(() => writeChoice({ kind: kind.value as ReturnType<typeof readChoice>["kind"] }), () => { kind.value = readChoice().kind; }); syncPlacement(); });
       listen(placement, "change", () => { apply(() => writeChoice({ placement: placement.value as "replace" | "above" }), syncPlacement); syncPlacement(); });
@@ -566,25 +574,39 @@ export function OpenProviderSettings() {
       // watcher and detached controls are still protected by apply().
       placementSyncs.push(syncPlacement);
     }
-    const annotationFields = document.createElement("fieldset"); annotationFields.className = "BL-GroupOptions"; options.append(annotationFields);
+    const annotationFields = document.createElement("fieldset"); annotationFields.className = "BL-GroupOptions BL-ReadingStyle"; options.append(annotationFields);
+    styleRows.set("hint", heading(annotationFields, "Reading style", "p"));
     const readAnnotations = () => PresentationSettings.getAnnotations(view);
     for (const [key, text, minimum, maximum, fallback] of [["secondarySize", "Row size", .25, 1.5, ".6"], ["rubySize", "Ruby size", .25, 1, ".5"], ["gap", "Row gap", 0, 2, ".15 em"], ["spacing", "Letter spacing", -.1, .5, "0 em"], ["opacity", "Opacity", 0, 1, ".8"]] as const) {
       const styleInput = numeric(annotationFields, text, `JEL-${view}-Reading-${key}`, () => readAnnotations()[key],
         value => PresentationSettings.saveAnnotations(view, { ...readAnnotations(), [key]: value }),
-        key.endsWith("Size") ? "Relative to this voice's primary font size. Updates layout without requesting new readings." : "Reading style for this view. Spacing and gap use the reading's font size; opacity ranges from 0 to 1. Style changes reuse existing readings.", fallback, minimum, maximum, "0.05");
+        key.endsWith("Size") ? "Size relative to the lyric text." : key === "gap" ? "Space between the reading and the lyric." : key === "spacing" ? "Letter spacing of readings." : "Reading opacity, 0–1.", fallback, minimum, maximum, "0.05");
       styleRows.set(key, styleInput.closest(".BL-HelpRow") as HTMLElement);
     }
     const alignment = select(annotationFields, "Alignment", `JEL-${view}-ReadingAlignment`, [["inherit", "Follow voice"], ["start", "Start"], ["center", "Center"], ["end", "End"]], readAnnotations().alignment,
-      "Secondary row alignment within its voice block; ruby alignment within each original source range. Start and End follow the lyric direction.", "Follow voice");
+      "Aligns readings. Follow voice matches the lyric line.", "Follow voice");
     listen(alignment, "change", () => apply(() => PresentationSettings.saveAnnotations(view, { ...readAnnotations(), alignment: alignment.value as "inherit" | "start" | "center" | "end" }), () => { alignment.value = readAnnotations().alignment; }));
     styleRows.set("alignment", alignment.closest(".BL-HelpRow") as HTMLElement);
     placementSyncs.forEach(sync => sync());
     if (presentationReadOnly) heading(fields, "Presentation settings require a newer version.", "p");
   }
-  heading(content, "Spicy");
+  const providers = sectionBlock("Providers");
+  for (const name of Providers) {
+    const input = toggle(providers, name, "BL-Provider-" + name, GetBehaviorSettings().providers[name], "Uses this source for lyrics.", "On");
+    checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
+  }
+  const fonts = sectionBlock("Lyrics Font");
+  const family=document.createElement("input");family.id="JEL-FontFamily";family.type="text";family.value=PresentationSettings.getFontFamily();family.placeholder="Spotify font";family.disabled=presentationReadOnly;
+  row(fonts,"Font family",family,"Font family for lyrics in both views. It must be installed on this device. Empty uses the Spotify font.","Spotify font");
+  listen(family,"change",()=>{
+    const next=NormalizeFontFamily(family.value);
+    if(next!==family.value.trim()||(next&&!CSS.supports("font-family",next))){family.setAttribute("aria-invalid","true");status.textContent="Enter a valid local font-family list; the previous font is still active.";return;}
+    family.removeAttribute("aria-invalid");apply(()=>PresentationSettings.saveFontFamily(next),()=>{family.value=PresentationSettings.getFontFamily()});
+  });
+  const spicy = sectionBlock("Spicy");
   const token = document.createElement("input"); token.id = "BL-SpicyToken"; token.type = "password"; token.autocomplete = "off"; token.spellcheck = false;
-  token.placeholder = "Paste your client token"; token.value = GetSpicyToken();
-  row(content, "API token", token, "Applies when editing finishes (blur or Enter). Empty disables this source. Key stays on this device; use the local relay.", "Empty (disabled)").classList.add("BL-TokenTile");
+  token.placeholder = "Client token"; token.value = GetSpicyToken();
+  row(spicy, "API token", token, "Turns Spicy on. Stored only on this device. Needs the local relay running.", "Empty").classList.add("BL-TokenTile");
   const commitToken = () => apply(() => SetSpicyToken(token.value), () => { token.value = GetSpicyToken(); });
   listen(token, "change", commitToken);
   listen(token, "keydown", event => { if ((event as KeyboardEvent).key === "Enter") { event.preventDefault(); commitToken(); } });

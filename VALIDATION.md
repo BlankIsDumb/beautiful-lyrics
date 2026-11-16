@@ -1,5 +1,27 @@
 # Validation
 
+## Settings menu revamp — 5.1.0-local.38, 2026-11-16
+
+All 671 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`E1DDF468C07E43BD968D87A02F18A556CAACCABDD7C27172E75F4C7B100FC886`.
+
+The settings menu is reorganized into Behavior, Timings, Now Playing,
+Fullscreen, Providers, Lyrics Font and Spicy. Each section is one continuous
+block. Now Playing's options expand below its Enabled row in the same block.
+Ordinary rows share one height whatever their control. The lyric delay, both
+view offsets and the gap hold settings live under Timings. Gap dot settings
+have their own group. Both gap hold numbers step by 0.1. Every help text was
+rewritten to be short. Saved settings and their behavior are unchanged. In
+Spotify on Windows, the section order, row heights, live saving, the status
+line, tooltips and the 0.1 step were checked.
+
+Nested group bands span the full block width. Depth shows through the darker
+shade and a 16px label indent per level, while every control keeps a 16px
+right inset. Button rows align to the right edge. The last section has 28px of
+space below it. In Spotify, labels measured 32, 48 and 64px at depths 1 to 3,
+and every control's right inset was 16px.
+
 ## Hold across gaps for word sync — 5.1.0-local.37, 2026-11-15
 
 All 671 tests passed. The four production bundles passed syntax and dictionary

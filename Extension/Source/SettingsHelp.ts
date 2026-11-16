@@ -1,14 +1,14 @@
 import { Spotify, GlobalMaid } from "@Spices/Spicetify/Services/Session.ts";
 
-export const LyricsCacheHelp = "Clear saved lyrics for one provider or All. Spicy uses disk storage, with 14-day lyric hits and 1-day not-found results. All also clears track details, prepared lyrics and provider cooldowns. Credentials stay saved. The current song reloads afterwards. Counts refresh when Settings opens and after clearing.";
+export const LyricsCacheHelp = "Clears saved lyrics for one provider, or All. All also clears track details and provider cooldowns. Tokens stay saved. The current song reloads.";
 
 export const BackgroundHelp = {
-  mode: "Animated moves the artwork gradient. Static draws only when artwork or dimensions change. Off releases all background resources. Full Lyrics pages share one profile; Now Playing styles only the lyrics card.",
-  motion: "Gradient motion speed: Slow is 0.5 times, Classic is 1 times, Fast is 2 times the original speed. Available only in Animated mode.",
-  brightness: "50–150% in steps of 5, multiplying this surface's original brightness. Applies immediately without redrawing the shader.",
-  paused: "Freeze stops background animation while playback is paused, preserving its position. Animate keeps moving, as the original background did.",
-  fps: "Maximum animation draws per second. Uncapped follows the display refresh rate. Classic background preserves this quality choice.",
-  resolution: "Drawing resolution relative to device pixel ratio: Full, Half or Quarter. Lower values reduce rendering work. Classic background preserves this quality choice.",
+  mode: "Animated moves the artwork gradient. Static draws it once. Off removes it.",
+  motion: "How fast the gradient moves. Animated only.",
+  brightness: "50–150%. 100% is the original brightness.",
+  paused: "Freeze stops the animation while music is paused. Animate keeps it moving.",
+  fps: "Caps how often the background redraws. Lower uses less GPU.",
+  resolution: "Draws the background at a lower resolution. Lower uses less GPU.",
 };
 
 let disposeActiveHelp: (() => void) | undefined;

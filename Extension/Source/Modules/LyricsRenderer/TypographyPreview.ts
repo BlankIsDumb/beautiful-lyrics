@@ -27,6 +27,11 @@ export function CreateTypographyPreview(form: HTMLElement, outputs: ReadonlyMap<
   const rem=document.createElement("span");rem.style.cssText="position:fixed;left:-100000px;top:0;width:1rem;height:1rem;visibility:hidden;pointer-events:none";rem.setAttribute("aria-hidden","true");document.body.append(rem);
   const observe = (element: Element) => { if(!observed.has(element)){observed.add(element);geometry.observe(element);} };
   const text = (output: HTMLElement, value: string) => { if(output.textContent!==value)output.textContent=value; };
+  const unavailable = (output: HTMLOutputElement) => {
+    text(output,"Unavailable while the lyrics column is hidden");
+    // Exact diagnostics must not outlive the geometry they describe.
+    delete output.dataset.left;delete output.dataset.right;delete output.dataset.width;
+  };
   const hidden = (output: HTMLElement) => !!output.closest<HTMLFieldSetElement>(".BL-ViewOptions")?.hidden;
   const make = (surface: HorizontalSurface) => {
     const shell=document.createElement("div");shell.className=`JEL-TypographyPreview ${surface}`;shell.setAttribute("aria-hidden","true");shell.inert=true;
@@ -81,30 +86,28 @@ export function CreateTypographyPreview(form: HTMLElement, outputs: ReadonlyMap<
       const probe=root?undefined:preview(surface);if(probe)needed.add(surface);
       const lead=root?.querySelector<HTMLElement>(".Vocals.Lead:not(.AnnotationText)")??probe?.lead;
       const backing=root?.querySelector<HTMLElement>(".Vocals.Background:not(.AnnotationText)")??probe?.backing;
-      if(!lead){text(output.primary,"Unavailable while column is hidden");text(output.backing,"Unavailable while column is hidden");continue;}
+      if(!lead){unavailable(output.primary);unavailable(output.backing);continue;}
       const primary=parseFloat(getComputedStyle(lead).fontSize);
       const secondary=backing?parseFloat(getComputedStyle(backing).fontSize):primary*PresentationSettings.getLayout(view).backingRatio;
       if(primary>0&&secondary>0) {
-        text(output.primary,`${primary.toFixed(2).replace(/\.?0+$/,"")} CSS px`);
-        text(output.backing,`${secondary.toFixed(2).replace(/\.?0+$/,"")} CSS px`);
+        text(output.primary,`${primary.toFixed(2).replace(/\.?0+$/,"")} px`);
+        text(output.backing,`${secondary.toFixed(2).replace(/\.?0+$/,"")} px`);
         output.primary.title=output.backing.title=`${root?"Live":"Preview at this window size"}: ${surfaceTitle(surface)}`;
       }
     }
     for(const [surface,output] of spacingOutputs) {
       if(hidden(output))continue;
-      const title=surfaceTitle(surface),live=liveRoot(surface);
-      const adjustment=PresentationSettings.getEffectiveHorizontalSpacing(surface),signed=adjustment>0?`+${adjustment}`:String(adjustment);
-      const unavailable=`${title} · adjustment ${signed} · unavailable while column is hidden or unmeasurable`;
+      const live=liveRoot(surface);
       if(live) {
         const measurement=GetHorizontalMeasurement(live);
-        if(live.dataset.columnAvailable!=="true"||!measurement){text(output,unavailable);continue;}
+        if(live.dataset.columnAvailable!=="true"||!measurement){unavailable(output);continue;}
         describe(output,surface,"Live",measurement.leftGap,measurement.rightGap,measurement.width,measurement.limited ? "limit" : "");
       } else {
-        const probe=preview(surface);if(!probe){text(output,unavailable);continue;}needed.add(surface);
+        const probe=preview(surface);if(!probe){unavailable(output);continue;}needed.add(surface);
         const rect=probe.root.getBoundingClientRect(),style=getComputedStyle(probe.root);
         const paddingLeft=parseFloat(style.paddingLeft)||0,paddingRight=parseFloat(style.paddingRight)||0;
         const result=ResolveHorizontalSpacing({rootLeft:0,rootRight:rect.width,defaultLeft:paddingLeft,defaultRight:rect.width-paddingRight,safeLeft:surface==="Fullscreen" ? Math.min(rect.width,probe.reservation.getBoundingClientRect().width):0,safeRight:rect.width,primary:parseFloat(getComputedStyle(probe.lead).fontSize),fontFraction:[...mounted.values()].some(entry=>entry.root.isConnected&&entry.root.querySelector(".AlignedOpposite")) ? .75 : .95,adjustment:PresentationSettings.getEffectiveHorizontalSpacing(surface)});
-        if(!result){text(output,unavailable);continue;}
+        if(!result){unavailable(output);continue;}
         describe(output,surface,"Preview at this window size",result.leftGap,result.rightGap,result.width,result.limited ? "limit" : "");
       }
     }
@@ -114,9 +117,15 @@ export function CreateTypographyPreview(form: HTMLElement, outputs: ReadonlyMap<
     for(const element of observed)if(element!==document.documentElement&&element!==rem&&!retainedHosts.has(element)){geometry.unobserve(element);observed.delete(element);}
   };
   const describe=(output:HTMLOutputElement,surface:HorizontalSurface,kind:string,left:number,right:number,width:number,limited:string)=>{
-    const value=PresentationSettings.getEffectiveHorizontalSpacing(surface),signed=value>0?`+${value}`:String(value);
-    const limit=(Math.abs(value)===100 || limited&&limited!=="false") ? value<0?" · outward limit":value>0?" · narrowing limit":" · protected boundary" : "";
-    text(output,`${surfaceTitle(surface)} · ${kind} · adjustment ${signed} · left gap ${left.toFixed(2)} CSS px · right gap ${right.toFixed(2)} CSS px · width ${width.toFixed(2)} CSS px${limit}`);
+    const value=PresentationSettings.getEffectiveHorizontalSpacing(surface);
+    const limit=(Math.abs(value)===100 || limited&&limited!=="false") ? " · at limit" : "";
+    text(output,`Width ${Math.round(width)} px · left gap ${Math.round(left)} px · right gap ${Math.round(right)} px${limit}`);
+    output.title=`${kind}: ${surfaceTitle(surface)}`;
+    // Keep subpixel measurements available for diagnostics and parity tests;
+    // rounding the label must not reduce the precision of layout verification.
+    for(const [key,number] of [["left",left],["right",right],["width",width]] as const) {
+      const exact=String(number);if(output.dataset[key]!==exact)output.dataset[key]=exact;
+    }
   };
   const queue = () => { if(!disposed&&!frame)frame=requestAnimationFrame(measure); };
   const unsubscribers=[PresentationSettings.subscribeLayout(queue),PresentationSettings.subscribeFontFamily(queue),PresentationSettings.subscribeHorizontalSpacing(queue)];

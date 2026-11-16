@@ -7,14 +7,11 @@ import { Maid, Giveable } from "@Universal/Modules/Maid.ts"
 import { Timeout } from "@Universal/Modules/Scheduler.ts"
 
 // Spices
-import {
-	Spotify,
-	SpotifyHistory
-} from "@Spices/Spicetify/Services/Session.ts"
+import { SpotifyHistory } from "@Spices/Spicetify/Services/Session.ts"
 import { Song, SongChanged } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Our Modules
-import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
+import { CreateLyricsRenderer } from "./Shared.ts"
 import { CreateElement } from "../Shared.ts"
 import BackgroundController from "../../Modules/Background/BackgroundController.ts"
 
@@ -24,25 +21,7 @@ const Container = `
 		<div class="Content"></div>
 	</div>
 `
-const Header = `
-	<div class="ViewControls">
-		<button id="Romanize" class="ViewControl"></button>
-		<button id="Cinema" class="ViewControl">
-			<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-16-icon">
-				<path d="M14.55 1c.8 0 1.45.65 1.45 1.45V7h-1.5V2.5h-13v11h5.507V15H1.45C.65 15 0 14.35 0 13.55V2.45C0 1.65.65 1 1.45 1h13.1z"></path><path d="M16 9.757a.75.75 0 0 0-.75-.75H9.068L6.56 6.5h1.385a.75.75 0 1 0 0-1.5H4v3.946a.75.75 0 0 0 1.5 0V7.561l3.076 3.075v3.614c0 .414.336.75.75.75h5.925a.75.75 0 0 0 .75-.75V9.757z"></path>
-			</svg>
-		</button>
-		<button id="Close" class="ViewControl">
-			<svg role="img" height="16" width="16" aria-hidden="true" viewBox="0 0 16 16" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-16-icon">
-				<path d="M1.47 1.47a.75.75 0 0 1 1.06 0L8 6.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L9.06 8l5.47 5.47a.75.75 0 1 1-1.06 1.06L8 9.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L6.94 8 1.47 2.53a.75.75 0 0 1 0-1.06z"></path>
-			</svg>
-		</button>
-	</div>
-`.trim()
 const NoLyrics = `<span class="NoLyrics">This song doesn't have any Lyrics!</span>`
-
-// Query Constants
-const HeaderQuery = ".main-view-container__scroll-node-child-spacer, .main-view-container__scroll-node-child"
 
 // Store where we last were before a Page opened
 let LastPageLocation: (string | undefined)
@@ -63,69 +42,22 @@ export default class PageView implements Giveable {
 			LastPageLocation = lastPage.pathname
 		}
 
-		// Create our container/header
+		// Create our container
 		const container = this.Maid.Give(CreateElement<HTMLDivElement>(Container))
-		const header = this.Maid.Give(CreateElement<HTMLDivElement>(Header))
-		SetupProviderControls(header, this.Maid)
 
 		// Apply our dynamic background
 		this.Maid.Give(new BackgroundController(container, {view:"FullLyrics", surface:"Contained"}))
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!
-		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid, NoLyrics, {surface:"Contained"})
+		CreateLyricsRenderer(content, this.Maid, NoLyrics, {surface:"Contained"})
+		SetupProviderControls(content, this.Maid)
 
-		// Handle our controls
-		{
-			// Grab our controls
-			const changeButton = header.querySelector<HTMLButtonElement>("#Cinema")!
-			const romanizeButton = header.querySelector<HTMLButtonElement>("#Romanize")!
-			const closeButton = header.querySelector<HTMLButtonElement>("#Close")!
-
-			// Handle our close button
-			{
-				const closeTooltip = Spotify.Tippy(
-					closeButton,
-					{
-						...Spotify.TippyProps,
-						content: `Close Page`
-					}
-				)
-				this.Maid.Give(() => closeTooltip.destroy())
-
-				closeButton.addEventListener(
-					"click",
-					() => this.Close()
-				)
-			}
-
-			// Handle our change button
-			{
-				const changeTooltip = Spotify.Tippy(
-					changeButton,
-					{
-						...Spotify.TippyProps,
-						content: "Enter Cinema"
-					}
-				)
-				this.Maid.Give(() => changeTooltip.destroy())
-
-				changeButton.addEventListener(
-					"click",
-					() => SpotifyHistory.push("/BeautifulLyrics/Fullscreen")
-				)
-			}
-
-			// Setup our romanization button
-			SetupRomanizationButton(romanizeButton, UpdateLyricsRenderer, this.Maid)
-		}
-
-		// Now parent our container/header
+		// Now parent our container
 		if (isLegacy) {
 			page.style.containerType = "inline-size"
 			this.Maid.Give(() => page.style.containerType = "")
 		}
-		container.appendChild(header)
 		page.appendChild(container)
 
 		// Handle watching for no-songs

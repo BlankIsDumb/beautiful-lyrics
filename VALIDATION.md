@@ -1,5 +1,23 @@
 # Validation
 
+## Fullscreen corner controls — 5.1.0-local.39, 2026-11-16
+
+All 676 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`832C16848BF9EB220A3717770C31C5956273A0A0F74F16A77DB7FBF7CABA196C`.
+
+The lyrics page and the fullscreen view now have two always-visible 40px
+buttons in the bottom right corner of the lyrics area. The first opens a list
+of the providers for the current song and switches on click. Its tooltip names
+the current provider. The second opens quick settings: Fullscreen offset, text
+size, conversions for the current song's language, auto-follow, background
+mode, and a link to all settings. These write the same stored values as the
+settings menu. The three-dot popup, the Romanize button and the lyrics page's
+hover row are removed. The playbar buttons open and close the page. Menus use
+the theme's card, text and border colors. In Spotify on Windows, button
+placement, both menus, the steppers, the switches, Esc, outside click and the
+playbar toggle were checked. Real browser fullscreen was not checked natively.
+
 ## Settings menu revamp — 5.1.0-local.38, 2026-11-16
 
 All 671 tests passed. The four production bundles passed syntax and dictionary

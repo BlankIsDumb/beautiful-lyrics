@@ -3,7 +3,6 @@ import type { HorizontalSurface } from "../../HorizontalSpacing.ts";
 import { Maid } from "@Universal/Modules/Maid.ts"
 
 // Spices
-import { Spotify } from "@Spices/Spicetify/Services/Session.ts"
 import {
 	SongChanged,
 	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded, SongLyricsError, SongLyricsOutcomes
@@ -87,75 +86,6 @@ export const CreateLyricsRenderer = (
 	maid.Give(SongChanged.Connect(UpdateLyricsRenderer))
 	maid.Give(SongLyricsLoaded.Connect(UpdateLyricsRenderer))
 
-	// For external use to combine with romanization toggling
+	// Return the same refresh path for callers that need it.
 	return UpdateLyricsRenderer
-}
-
-// Handle Romanization Toggling for Header button
-export const SetupRomanizationButton = (
-	romanizationToggle: HTMLButtonElement,
-	updateLyricsRenderer: () => void,
-	maid: Maid
-) => {
-	// Create our toggle method
-	const ToggleRomanizationState = () => {
-		if (PresentationSettings.isReadOnly()) return
-		if (SongLyrics?.RomanizedLanguage !== undefined) {
-			PresentationSettings.setRomanized(
-				"FullLyrics", SongLyrics.RomanizedLanguage,
-				!PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage)
-			)
-		}
-	}
-
-	// Setup behavior and the tooltip
-	romanizationToggle.disabled = PresentationSettings.isReadOnly()
-	romanizationToggle.addEventListener("click", ToggleRomanizationState)
-	maid.Give(() => romanizationToggle.removeEventListener("click", ToggleRomanizationState))
-	const romanizeTooltip = Spotify.Tippy(
-		romanizationToggle,
-		{
-			...Spotify.TippyProps,
-			content: "__WAITING__"
-		}
-	)
-	maid.Give(() => romanizeTooltip.destroy())
-
-	// Handle updating our state
-	const SetContent = (isRomanized: boolean): undefined => {
-		romanizeTooltip.setContent(PresentationSettings.isReadOnly()
-			? "Update the extension to edit presentation settings"
-			: isRomanized ? "Show original text" : "Show alternate text")
-		romanizationToggle.innerHTML = (isRomanized ? Icons.EnableRomanization : Icons.DisableRomanization)
-	}
-	const SetVisibility = (isVisible: boolean): undefined => {
-		romanizationToggle.style.display = (isVisible ? "" : "none")
-	}
-
-	// Handle our romanization state changing and its initial state
-	maid.Give(
-		PresentationSettings.subscribe(
-			(view, languages) => {
-				if (view === "FullLyrics" && SongLyrics?.RomanizedLanguage !== undefined && languages.includes(SongLyrics.RomanizedLanguage)) {
-					SetContent(PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage))
-				}
-			}
-		)
-	)
-
-	// Handle updating our state
-	{
-		const Update = () => {
-			if (SongLyrics?.RomanizedLanguage === undefined) {
-				SetVisibility(false)
-			} else {
-				SetContent(PresentationSettings.isRomanized("FullLyrics", SongLyrics.RomanizedLanguage))
-				SetVisibility(true)
-			}
-		}
-
-		Update()
-		maid.Give(SongChanged.Connect(Update))
-		maid.Give(SongLyricsLoaded.Connect(Update))
-	}
 }

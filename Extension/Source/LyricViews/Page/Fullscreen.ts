@@ -47,7 +47,7 @@ import Slider from "../../Components/Slider.ts"
 import Button from "../../Components/Button.ts"
 
 // Our Modules
-import { CreateLyricsRenderer, SetupRomanizationButton } from "./Shared.ts"
+import { CreateLyricsRenderer } from "./Shared.ts"
 import { CreateElement, GetCoverArtForSong } from "../Shared.ts"
 import BackgroundController from "../../Modules/Background/BackgroundController.ts"
 import LyricViewIcons from "../Icons.ts"
@@ -112,7 +112,6 @@ const Container = `
 					</div>
 					<div class="ViewControls">
 						<button id="AddToPlaylist" class="ViewControl">${Icons.AddToPlaylist}</button>
-						<button id="Romanize" class="ViewControl"></button>
 						<button id="SmallerView" class="ViewControl"></button>
 						<button id="Fullscreen" class="ViewControl">${LyricViewIcons.FullscreenOpen}</button>
 						<button id="Close" class="ViewControl">${Icons.CloseView}</button>
@@ -220,7 +219,8 @@ export default class PageView implements Giveable {
 
 		// Handle lyric-rendering changes
 		const content = container.querySelector<HTMLDivElement>(".Content")!
-		const UpdateLyricsRenderer = CreateLyricsRenderer(content, this.Maid, undefined, {surface:"Fullscreen", reservation:container.querySelector<HTMLElement>(".PlayPanelMouseArea")!})
+		CreateLyricsRenderer(content, this.Maid, undefined, {surface:"Fullscreen", reservation:container.querySelector<HTMLElement>(".PlayPanelMouseArea")!})
+		SetupProviderControls(content, this.Maid)
 
 		// Handle our play-panel
 		{
@@ -234,7 +234,6 @@ export default class PageView implements Giveable {
 			const coverArt = mediaSpace.querySelector<HTMLImageElement>(".CoverArt")!
 			const addToPlaylistCover = mediaSpace.querySelector<HTMLDivElement>(".AddToPlaylistCover")!
 			const viewControls = mediaSpace.querySelector<HTMLDivElement>(".ViewControls")!
-		SetupProviderControls(viewControls, this.Maid)
 			const likeStateContainer = mediaSpace.querySelector<HTMLDivElement>(".LikeState .Hitbox")!
 			const playbackControls = mediaSpace.querySelector<HTMLDivElement>(".PlaybackControls")!
 
@@ -946,7 +945,6 @@ export default class PageView implements Giveable {
 			{
 				// Grab our controls
 				const addToPlaylistButton = viewControls.querySelector<HTMLButtonElement>("#AddToPlaylist")!
-				const romanizeButton = viewControls.querySelector<HTMLButtonElement>("#Romanize")!
 				const fullscreenButton = viewControls.querySelector<HTMLButtonElement>("#Fullscreen")!
 				const smallViewButton = viewControls.querySelector<HTMLButtonElement>("#SmallerView")!
 				const closeButton = viewControls.querySelector<HTMLButtonElement>("#Close")!
@@ -1145,9 +1143,6 @@ export default class PageView implements Giveable {
 					// Update  immediately
 					Update()
 				}*/
-
-				// Setup our romanization button
-				SetupRomanizationButton(romanizeButton, UpdateLyricsRenderer, this.Maid)
 			}
 
 			// Handle our like state

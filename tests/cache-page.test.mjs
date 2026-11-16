@@ -5,7 +5,7 @@ import { transformSync } from 'esbuild';
 import { settle } from './cache-fixture.mjs';
 
 const source=readFileSync('Extension/Source/LyricViews/Page/Shared.ts','utf8');
-const {code}=transformSync(source.slice(source.indexOf('export const CreateLyricsRenderer'),source.indexOf('// Handle Romanization Toggling')).replace('export ',''),{loader:'ts'});
+const {code}=transformSync(source.slice(source.indexOf('export const CreateLyricsRenderer')).replace('export ',''),{loader:'ts'});
 const render=new Function('state','document','container','maid','fullscreen',`
  const {SongLyrics,SongLyricsError,SongLyricsOutcomes,HaveSongLyricsLoaded}=state;
  const SongChanged={Connect(){}},SongLyricsLoaded={Connect(){}},Icons={LoadingLyrics:'loading'},LyricsRenderer=class{constructor(){throw Error('unexpected renderer')}};

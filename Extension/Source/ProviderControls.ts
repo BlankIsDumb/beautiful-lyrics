@@ -16,17 +16,15 @@ import {
 } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts";
 import {
   SongLyrics,
-  SongLyricChoices,
-  SongChanged,
-  SongLyricsLoaded,
-  SelectLyricsProvider,
   ReloadLyrics,
 } from "@Spices/Spicetify/Services/Player/mod.ts";
 import type { Maid } from "@Universal/Modules/Maid.ts";
 import Icons from "./LyricViews/Icons.ts";
 import { PresentationSettings, PresentationLanguages, type PresentationView } from "./PresentationSettings.ts";
 import type { HorizontalSurface } from "./HorizontalSpacing.ts";
-import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
+import { TimingSettings } from "./TimingSettings.ts";
+import { SaveTimingOffset, SaveLayoutField, SaveBackgroundField, TimingOffsetInput, PrimarySizeInput } from "./ViewSettingsControls.ts";
+import { SetupCornerControls } from "./CornerControls.ts";
 import { ApplyTextPreset, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
 import { CreateSettingsHelp, BackgroundHelp, LyricsCacheHelp } from "./SettingsHelp.ts";
 import { LyricsCacheScopes, GetLyricsCacheCounts, ClearLyricsCache, type LyricsCacheScope } from "@Spices/Spicetify/Services/Player/LyricsCache.ts";
@@ -170,8 +168,8 @@ export function OpenProviderSettings() {
   const timings = sectionBlock("Timings");
   const addTiming = (scope: "Shared" | PresentationView, parent: HTMLElement) => numeric(parent,
     scope === "Shared" ? "Lyric delay (s)" : scope === "NowPlaying" ? "Now Playing offset (s)" : "Fullscreen offset (s)", `JEL-${scope}-TimingOffset`, () => TimingSettings.get(scope),
-    value => TimingSettings.save({ Shared: TimingSettings.get("Shared"), NowPlaying: TimingSettings.get("NowPlaying"), FullLyrics: TimingSettings.get("FullLyrics"), [scope]: value }),
-    scope === "Shared" ? "Shifts lyrics in every view. Positive is later, negative is earlier." : scope === "NowPlaying" ? "Added to Lyric delay in Now Playing only." : "Added to Lyric delay in Fullscreen only.", "0 s", -TimingOffsetLimit, TimingOffsetLimit, "0.05", timingReadOnly);
+    value => SaveTimingOffset(scope, value),
+    scope === "Shared" ? "Shifts lyrics in every view. Positive is later, negative is earlier." : scope === "NowPlaying" ? "Added to Lyric delay in Now Playing only." : "Added to Lyric delay in Fullscreen only.", "0 s", TimingOffsetInput.min, TimingOffsetInput.max, TimingOffsetInput.step, timingReadOnly);
   const shared = addTiming("Shared", timings); shared.setAttribute("aria-label", "Shared lyric delay in seconds");
   // Timing controls live outside the optional Now Playing subtree so its switch
   // cannot disable offsets. Existing timing storage and read-only rules still apply.
@@ -217,7 +215,7 @@ export function OpenProviderSettings() {
     backgroundGroup.append(backgroundSummary, backgroundFields); fields.append(backgroundGroup);
     const backgroundRead = () => PresentationSettings.getBackground(view);
     const backgroundWrite = <K extends keyof BackgroundProfile>(key: K, value: BackgroundProfile[K]) =>
-      PresentationSettings.saveBackground(view, { ...backgroundRead(), [key]: value });
+      SaveBackgroundField(view, key, value);
     const backgroundInputs = new Map<keyof BackgroundProfile, HTMLInputElement | HTMLSelectElement>();
     const syncBackground = () => {
       const value = backgroundRead();
@@ -251,7 +249,7 @@ export function OpenProviderSettings() {
     syncBackground();
     const defaults=DefaultLayouts[view];
     const layoutRead=()=>PresentationSettings.getLayout(view);
-    const layoutWrite=<K extends keyof LayoutProfile>(key: K,value: LayoutProfile[K])=>PresentationSettings.saveLayout(view,{...layoutRead(),[key]:value});
+    const layoutWrite=<K extends keyof LayoutProfile>(key: K,value: LayoutProfile[K])=>SaveLayoutField(view,key,value);
     const layoutInputs=new Map<keyof LayoutProfile, HTMLInputElement|HTMLSelectElement>();
     // Reset handlers are registered before the Context controls are created.
     // The callback is assigned below and runs only for later user actions.
@@ -278,7 +276,7 @@ export function OpenProviderSettings() {
       listen(input,"blur",()=>{if(input.getAttribute("aria-invalid")){const value=layoutRead()[key];input.value=value===null?"":String(value);input.removeAttribute("aria-invalid")}});return input;
     };
     const typography=layoutSection("Typography","typography");
-    const primary=layoutNumber(typography,"primaryRatio","Primary size (×)",.5,2,"0.05","Scales lyric text, 0.5–2×. The resulting pixel size is shown below.","1×");
+    const primary=layoutNumber(typography,"primaryRatio","Primary size (×)",PrimarySizeInput.min,PrimarySizeInput.max,PrimarySizeInput.step,"Scales lyric text, 0.5–2×. The resulting pixel size is shown below.","1×");
     const primaryOutput=document.createElement("output");primaryOutput.htmlFor=primary.id;primaryOutput.setAttribute("aria-label",`${viewTitle} resolved primary CSS pixels`);primary.closest(".BL-HelpRow")!.append(primaryOutput);
     const backing=layoutNumber(typography,"backingRatio","Backing size (× primary)",.5,1,"0.05","Size of background vocals, 0.5–1× of the primary size.",".75×");
     const backingOutput=document.createElement("output");backingOutput.htmlFor=backing.id;backingOutput.setAttribute("aria-label",`${viewTitle} resolved backing CSS pixels`);backing.closest(".BL-HelpRow")!.append(backingOutput);sizeOutputs.set(view,{primary:primaryOutput,backing:backingOutput});
@@ -655,94 +653,6 @@ export const ProviderControlsReady = OnSpotifyReady.then(() => {
   });
 });
 
-export function SetupProviderControls(controls: HTMLElement, maid: Maid) {
-  const button = document.createElement("button");
-  button.className = "ViewControl BL-OptionsButton";
-  button.type = "button";
-  button.setAttribute("aria-label", "Additional Options");
-  button.setAttribute("aria-haspopup", "dialog");
-  button.innerHTML =
-    '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
-  controls.prepend(maid.Give(button));
-  const panel = document.createElement("div");
-  panel.className = "BL-ProviderMenu";
-  panel.setAttribute("role", "dialog");
-  panel.setAttribute("aria-label", "Additional Options");
-  const heading = document.createElement("h3");
-  heading.textContent = "Additional Options";
-  const label = document.createElement("label");
-  label.textContent = "Lyrics Provider";
-  const select = document.createElement("select");
-  select.setAttribute("aria-label", "Lyrics Provider");
-  label.append(select);
-  panel.append(heading, label);
-  const update = () => {
-    select.replaceChildren();
-    for (const lyrics of SongLyricChoices) {
-      const option = document.createElement("option");
-      option.value = lyrics.Source!.Provider;
-      const selected = option.value === SongLyrics?.Source?.Provider;
-      const effective = selected ? SongLyrics! : lyrics;
-      option.textContent =
-        option.value +
-        (effective.Source?.HasWordSync
-          ? " (word sync)"
-          : effective.Type === "Static"
-            ? " (plain text)"
-            : "");
-      option.selected = selected;
-      select.append(option);
-    }
-    select.disabled = !SongLyricChoices.length;
-    if (select.disabled) {
-      const option = document.createElement("option");
-      option.textContent = "No available providers";
-      select.append(option);
-    }
-  };
-  select.onchange = () => SelectLyricsProvider(select.value);
-  // Spotify's tooltip renderer stringifies DOM content. Supply our own small
-  // renderer so the select remains an interactive element with its listeners.
-  const popup = (Spotify as any).Tippy(button, {
-    render() {
-      const popper = document.createElement("div");
-      popper.append(panel);
-      return { popper };
-    },
-    animation: false,
-    delay: 0,
-    trigger: "click",
-    interactive: true,
-    placement: "bottom-start",
-    appendTo: () => document.fullscreenElement || document.body,
-    onShow() {
-      update();
-      controls.classList.add("BL-ProviderOpen");
-      button.setAttribute("aria-expanded", "true");
-    },
-    onHide() {
-      controls.classList.remove("BL-ProviderOpen");
-      button.setAttribute("aria-expanded", "false");
-    },
-  });
-  const keydown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      popup.hide();
-      button.focus();
-    }
-  };
-  panel.addEventListener("keydown", keydown);
-  maid.Give(() => {
-    popup.destroy();
-    select.onchange = null;
-    panel.removeEventListener("keydown", keydown);
-  });
-  maid.Give(
-    SongChanged.Connect(() => {
-      popup.hide();
-      update();
-    }),
-  );
-  maid.Give(SongLyricsLoaded.Connect(update));
-  update();
+export function SetupProviderControls(lyricsArea: HTMLElement, maid: Maid) {
+  SetupCornerControls(lyricsArea, maid, OpenProviderSettings);
 }

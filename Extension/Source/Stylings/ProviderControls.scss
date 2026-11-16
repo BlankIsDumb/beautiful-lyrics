@@ -1,5 +1,5 @@
 .BL-Settings,
-.BL-ProviderMenu {
+.BL-CornerMenu {
   color: var(--spice-text, #eee);
   font-family: inherit;
   h3 {
@@ -14,7 +14,8 @@
     font-size: 14px;
   }
   input,
-  select {
+  select,
+  .BL-Stepper output {
     color: var(--spice-text, #eee);
     background: var(--spice-card, #333);
     border: 1px solid var(--spice-button, #777);
@@ -30,7 +31,7 @@
   }
 }
 // Independent of Comfy's modal-open class: the same layout works with other themes.
-.BL-Settings {
+.BL-Settings, .BL-CornerMenu {
   padding: 0;
   font-size: 16px;
   h3 {
@@ -60,11 +61,12 @@
     line-height: 20px;
     cursor: pointer;
   }
-  input[type="number"], input[type="text"], input[type="password"], select {
+  input[type="number"], input[type="text"], input[type="password"], select, .BL-Stepper output {
     height: 32px;
     box-sizing: border-box;
     padding: 0 10px;
     font-size: 14px;
+    font-weight: 400;
   }
   select { max-width: 55%; min-width: 0; }
   input[type="number"] { flex: 0 0 80px; width: 80px; min-width: 0; }
@@ -143,7 +145,7 @@
       width: 14px;
       height: 14px;
       border-radius: 50%;
-      background: #fff;
+      background: var(--spice-text, #fff);
       transition: transform .15s;
     }
     &:checked {
@@ -183,15 +185,17 @@
     cursor: pointer;
   }
 }
-.BL-SettingsHelpPopup {
-  max-width: 280px;
-  padding: 10px 12px;
+.BL-SettingsHelpPopup, .BL-CornerMenu {
   border: 1px solid var(--spice-button-disabled, #555);
   border-radius: 6px;
   background: var(--spice-card, #282828);
   color: var(--spice-text, #eee);
-  font: 13px/1.45 var(--font-family, sans-serif);
   box-shadow: 0 4px 16px #0006;
+}
+.BL-SettingsHelpPopup {
+  max-width: 280px;
+  padding: 10px 12px;
+  font: 13px/1.45 var(--font-family, sans-serif);
   .BL-HelpClassic {
     margin-top: 8px;
     padding-top: 6px;
@@ -213,16 +217,80 @@
     scrollbar-width: thin;
   }
 }
-.BL-ProviderMenu {
-  padding: 16px;
-  min-width: 320px;
-  max-width: calc(100vw - 32px);
-  background: var(--spice-main, #181818);
-  border: 1px solid var(--spice-button, #777);
-  border-radius: 6px;
-  select {
-    max-width: 240px;
+.BL-CornerControls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 102;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(0,0,0,.5);
+    color: var(--spice-text, #eee);
+    cursor: pointer;
+    pointer-events: auto;
+    svg { width: 16px; height: 16px; }
+    &:focus-visible { outline: 2px solid var(--spice-button-active, #fff); outline-offset: 2px; }
   }
+}
+.BL-CornerMenu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 4px;
+  box-sizing: border-box;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  pointer-events: auto;
+  font-size: 14px;
+  line-height: 20px;
+  // Host display resets must not expose closed popovers or their tab stops.
+  &:not(:popover-open) { display: none; }
+  h3 { margin: 0; padding: 10px 8px; font-size: 14px; font-weight: 700; text-align: left; }
+  .BL-QuickRow, .BL-ProviderChoice, .BL-AllSettings {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    width: 100%;
+    height: 40px;
+    margin: 0;
+    padding: 0 8px;
+    border-radius: 4px;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  // Inset rows leave room for theme-defined button corners and selection tints.
+  .BL-ProviderChoice, .BL-AllSettings {
+    background: transparent;
+    text-align: left;
+    &:hover:not(:disabled), &[aria-pressed="true"] { background: rgba(255,255,255,.07); }
+    &:focus-visible { outline-offset: -2px; }
+  }
+  .BL-MenuDivider { height: 1px; margin: 4px 0; background: var(--spice-button-disabled, #555); }
+  .BL-ProviderCheck { flex: 0 0 16px; }
+  .BL-ProviderName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .BL-SyncTag { margin-left: auto; font-size: 12px; font-weight: 400; }
+  .BL-Stepper {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    button { width: 28px; height: 28px; padding: 0; }
+    output { width: 36px; height: 28px; padding: 3px 0; text-align: center; font-variant-numeric: tabular-nums; }
+  }
+  .BL-QuickRow[aria-disabled="true"], .BL-QuickRow:has(> input:disabled, > select:disabled), button:disabled { opacity: .5; cursor: default; }
 }
 .BL-Attribution {
   position: absolute;
@@ -240,13 +308,6 @@
     text-decoration: underline;
   }
 }
-// Keep the anchor measurable when fullscreen's existing inactivity fade runs.
-// Otherwise an open popup jumps to the viewport origin as its button disappears.
-.ViewControls.BL-ProviderOpen {
-  display: flex !important;
-  opacity: 1 !important;
-}
-
 // Spotify's native title-bar drag surface overlaps the injected right-side
 // buttons. Mark each wrapper and descendant explicitly, independent of load order.
 .main-actionButtons .spicetify-topbar-button,

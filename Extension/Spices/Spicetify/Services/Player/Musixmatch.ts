@@ -15,7 +15,15 @@ const Headers = {
 let tokenPromise: Promise<string> | undefined;
 let nextRequestAt = 0;
 let queue: Promise<unknown> = Promise.resolve();
-const pending = new Map<string, Promise<ProviderLyrics | undefined>>();
+// Missing track metadata cannot establish a different recording. Keep this
+// distinct from an authoritative miss, without attaching unverified lyrics.
+export const UnverifiedMusixmatchRecording = Symbol('Unverified Musixmatch recording');
+type MusixmatchResult = ProviderLyrics | undefined | typeof UnverifiedMusixmatchRecording;
+const pending = new Map<string, { Job: Promise<MusixmatchResult>; Callers: Set<() => boolean> }>();
+// Fallbacks remain usable for this lookup, but a transient outage must not
+// freeze a lower-quality result on disk for 30 days. Keep policy off the data.
+const transientFallbacks = new WeakSet<ProviderLyrics>();
+export const IsMusixmatchResultCacheable = (lyrics: MusixmatchResult) => lyrics !== UnverifiedMusixmatchRecording && (!lyrics || !transientFallbacks.has(lyrics));
 
 function fail(status: number): never {
   // Authentication failures can also mean quota exhaustion. Never rotate tokens
@@ -67,14 +75,24 @@ async function getToken(isCurrent: () => boolean): Promise<string> {
   }).finally(() => { tokenPromise = undefined; });
 }
 
-export function FetchMusixmatchLyrics(track: { uri: string; name: string; artists: { name: string }[]; album: { name: string } }, duration: number, isCurrent: () => boolean, isrc = ''): Promise<ProviderLyrics | undefined> {
-  const existing = pending.get(track.uri);
-  if (existing) return existing;
-  const job = queue.catch(() => {}).then(async () => {
+export function FetchMusixmatchLyrics(track: { uri: string; name: string; artists: { name: string }[]; album: { name: string } }, duration: number, isCurrent: () => boolean, isrc = '', cacheGeneration = 0): Promise<MusixmatchResult> {
+  // A lookup after Clear must not join the old generation's pending response.
+  const pendingKey = track.uri + ':' + cacheGeneration;
+  const existing = pending.get(pendingKey);
+  if (existing) { existing.Callers.add(isCurrent); return existing.Job; }
+  // Closing/reopening a demanded view can retire the first caller while the
+  // same song still has a current consumer. Share one job and quota delay, but
+  // do not let that retired caller cancel everyone who joined it afterwards.
+  const callers = new Set([isCurrent]);
+  const anyCurrent = () => {
+    for (const current of callers) if (current()) return true;
+    return false;
+  };
+  const job = queue.catch(() => {}).then(async (): Promise<MusixmatchResult> => {
     // Rapid skips should not queue requests for songs that have already gone.
-    if (!isCurrent()) throw new Error('Track changed before lyric lookup');
-    const token = await getToken(isCurrent);
-    if (!isCurrent()) throw new Error('Track changed before lyric lookup');
+    if (!anyCurrent()) throw new Error('Track changed before lyric lookup');
+    const token = await getToken(anyCurrent);
+    if (!anyCurrent()) throw new Error('Track changed before lyric lookup');
     const body = await request('macro.subtitles.get', {
       namespace: 'lyrics_richsynched', subtitle_format: 'mxm',
       q_track: track.name, q_artist: track.artists.map(artist => artist.name).join(', '),
@@ -82,7 +100,7 @@ export function FetchMusixmatchLyrics(track: { uri: string; name: string; artist
       ...(isrc ? { track_isrc: isrc } : {}),
       q_duration: String(duration), f_subtitle_length: String(Math.floor(duration)),
       usertoken: token, optional_calls: 'track.richsync', richsync_compact_type: 'words',
-    }, isCurrent);
+    }, anyCurrent);
     const calls = body?.macro_calls;
     const match = calls?.['matcher.track.get']?.message;
     if (match?.header?.status_code === 404) return undefined;
@@ -95,27 +113,39 @@ export function FetchMusixmatchLyrics(track: { uri: string; name: string; artist
     // Re-releases can have different Spotify IDs but the same recording ISRC.
     const sameRecording = isrc && (meta?.track_isrc === isrc || meta?.commontrack_isrcs?.flat().includes(isrc));
     if (meta?.track_spotify_id !== id && !meta?.commontrack_spotify_ids?.includes(id) && !sameRecording) {
-      throw new Error('Musixmatch matched a different recording; lyrics were not used');
+      return isrc ? undefined : UnverifiedMusixmatchRecording;
     }
     const rich = calls?.['track.richsync.get']?.message;
+    const subtitles = calls?.['track.subtitles.get']?.message;
+    const plain = calls?.['track.lyrics.get']?.message;
+    // lyrics.get access denial is a provider failure, never an absent lyric.
+    if (plain && [401,402,403,429].includes(plain.header?.status_code)) fail(plain.header.status_code);
     if (rich?.header?.status_code === 200 && rich.body?.richsync?.richsync_body) {
       const converted = convertRichsync(JSON.parse(rich.body.richsync.richsync_body));
       if (converted) return converted as ProviderLyrics;
     }
-    // Access denial is a provider failure, not "this song has no word timing".
-    if (rich && [401,402,403,429].includes(rich.header?.status_code)) fail(rich.header.status_code);
-    const subtitles = calls?.['track.subtitles.get']?.message;
-    if (subtitles && [401,402,403,429].includes(subtitles.header?.status_code)) fail(subtitles.header.status_code);
+    // Preserve rich/subtitle access handling on the existing fallback path.
+    for (const call of [rich, subtitles]) {
+      if (call && [401,402,403,429].includes(call.header?.status_code)) fail(call.header.status_code);
+    }
+    const transient = [rich, subtitles, plain].some(call => call && ![200, 404].includes(call.header?.status_code));
+    const fallback = (lyrics: ProviderLyrics | undefined) => {
+      if (transient) {
+        if (!lyrics) throw new Error('Musixmatch timing temporarily unavailable');
+        transientFallbacks.add(lyrics);
+      }
+      return lyrics;
+    };
     const subtitle = subtitles?.body?.subtitle_list?.[0]?.subtitle;
-    if (subtitle?.subtitle_body) return convertSubtitles(JSON.parse(subtitle.subtitle_body), duration) as ProviderLyrics;
-    const text = calls?.['track.lyrics.get']?.message?.body?.lyrics?.lyrics_body;
+    if (subtitle?.subtitle_body) return fallback(convertSubtitles(JSON.parse(subtitle.subtitle_body), duration) as ProviderLyrics);
+    const text = plain?.body?.lyrics?.lyrics_body;
     if (typeof text === 'string') {
       const lines = text.split(/\r?\n/).filter(line => line.trim()).map(Text => ({ Text }));
-      if (lines.length) return { Type: 'Static', Lines: lines } as ProviderLyrics;
+      if (lines.length) return fallback({ Type: 'Static', Lines: lines } as ProviderLyrics);
     }
-    return undefined;
-  }).finally(() => pending.delete(track.uri));
+    return fallback(undefined);
+  }).finally(() => pending.delete(pendingKey));
   queue = job;
-  pending.set(track.uri, job);
+  pending.set(pendingKey, { Job: job, Callers: callers });
   return job;
 }

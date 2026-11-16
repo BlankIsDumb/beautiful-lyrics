@@ -15,22 +15,24 @@ const chrome = process.env.CHROME_BIN || [
 
 test('immediate settings preserve four text cases/universal cues and abort on close/replacement/runtime disposal', { skip: !chrome }, async () => {
   const result = await build({ stdin: { contents: `
+    export {GetExpireStore,GetMemoryStore} from './Extension/Spices/Spicetify/Services/Cache.ts';
     export {OpenProviderSettings} from './Extension/Source/ProviderControls.ts';
     export {PresentationSettings} from './Extension/Source/PresentationSettings.ts';
     export {TimingSettings} from './Extension/Source/TimingSettings.ts';
-    export {OnProviderSettingsChanged,OnBehaviorSettingsChanged} from './Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts';
+    export {OnProviderSettingsChanged,OnBehaviorSettingsChanged,OnRichSyncSettingsChanged,GetRichSyncSettings} from './Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts';
     export {GlobalMaid} from '@Spices/Spicetify/Services/Session.ts';`, resolveDir: process.cwd() },
     bundle: true, write: false, format: 'iife', globalName: 'formModule', plugins: [{ name: 'synthetic-host', setup(b) {
       b.onResolve({ filter: /Session\.ts$/ }, () => ({ path: 'session', namespace: 'fixture' }));
       b.onResolve({ filter: /Player\/mod\.ts$/ }, () => ({ path: 'player', namespace: 'fixture' }));
       b.onResolve({ filter: /ProviderSettings\.ts$/ }, () => ({ path: path.resolve('Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts') }));
+      b.onResolve({ filter: /LyricsCache\.ts$/ }, () => ({ path: path.resolve('Extension/Spices/Spicetify/Services/Player/LyricsCache.ts') }));
       b.onResolve({ filter: /Icons\.ts$/ }, () => ({ path: 'icons', namespace: 'fixture' }));
       b.onLoad({ filter: /\.scss$/ }, () => ({ contents: '' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, a => ({ contents: a.path === 'session'
-        ? `export const Spotify={PopupModal:fixtureModal,Tippy:fixtureTippy};
+        ? `export const IsDevelopment=false; export const SpotifyInternalFetch={}; export const Spotify={PopupModal:fixtureModal,Tippy:fixtureTippy};
            export const GlobalMaid={items:[],Give(fn){this.items.push(fn);return fn},Destroy(){for(const fn of this.items)fn()}};
            export const OnSpotifyReady=new Promise(()=>{});export const ShowNotification=()=>{throw Error('unexpected notification')};`
-        : a.path === 'player' ? `export const SongLyrics=undefined,SongLyricChoices=[],SongChanged={},SongLyricsLoaded={};export const SelectLyricsProvider=()=>{};`
+        : a.path === 'player' ? `export const SongLyrics=undefined,SongLyricChoices=[],SongChanged={},SongLyricsLoaded={};export const SelectLyricsProvider=()=>{};export const ReloadLyrics=()=>{globalThis.fixtureReloads=(globalThis.fixtureReloads||0)+1};`
         : `export default {LyricsPage:''};` }));
     } }] });
   const css = ["Extension/Source/Stylings/ProviderControls.scss", "Extension/Source/Stylings/TypographyPreview.scss", "Extension/Source/Stylings/Lyrics.scss"].map(file=>sass.compile(file).css).join("\n");
@@ -43,6 +45,8 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
     ]);
     let storageWrites=0,failStorage=false;
     const localStorage={getItem:key=>data.get(key)??null,setItem:(key,value)=>{if(failStorage)throw Error("fixture quota failure");storageWrites++;data.set(key,value)},removeItem:key=>data.delete(key)};
+    const disk=new Map();
+    const caches={keys:async()=>[...disk.keys()],open:async name=>{if(!disk.has(name))disk.set(name,new Map());const entries=disk.get(name);return {keys:async()=>[...entries.keys()],put:async(key,response)=>entries.set(key,await response.text()),delete:async key=>entries.delete(key)}}};
     let fixtureForm;
     const modal=document.createElement('div');
     const fixtureModal={display({content}){modal.replaceChildren(content);document.body.append(modal);fixtureForm=content},hide(){modal.remove()}};
@@ -63,15 +67,25 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
     };
     ${result.outputFiles[0].text}
     try {
-      const {OpenProviderSettings,PresentationSettings,TimingSettings,OnProviderSettingsChanged,OnBehaviorSettingsChanged,GlobalMaid}=formModule;
+      const {OpenProviderSettings,PresentationSettings,TimingSettings,OnProviderSettingsChanged,OnBehaviorSettingsChanged,OnRichSyncSettingsChanged,GetRichSyncSettings,GlobalMaid}=formModule;
       let sourceEvents=0,demandEvents=0,timingEvents=0,languageEvents=0,renderEvents=0,cueEvents=0;
       OnProviderSettingsChanged(()=>sourceEvents++);OnBehaviorSettingsChanged(()=>demandEvents++);
       TimingSettings.subscribe(()=>timingEvents++);PresentationSettings.subscribe(()=>languageEvents++);
       PresentationSettings.subscribeRendering(()=>renderEvents++);PresentationSettings.subscribeCues(()=>cueEvents++);
+      const {GetExpireStore,GetMemoryStore}=formModule;
+      for(const name of ['Spotify','Musixmatch','AMLL','LRCLIB','Spicy'])await GetExpireStore('BeautifulLyricsLocal_'+name,1,{Duration:14,Unit:'Days'}).SetItem('x',false);
+      await GetExpireStore('Player_TrackInformation',1,{Duration:14,Unit:'Days'}).SetItem('x',{track:'fixture'});
+      GetMemoryStore('Transformed',40).SetItem('x','prepared');
       OpenProviderSettings();let form=fixtureForm;
       const change=control=>control.dispatchEvent(new Event('change',{bubbles:true}));
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
       const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      await frame();
+      const cacheScope=form.querySelector('#BL-LyricsCache'),clearCache=form.querySelector('#BL-ClearLyricsCache');
+      check(cacheScope.options[0].textContent==='All (7)'&&cacheScope.options[5].textContent==='Spicy (1)','open computes disk Spicy counts and label');
+      cacheScope.value='Spotify';clearCache.click();check(clearCache.disabled&&cacheScope.disabled,'clear rejects duplicate clicks');
+      await frame();check(globalThis.fixtureReloads===1&&cacheScope.options[1].textContent==='Spotify (0)'&&form.querySelector('[role=status]').textContent==='Removed 1 cache entry.','provider clear refreshes counts/status and reloads once');
+      cacheScope.value='All';clearCache.click();await frame();check(globalThis.fixtureReloads===2&&cacheScope.options[0].textContent==='All (0)'&&form.querySelector('[role=status]').textContent==='Removed 6 cache entries.'&&data.get('BeautifulLyricsLocal/SpicyToken')==='  fixture_original_key  ','All clears memory/metadata and preserves raw token bytes');
       const background=(view,key)=>form.querySelector('#JEL-'+view+'-Background-'+key);
       const backgroundEvents=[];const stopBackground=PresentationSettings.subscribeBackground((view,fields)=>backgroundEvents.push([view,fields]));
       for(const view of ['NowPlaying','FullLyrics']) {
@@ -166,14 +180,37 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       }
       const shared=form.querySelector('#JEL-Shared-TimingOffset'),full=form.querySelector('#JEL-FullLyrics-TimingOffset');
       check(shared.closest('section').querySelector('h3').textContent==='Behavior','shared delay under Behavior');
-      const hold=form.querySelector('#BL-RichSyncHoldSeconds'),minimum=form.querySelector('#BL-RichSyncMinimumSegments');
-      check(hold.value==='5'&&minimum.value==='2'&&hold.closest('section')===shared.closest('section'),'rich-sync fields default to 5 and 2 under Behavior');
-      check([...hold.closest('section').querySelectorAll('h4')].some(h=>h.textContent==='Rich sync compensation'),'compensation uses a subheader');
+      const hold=form.querySelector('#BL-RichSyncHoldSeconds'),holdWord=form.querySelector('#BL-RichSyncHoldWordSync'),minimum=form.querySelector('#BL-RichSyncMinimumSegments');
+      check(hold.value==='5'&&minimum.value==='2'&&holdWord.checked&&hold.closest('section')===shared.closest('section'),'rich-sync fields default to 5, 2 and On under Behavior');
+      const holdGroup=hold.closest('details.BL-CaseSettings'),holdOptions=hold.closest('fieldset.BL-GroupOptions');
+      check(holdGroup&&holdGroup.previousElementSibling.textContent==='Rich sync compensation'&&holdGroup.querySelector('summary').textContent==='Hold highlight across gaps','hold group is directly under compensation heading');
+      check(!holdGroup.open&&holdGroup.children[0].tagName==='SUMMARY'&&holdOptions.parentElement===holdGroup,'native collapsible group uses summary then options fieldset');
+      check(holdWord.closest('fieldset')===holdOptions&&[...holdOptions.querySelectorAll('input')].map(input=>input.id).join(',')==='BL-RichSyncHoldSeconds,BL-RichSyncHoldWordSync','gap limit precedes word toggle inside group');
+      check(hold.getAttribute('aria-label')==='Gap limit (s)'&&holdWord.getAttribute('role')==='switch'&&holdWord.getAttribute('aria-label')==='Apply to word sync','labels and toggle semantics');
+      check(minimum.closest('.BL-HelpRow').previousElementSibling===holdGroup&&!minimum.closest('details'),'minimum stays after and outside the hold group');
+      holdGroup.open=true;
+      let richSyncEvents=0;
+      OnRichSyncSettingsChanged(()=>richSyncEvents++);
+      holdWord.click();
+      check(!holdWord.checked&&!GetRichSyncSettings().holdWordSync&&richSyncEvents===1,'toggle Off persists and publishes immediately');
+      type(hold,'3.5');
+      check(GetRichSyncSettings().holdSeconds===3.5&&!GetRichSyncSettings().holdWordSync&&richSyncEvents===2,'number edits preserve the toggle');
+      holdWord.click();
+      check(holdWord.checked&&GetRichSyncSettings().holdWordSync&&richSyncEvents===3,'toggle On persists immediately');
+      failStorage=true;holdWord.click();failStorage=false;
+      check(holdWord.checked&&GetRichSyncSettings().holdWordSync&&richSyncEvents===3,'failed toggle write restores checkbox without publishing');
+      holdOptions.disabled=true;const disabledBytes=JSON.stringify([...data]);holdWord.checked=false;change(holdWord);
+      check(JSON.stringify([...data])===disabledBytes&&richSyncEvents===3,'inherited disabled fieldset blocks toggle writes');
+      holdOptions.disabled=false;holdWord.checked=GetRichSyncSettings().holdWordSync;
+      const wordHelp=holdWord.previousElementSibling;wordHelp.dispatchEvent(new MouseEvent('mouseenter'));
+      const wordHelpText=document.querySelector('.BL-SettingsHelpPopup')?.textContent;
+      check(wordHelpText?.includes('On also holds rich sync that passes')&&wordHelpText.includes('Off holds line sync only'),'toggle help explains both modes');
+      wordHelp.dispatchEvent(new MouseEvent('mouseleave'));
       for(const field of [hold,minimum]) {
         const help=field.previousElementSibling;
         help.dispatchEvent(new MouseEvent('mouseenter'));
         const text=document.querySelector('.BL-SettingsHelpPopup')?.textContent;
-        check(text?.includes('Musixmatch only')&&text.includes('0 to disable')&&!/\\byou\\b/i.test(text),'hover help explains the zero gate without second person');
+        check(text?.includes('Musixmatch, LRCLIB and Spotify')&&text.includes('0 to disable')&&text.includes('falls back to Line')&&text.includes('passes the minimum')&&!/\\byou\\b/i.test(text),'hover help explains eligible providers, resolution and the zero gate without second person');
         help.dispatchEvent(new MouseEvent('mouseleave'));
         type(field,'0');check(field.value==='0','zero is accepted by both fields');
       }
@@ -319,11 +356,13 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const old=form,oldPreset=wordPreset,oldBytes=JSON.stringify([...data]);help.focus();fixtureModal.hide();
       check(PresentationSettings.getEffectiveHorizontalSpacing('Contained')===PresentationSettings.getHorizontalSpacing('Contained')&&!document.querySelector('.JEL-TypographyPreview'),'close cancels preview and removes probes');
       check(popups.every(p=>p.destroyed)&&!document.querySelector('.BL-SettingsHelpPopup'),'disconnect cleans all tooltips');
-      fixtureModal.display({content:old});oldPreset.value='classic';change(oldPreset);check(oldBytes===JSON.stringify([...data]),'reattached disposed form cannot persist');
+      fixtureModal.display({content:old});oldPreset.value='classic';change(oldPreset);holdWord.checked=false;change(holdWord);check(oldBytes===JSON.stringify([...data]),'reattached disposed form cannot persist, including word hold');
       const submit=new Event('submit',{cancelable:true});old.dispatchEvent(submit);check(submit.defaultPrevented,'disposed form cannot navigate');
       OpenProviderSettings();form=fixtureForm;type(spacing('Fullscreen'),'72');const beforeReplacement=popups.slice();fixtureModal.display({content:document.createElement('div')});check(beforeReplacement.every(p=>p.destroyed)&&PresentationSettings.getEffectiveHorizontalSpacing('Fullscreen')===0,'replacement releases help/handlers and spacing preview');
       OpenProviderSettings();form=fixtureForm;const beforeDispose=JSON.stringify([...data]);GlobalMaid.Destroy();
       const disposed=form.querySelector('#JEL-FullLyrics-GapThreshold');type(disposed,'50');
+      const disposedWordHold=form.querySelector('#BL-RichSyncHoldWordSync');disposedWordHold.checked=false;change(disposedWordHold);
+      check(disposedWordHold.disabled,'runtime disposal disables word-hold toggle');
       check(form.isConnected&&disposed.disabled&&beforeDispose===JSON.stringify([...data]),'runtime disposal disables connected controls and aborts writes');
       fixtureModal.hide();document.body.textContent='SETTINGS_HELP_PASS';
     } catch(error) {document.body.textContent='SETTINGS_HELP_FAIL: '+error.message;}

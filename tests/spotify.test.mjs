@@ -11,7 +11,7 @@ test('Spotify parser preserves blank boundaries and converts milliseconds withou
 });
 const code=await build({entryPoints:['Extension/Spices/Spicetify/Services/Player/SpotifyProvider.ts'],bundle:true,write:false,format:'esm',plugins:[{name:'mocks',setup(b){
  b.onResolve({filter:/Session\.ts$/},()=>({path:'session',namespace:'fake'}));b.onResolve({filter:/Cache\.ts$/},()=>({path:'cache',namespace:'fake'}));
- b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='session'?'export const Spotify={CosmosAsync:{get:(...args)=>globalThis.request(...args)}}':'export const GetExpireStore=()=>({GetItem:async k=>globalThis.cache.get(k),SetItem:async(k,v)=>globalThis.cache.set(k,v)})'}));
+ b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='session'?'export const Spotify={CosmosAsync:{get:(...args)=>globalThis.request(...args)}}':'export const GetExpireStore=()=>({GetGeneration:()=>0,GetItem:async k=>globalThis.cache.get(k),SetItem:async(k,v)=>globalThis.cache.set(k,v)})'}));
 }}]});let serial=0;
 async function setup(){globalThis.cache=new Map();const s=new Map();globalThis.localStorage={getItem:k=>s.get(k),setItem:(k,v)=>s.set(k,v)};return import('data:text/javascript;base64,'+Buffer.from(code.outputFiles[0].text+`\n//${serial++}`).toString('base64'))}
 const id='0123456789012345678901';

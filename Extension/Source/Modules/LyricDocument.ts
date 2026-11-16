@@ -76,7 +76,7 @@ export function NormalizeLyrics(lyrics: Lyrics): LyricDocument {
 
 export type LyricCue = Readonly<Interval & { id: string; gapSeconds: number; nextVocalStart: number; internal: boolean }>;
 export function HoldsRichSyncGap(cue: LyricCue, limit: number) {
-  // Musixmatch offsets are in seconds. Compare at millisecond precision so an
+  // Provider offsets are in seconds. Compare at millisecond precision so an
   // exact cutoff is not accidentally admitted by floating-point subtraction.
   return cue.internal && Math.round(cue.gapSeconds * 1000) < limit * 1000;
 }

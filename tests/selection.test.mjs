@@ -7,7 +7,7 @@ const code=await build({entryPoints:['Extension/Spices/Spicetify/Services/Player
   b.onResolve({filter:/Cache\.ts$/},()=>({path:'cache',namespace:'fake'}));
   b.onResolve({filter:/AdditionalProviders\.ts$/},()=>({path:'additional',namespace:'fake'}));
   b.onResolve({filter:/Musixmatch\.ts$/},()=>({path:'mxm',namespace:'fake'}));
-  b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='spotify'?'export const FetchSpotify=(...a)=>globalThis.extraSpotify(...a);':a.path==='additional'?'export const FetchLrclib=(...a)=>globalThis.extraLrc(...a); export const FetchSpicy=(...a)=>globalThis.extraSpicy(...a);':a.path==='cache'?'export const GetExpireStore=(name)=>({GetItem:async key=>globalThis.stores.get(name+key),SetItem:async(key,value)=>globalThis.stores.set(name+key,value)});':'export const FetchMusixmatchLyrics=(...args)=>globalThis.mxm(...args);'}));
+  b.onLoad({filter:/.*/,namespace:'fake'},a=>({contents:a.path==='spotify'?'export const GetSpotifyCacheGeneration=()=>0;export const FetchSpotify=(...a)=>globalThis.extraSpotify(...a);':a.path==='additional'?'export const FetchLrclib=(...a)=>globalThis.extraLrc(...a); export const FetchSpicy=(...a)=>globalThis.extraSpicy(...a);':a.path==='cache'?'export const GetExpireStore=(name)=>({GetGeneration:()=>0,GetItem:async key=>globalThis.stores.get(name+key),SetItem:async(key,value)=>globalThis.stores.set(name+key,value)});':'export const UnverifiedMusixmatchRecording=Symbol();export const IsMusixmatchResultCacheable=()=>true;export const FetchMusixmatchLyrics=(...args)=>globalThis.mxm(...args);'}));
 }}]});
 let serial=0;
 const id='0123456789012345678901',alias='1123456789012345678901';
@@ -91,5 +91,18 @@ test('Spotify fallback uses canonical only for absence, stays below word timing 
  const choices=await p.FetchLyricCandidates(track,3,()=>true,'','spotify:track:'+alias);
  assert.deepEqual(ids,[id,alias]);assert.equal(choices[0].Source.Provider,'Spotify');
  ids.length=0;globalThis.extraSpotify=async id=>{ids.push(id);throw new Error('429')};
- await assert.rejects(p.FetchLyricCandidates(track,3,()=>true,'','spotify:track:'+alias),/429/);assert.deepEqual(ids,[id]);
+ const absent=await p.FetchLyricLookup(track,3,()=>true,'','spotify:track:'+alias);assert.equal(absent.Candidates.length,0);assert.equal(absent.Error,undefined);assert.equal(absent.Outcomes.find(o=>o.Provider==='Spotify').State,'failed');assert.deepEqual(ids,[id]);
+});
+
+test('per-provider outcomes distinguish none, partial failure, all failure and found while waiting for every job',async()=>{
+ let p=await setup();globalThis.fetch=async()=>new Response('',{status:404});globalThis.mxm=async()=>undefined;
+ let result=await p.FetchLyricLookup(track,3,()=>true);assert.equal(result.Error,undefined);assert.ok(result.Outcomes.every(o=>o.State==='none'));
+ p=await setup();globalThis.fetch=async()=>new Response('',{status:404});globalThis.mxm=async()=>undefined;globalThis.extraSpicy=async()=>{throw Error('relay unavailable')};
+ result=await p.FetchLyricLookup(track,3,()=>true);assert.equal(result.Error,undefined);assert.equal(result.Candidates.length,0);assert.deepEqual(result.Outcomes.filter(o=>o.State==='failed'),[{Provider:'Spicy',State:'failed',Reason:'relay unavailable'}]);
+ p=await setup();globalThis.fetch=async()=>new Response('',{status:503});globalThis.mxm=globalThis.extraSpotify=globalThis.extraLrc=globalThis.extraSpicy=async()=>{throw Error('unavailable')};
+ result=await p.FetchLyricLookup(track,3,()=>true);assert.match(result.Error,/unavailable/);assert.ok(result.Outcomes.every(o=>o.State==='failed'));
+ p=await setup();globalThis.fetch=async()=>new Response('',{status:404});globalThis.mxm=async()=>undefined;let release,settled=false;
+ globalThis.extraSpicy=()=>new Promise(resolve=>{release=resolve});globalThis.extraLrc=async()=>({Type:'Static',Lines:[{Text:'found'}]});
+ const pending=p.FetchLyricLookup(track,3,()=>true).then(value=>{settled=true;return value});await new Promise(resolve=>setImmediate(resolve));assert.equal(settled,false);
+ release(undefined);result=await pending;assert.equal(result.Candidates[0].Source.Provider,'LRCLIB');assert.equal(result.Outcomes.find(o=>o.Provider==='LRCLIB').State,'found');assert.equal(result.Error,undefined);
 });

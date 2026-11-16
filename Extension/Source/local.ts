@@ -13,6 +13,8 @@ if (runtimeLease) runtimeLease.cleanup = () => session.GlobalMaid.Destroy();
 const extension = await import('./main.ts');
 await extension.Ready;
 const player = await import('@Spices/Spicetify/Services/Player/mod.ts');
+const cache = await import('@Spices/Spicetify/Services/Cache.ts');
+session.GlobalMaid.Give(cache.StartCacheMaintenance());
 // A small lifecycle/status surface is useful for local installs and diagnostics.
 // Never expose provider credentials here.
 const api = {
@@ -23,6 +25,7 @@ const api = {
     lyricsLoaded: player.HaveSongLyricsLoaded,
     syncType: player.SongLyrics?.Type,
     lyricError: player.SongLyricsError,
+    providerOutcomes: player.SongLyricsOutcomes,
     source: player.SongLyrics?.Source,
   }),
   dispose: () => {

@@ -11,10 +11,9 @@ import { Defer, Timeout } from "@Universal/Modules/Scheduler.ts"
 import {
 	GlobalMaid,
 	OnSpotifyReady,
-	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder, SpotifyHistory,
-	ShowNotification
+	SpotifyPlayer, SpotifyPlatform, SpotifyURI, SpotifyRequestBuilder, SpotifyHistory
 } from "../Session.ts"
-import { GetExpireStore } from '../Cache.ts'
+import { GetExpireStore, GetMemoryStore } from '../Cache.ts'
 
 // Our Modules
 import {
@@ -22,7 +21,7 @@ import {
 	type ProviderLyrics, type TransformedLyrics, type RomanizedLanguage
 } from "./LyricUtilities.ts"
 
-import { FetchLyricCandidates } from "./LyricsProviders.ts"
+import { FetchLyricLookup, type ProviderOutcome } from "./LyricsProviders.ts"
 import { OnProviderSettingsChanged, OnBehaviorSettingsChanged, GetBehaviorSettings, GetRichSyncSettings, OnRichSyncSettingsChanged } from "./ProviderSettings.ts"
 import { SelectCompensatedLyrics } from "../../../../Source/Modules/RichSyncCompensation.ts"
 import { lyricsRequired } from "./LyricDemand.mjs"
@@ -205,10 +204,17 @@ export let HaveSongDetailsLoaded: boolean = false
 const TrackInformationStore = GetExpireStore<TrackInformation>(
 	"Player_TrackInformation", 2,
 	{
-		Duration: 2,
-		Unit: "Weeks"
+		Duration: 14,
+		Unit: "Days"
 	},
-	true
+	true,
+	// These are the fields used below. Invalid metadata must trigger a refetch
+	// rather than failing later while preparing the current track's details.
+	(content: any) => !!content && typeof content.name === "string"
+		&& Array.isArray(content.artist) && content.artist.every((a: any) => typeof a?.gid === "string" && typeof a?.name === "string")
+		&& typeof content.album?.gid === "string" && Array.isArray(content.album.artist)
+		&& content.album.artist.every((a: any) => typeof a?.gid === "string" && typeof a?.name === "string")
+		&& (content.external_id === undefined || (Array.isArray(content.external_id) && content.external_id.every((e: any) => typeof e?.type === "string" && typeof e?.id === "string")))
 )
 const SongNameFilters = [
 	/\s*(?:\-|\/)\s*(?:(?:Stereo|Mono)\s*)?Remastered(?:\s*\d+)?/,
@@ -216,6 +222,7 @@ const SongNameFilters = [
 	/\s*\(\s*(?:Stereo|Mono)(?:\s*Mix)?\)?/
 ]
 const LoadSongDetails = () => {
+	const cacheGeneration = TrackInformationStore.GetGeneration()
 	// Remove our prior details state
 	SongDetails = undefined, HaveSongDetailsLoaded = false
 
@@ -269,7 +276,7 @@ const LoadSongDetails = () => {
 						)
 						.then(
 							(trackInformation) => {
-								TrackInformationStore.SetItem(songAtUpdate.Id, trackInformation)
+								void TrackInformationStore.SetItem(songAtUpdate.Id, trackInformation, cacheGeneration)
 								return trackInformation
 							}
 						)
@@ -336,18 +343,11 @@ const LoadSongDetails = () => {
 }
 
 // Handle our Lyrics
-const TransformedLyricsStore = GetExpireStore<TransformedLyrics | false>(
-	// v4 stores source preparation only: no cues/romanization. Provider caches unchanged.
-	"BeautifulLyricsLocal_Transformed", 4,
-	{
-		Duration: 1,
-		Unit: "Months"
-	},
-	true
-)
+const TransformedLyricsStore = GetMemoryStore<TransformedLyrics>('Transformed', 40)
 
 export let SongLyrics: (TransformedLyrics | undefined) = undefined
 export let SongLyricsError: string | undefined
+export let SongLyricsOutcomes: ProviderOutcome[] = []
 export let SongLyricChoices: TransformedLyrics[] = []
 let manualProvider: string | undefined
 let lyricLoadGeneration = 0
@@ -375,11 +375,13 @@ PlayerMaid.Give(OnRichSyncSettingsChanged(() => {
 }))
 export let HaveSongLyricsLoaded: boolean = false
 const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
+	const cacheGeneration = TransformedLyricsStore.GetGeneration();
 	latestDetailsReady = detailsReady;
 	const generation = ++lyricLoadGeneration;
 	lyricsPending = false;
 	lyricsDeferred = false;
 	SongLyricChoices = [];
+	SongLyricsOutcomes = [];
 	manualProvider = undefined;
 	// Register at song-change time, before metadata IO can reorder the burst.
 	// Local/DJ transitions also cancel any older pending provider dispatch.
@@ -409,11 +411,15 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
 		.then(([ready]) => {
 			if (!ready || Song !== songAtUpdate || generation !== lyricLoadGeneration || PlayerMaid.IsDestroyed()) throw new Error("Track changed before lyric lookup");
 		})
-		.then(() => FetchLyricCandidates(trackAtUpdate, songAtUpdate.Duration,
+		.then(() => FetchLyricLookup(trackAtUpdate, songAtUpdate.Duration,
 			() => Song === songAtUpdate && generation === lyricLoadGeneration && !PlayerMaid.IsDestroyed(),
 			SongDetails && !SongDetails.IsLocal ? SongDetails.ISRC : "",
 			SongDetails && !SongDetails.IsLocal ? (SongDetails.Raw as any).canonical_uri : undefined))
-		.then(async candidates => {
+		.then(async lookup => {
+      if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
+      SongLyricsOutcomes = lookup.Outcomes;
+      if (lookup.Error) throw new Error(lookup.Error);
+      const candidates = lookup.Candidates;
       const usable: TransformedLyrics[] = [];
       const preparationWarnings: string[] = [];
       // Convert independently: one malformed/unsupported source must not discard
@@ -422,20 +428,26 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
         if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
         try {
           const key = lyrics.Source!.CacheKey;
-          const ephemeral = lyrics.Source!.Provider === 'Spicy';
-          const cached = ephemeral ? undefined : await TransformedLyricsStore.GetItem(key);
+          const cached = TransformedLyricsStore.GetItem(key);
           const transformed = cached ? {...cached,Source:lyrics.Source,Attribution:(lyrics as any).Attribution} : await TransformProviderLyrics(lyrics);
-          if (!cached && !ephemeral) await TransformedLyricsStore.SetItem(key,transformed);
+          if (!cached) TransformedLyricsStore.SetItem(key,transformed,cacheGeneration);
           usable.push(transformed);
         } catch (error) {
+          if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
           // Keep the fallback, but don't silently conceal a preparation failure.
           // This is local conversion (never the credential-bearing transport).
           const detail = error instanceof Error ? error.message.slice(0,160) : 'unknown error';
-          preparationWarnings.push(`${lyrics.Source!.Provider}: lyric preparation failed (${detail})`);
+          const reason = `lyric preparation failed (${detail})`;
+          preparationWarnings.push(`${lyrics.Source!.Provider}: ${reason}`);
+          const outcome = SongLyricsOutcomes.find(outcome => outcome.Provider === lyrics.Source!.Provider);
+          if (outcome) { outcome.State = 'failed'; outcome.Reason = reason; }
         }
       }
       if (Song !== songAtUpdate || generation !== lyricLoadGeneration) return;
-        if (candidates.length && !usable.length) throw new Error(`No provider returned renderable lyrics: ${preparationWarnings.join('; ')}`);
+      const enabled = SongLyricsOutcomes.filter(outcome => outcome.State !== 'disabled');
+      if (!usable.length && enabled.length && enabled.every(outcome => outcome.State === 'failed')) {
+        throw new Error(enabled.map(outcome => `${outcome.Provider}: ${outcome.Reason}`).join('; '));
+      }
       const summaries = usable.map(l=>({Provider:l.Source!.Provider,TrackId:l.Source!.TrackId,UniqueTimings:l.Source!.UniqueTimings,Type:l.Type}));
       for (const lyrics of usable) {
         lyrics.Source!.Candidates = summaries;
@@ -463,7 +475,6 @@ const LoadSongLyrics = (detailsReady?: Promise<void> | void) => {
 			HaveSongLyricsLoaded = true;
 			lyricsPending = false;
 			SongLyricsLoadedSignal.Fire();
-			ShowNotification("Just Enough Lyrics: lyric provider unavailable. Open the lyrics page for details.", "warning", 5);
 		})
 	}
 }

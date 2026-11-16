@@ -68,10 +68,12 @@ test(`real entry cleans partial ${asynchronous ? 'async readiness' : 'module imp
   const built = await build({ entryPoints: ['Extension/Source/local.ts'], bundle: true, write: false, format: 'esm',
     plugins: [{ name: 'startup-fixture', setup(b) {
       b.onResolve({ filter: /Session\.ts$/ }, () => ({ path: 'session', namespace: 'fixture' }));
+      b.onResolve({ filter: /Cache\.ts$/ }, () => ({ path: 'cache', namespace: 'fixture' }));
       b.onResolve({ filter: /main\.ts$/ }, () => ({ path: 'main', namespace: 'fixture' }));
       b.onResolve({ filter: /Player\/mod\.ts$/ }, () => ({ path: 'player', namespace: 'fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, a => ({ contents: a.path === 'session'
-        ? `export const GlobalMaid={Destroy(){globalThis.liveResources=0;}};`
+        ? `export const IsDevelopment=false; export const GlobalMaid={Destroy(){globalThis.liveResources=0;}};`
+        : a.path === 'cache' ? 'export const StartCacheMaintenance=()=>()=>{};'
         : a.path === 'main' ? (asynchronous
           ? `globalThis.liveResources=1; export const Ready=Promise.resolve().then(()=>{throw new Error('partial main failure');}); export default {};`
           : `globalThis.liveResources=1; throw new Error('partial main failure'); export default {};`)

@@ -1,5 +1,7 @@
 import { Spotify, GlobalMaid } from "@Spices/Spicetify/Services/Session.ts";
 
+export const LyricsCacheHelp = "Clear saved lyrics for one provider or All. Spicy uses disk storage, with 14-day lyric hits and 1-day not-found results. All also clears track details, prepared lyrics and provider cooldowns. Credentials stay saved. The current song reloads afterwards. Counts refresh when Settings opens and after clearing.";
+
 export const BackgroundHelp = {
   mode: "Animated moves the artwork gradient. Static draws only when artwork or dimensions change. Off releases all background resources. Full Lyrics pages share one profile; Now Playing styles only the lyrics card.",
   motion: "Gradient motion speed: Slow is 0.5 times, Classic is 1 times, Fast is 2 times the original speed. Available only in Animated mode.",

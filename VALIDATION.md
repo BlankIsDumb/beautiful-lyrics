@@ -1,5 +1,59 @@
 # Validation
 
+## Hold across gaps for word sync — 5.1.0-local.37, 2026-11-15
+
+All 671 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`EBF2C9BEC8FF08FEA801FD0033853525412BD537BF7D099FE919F4512D37C629`.
+
+Rich sync compensation now groups the gap limit with a new "Apply to word sync"
+toggle, on by default. When it is on, rich sync that meets the minimum timed
+segments per line also holds short gaps and keeps word timing. When it is off,
+only line sync and rich sync below the minimum hold gaps. In Spotify on Windows,
+switching the toggle released and restored the hold on a Musixmatch rich sync
+track immediately, without reloading lyrics.
+
+## Rich sync compensation — 5.1.0-local.36, 2026-11-15
+
+All 440 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`D57E99D070E726D027C799482745DA0D1D295EB8612E91A8E08AC0A92C137B48`.
+
+Gap holding now applies to Musixmatch, LRCLIB and Spotify. Line sync holds
+short gaps. Rich sync that passes the minimum timed segments per line keeps its
+literal timing. Rich sync below the minimum is shown as Line and holds short
+gaps. AMLL and Spicy are unchanged, and so is source ranking. In Spotify on
+Windows, Musixmatch and LRCLIB rich sync below the minimum were shown as Line
+and held. Spicy word sync stayed literal.
+
+## Spicy disk cache — 5.1.0-local.35, 2026-11-15
+
+All 218 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`088CED64E02925B51F13B454FDD49CEBF3186ECC3C84C55383FB85633740A038`.
+
+Spicy results are now cached on disk like the other providers. Lyrics are kept
+for 14 days and not-found results for 1 day, measured from fetch time. This is
+within Spicy's 30-day storage limit. With the local relay running in Spotify on
+Windows, a track's first lookup was stored on disk with its credits, and
+reloading it made no relay request. Clearing Spicy removed the entry. The
+automatic reload then fetched it once more.
+
+## Lyrics cache — 5.1.0-local.34, 2026-11-15
+
+All 207 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`F751A9BA946E151E00C3FEFF47E066D7F9072560C0DF744E622B70EF229D645E`.
+
+Before the change, every existing cached entry was checked offline. None was
+corrupt, and all live entries passed the new read validation, so upgrading
+deletes nothing that is still valid. In Spotify on Windows, the first-session
+cleanup removed expired entries and the retired prepared-lyrics store. Lyrics
+cache storage went from 50 MB to 12.7 MB. The Settings cache counts matched
+the stores. Clearing one provider removed only that provider's entries and
+left saved credentials alone. With the Spicy relay stopped, lyrics from other
+providers still loaded and Spicy was reported as unavailable.
+
 ## Independent background — 5.1.0-local.33, 2026-11-14
 
 All 167 tests passed, including a real-WebGL Chromium fixture. That fixture

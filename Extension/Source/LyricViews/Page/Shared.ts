@@ -6,7 +6,7 @@ import { Maid } from "@Universal/Modules/Maid.ts"
 import { Spotify } from "@Spices/Spicetify/Services/Session.ts"
 import {
 	SongChanged,
-	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded, SongLyricsError
+	SongLyrics, SongLyricsLoaded, HaveSongLyricsLoaded, SongLyricsError, SongLyricsOutcomes
 } from "@Spices/Spicetify/Services/Player/mod.ts"
 
 // Modules
@@ -44,10 +44,27 @@ export const CreateLyricsRenderer = (
 			message.textContent = SongLyricsError;
 			container.appendChild(maid.Give(message, "LyricsRenderer"));
 		} else if (SongLyrics === undefined) {
+			const failures = SongLyricsOutcomes.filter(outcome => outcome.State === 'failed');
+			let message: HTMLElement | undefined;
 			if (noLyricsTemplate === undefined) {
 				container.classList.add("NoLyrics")
+				// Fullscreen normally centers its play panel without a message.
+				// Only partial failures need an explanatory no-lyrics block there.
+				if (failures.length) {
+					message = document.createElement('span');
+					message.className = 'NoLyrics PartialProviderFailure';
+					message.textContent = "This song doesn't have any Lyrics!";
+					container.appendChild(maid.Give(message, "LyricsRenderer"));
+				}
 			} else {
-				container.appendChild(maid.Give(CreateElement<HTMLSpanElement>(noLyricsTemplate), "LyricsRenderer"))
+				message = CreateElement<HTMLSpanElement>(noLyricsTemplate);
+				container.appendChild(maid.Give(message, "LyricsRenderer"));
+			}
+			if (message && failures.length) {
+				const note = document.createElement('small');
+				note.className = 'ProviderFailures';
+				note.textContent = "Couldn't check: " + failures.map(outcome => `${outcome.Provider} (${outcome.Reason})`).join('; ');
+				message.append(note);
 			}
 		} else { // Otherwise, render our lyrics
 			if (noLyricsTemplate === undefined) {

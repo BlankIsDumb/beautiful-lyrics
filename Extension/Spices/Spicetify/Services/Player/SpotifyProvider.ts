@@ -1,12 +1,14 @@
 import { Spotify } from '../Session.ts';
 import { GetExpireStore } from '../Cache.ts';
 import { convertSpotify } from './SpotifyLyrics.mjs';
+import { IsCachedLyrics } from './CachedLyrics.ts';
 import type { ProviderLyrics } from './LyricUtilities.ts';
 
-const cache = GetExpireStore<ProviderLyrics | false>('BeautifulLyricsLocal_Spotify',1,{Duration:2,Unit:'Weeks'},true);
+const cache = GetExpireStore<ProviderLyrics | false>('BeautifulLyricsLocal_Spotify',1,{Duration:14,Unit:'Days'},true,IsCachedLyrics);
 const cooldownKey = 'BeautifulLyricsLocal/SpotifyCooldown';
 let queue: Promise<unknown> = Promise.resolve();
-export function FetchSpotify(id: string, duration: number, isCurrent: () => boolean): Promise<ProviderLyrics | undefined> {
+export const GetSpotifyCacheGeneration = () => cache.GetGeneration();
+export function FetchSpotify(id: string, duration: number, isCurrent: () => boolean, generation = cache.GetGeneration()): Promise<ProviderLyrics | undefined> {
   const job = queue.catch(()=>{}).then(async () => {
     if (!/^[A-Za-z0-9]{22}$/.test(id) || !isCurrent()) return undefined;
     const cached = await cache.GetItem(id);
@@ -24,7 +26,7 @@ export function FetchSpotify(id: string, duration: number, isCurrent: () => bool
     } catch (error) {
       const status = Number((error as any)?.status ?? (error as any)?.response?.status ?? (error as any)?.code);
       if (!isCurrent()) throw new Error('Track changed during Spotify lookup');
-      if (status === 404) { await cache.SetItem(id,false); return undefined; }
+      if (status === 404) { await cache.SetItem(id,false,generation); return undefined; }
       // Native transport has no portable cancellation API. A timed-out result
       // is ignored, with cooldown preventing a pile-up of unresolved requests.
       localStorage.setItem(cooldownKey,String(Date.now()+([401,403,429].includes(status)?900000:60000)));
@@ -32,7 +34,8 @@ export function FetchSpotify(id: string, duration: number, isCurrent: () => bool
     } finally { clearTimeout(timer); }
     if (!isCurrent()) throw new Error('Track changed during Spotify lookup');
     const lyrics = convertSpotify(body,duration) as ProviderLyrics | undefined;
-    await cache.SetItem(id,lyrics||false);
+    // An empty/unsupported conversion is not an authoritative provider 404.
+    if (lyrics) await cache.SetItem(id,lyrics,generation);
     return lyrics;
   });
   queue=job;

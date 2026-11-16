@@ -12,6 +12,7 @@ import {
   SaveRichSyncSetting,
   SetSpicyToken,
   Providers,
+  IsProviderEnabled,
 } from "@Spices/Spicetify/Services/Player/ProviderSettings.ts";
 import {
   SongLyrics,
@@ -19,6 +20,7 @@ import {
   SongChanged,
   SongLyricsLoaded,
   SelectLyricsProvider,
+  ReloadLyrics,
 } from "@Spices/Spicetify/Services/Player/mod.ts";
 import type { Maid } from "@Universal/Modules/Maid.ts";
 import Icons from "./LyricViews/Icons.ts";
@@ -26,7 +28,8 @@ import { PresentationSettings, PresentationLanguages, type PresentationView } fr
 import type { HorizontalSurface } from "./HorizontalSpacing.ts";
 import { TimingSettings, TimingOffsetLimit } from "./TimingSettings.ts";
 import { ApplyTextPreset, SourceCases, type RenderingProfile } from "./RenderingSettings.ts";
-import { CreateSettingsHelp, BackgroundHelp } from "./SettingsHelp.ts";
+import { CreateSettingsHelp, BackgroundHelp, LyricsCacheHelp } from "./SettingsHelp.ts";
+import { LyricsCacheScopes, GetLyricsCacheCounts, ClearLyricsCache, type LyricsCacheScope } from "@Spices/Spicetify/Services/Player/LyricsCache.ts";
 import { ClassicBackground, DefaultBackgrounds, type BackgroundProfile } from "./BackgroundSettings.ts";
 import { DefaultLayouts, NormalizeFontFamily, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import type { ContextAppearance } from "./ContextAppearance.ts";
@@ -126,6 +129,36 @@ export function OpenProviderSettings() {
   const fetchMode = select(behaviorSection, "Fetch lyrics", "BL-FetchMode", [["change", "On song change"], ["required", "When required"]], GetBehaviorSettings().fetchMode,
     "When required loads on the lyrics page. An enabled sidebar also loads on song change.", "On song change");
   listen(fetchMode, "change", () => apply(() => SaveBehaviorSettings({ ...GetBehaviorSettings(), fetchMode: fetchMode.value as "change" | "required" }), () => { fetchMode.value = GetBehaviorSettings().fetchMode; }));
+  const cacheScope = select(behaviorSection, "Lyrics cache", "BL-LyricsCache", LyricsCacheScopes.map(scope => [scope, scope] as const), "All", LyricsCacheHelp, "");
+  const clearCache = document.createElement("button"); clearCache.type = "button"; clearCache.id = "BL-ClearLyricsCache"; clearCache.textContent = "Clear";
+  cacheScope.closest(".BL-HelpRow")!.append(clearCache);
+  let countGeneration = 0;
+  const refreshCacheCounts = async () => {
+    const generation = ++countGeneration;
+    const counts = await GetLyricsCacheCounts();
+    if (lifetime.signal.aborted || generation !== countGeneration) return;
+    for (const option of cacheScope.options) {
+      const scope = option.value as LyricsCacheScope;
+      option.textContent = `${scope} (${counts[scope] ?? "unavailable"})`;
+    }
+  };
+  // Count keys only, once per open/clear. This never starts provider requests or
+  // runs a settings migration, and a detached form cannot receive late updates.
+  void refreshCacheCounts();
+  listen(clearCache, "click", async () => {
+    clearCache.disabled = true; cacheScope.disabled = true;
+    ++countGeneration;
+    try {
+      const result = await ClearLyricsCache(cacheScope.value as LyricsCacheScope, ReloadLyrics);
+      if (lifetime.signal.aborted) return;
+      status.textContent = `Removed ${result.removed} cache ${result.removed === 1 ? "entry" : "entries"}.${result.failed ? " Some entries could not be cleared on this device." : ""}`;
+      await refreshCacheCounts();
+    } catch {
+      if (!lifetime.signal.aborted) status.textContent = "Could not clear lyrics cache on this device.";
+    } finally {
+      if (!lifetime.signal.aborted) { clearCache.disabled = false; cacheScope.disabled = false; }
+    }
+  });
   const timingReadOnly = TimingSettings.isReadOnly(), presentationReadOnly = PresentationSettings.isReadOnly();
   const addTiming = (scope: "Shared" | PresentationView, parent: HTMLElement) => numeric(parent,
     scope === "Shared" ? "Lyric delay (s)" : "Delay offset (s)", `JEL-${scope}-TimingOffset`, () => TimingSettings.get(scope),
@@ -139,13 +172,20 @@ export function OpenProviderSettings() {
     checkbox(input, value => { const current = GetBehaviorSettings(); SaveBehaviorSettings({ ...current, providers: { ...current.providers, [name]: value } }); }, () => GetBehaviorSettings().providers[name]);
   }
   heading(behaviorSection, "Rich sync compensation", "h4");
-  numeric(behaviorSection, "Hold highlight across gaps (s)", "BL-RichSyncHoldSeconds",
+  const holdDetails = document.createElement("details"); holdDetails.className = "BL-CaseSettings";
+  const holdTitle = document.createElement("summary"); holdTitle.textContent = "Hold highlight across gaps";
+  holdDetails.append(holdTitle); behaviorSection.append(holdDetails);
+  const holdOptions = document.createElement("fieldset"); holdOptions.className = "BL-GroupOptions"; holdDetails.append(holdOptions);
+  numeric(holdOptions, "Gap limit (s)", "BL-RichSyncHoldSeconds",
     () => GetRichSyncSettings().holdSeconds, value => SaveRichSyncSetting("holdSeconds", value),
-    "Musixmatch only. Holds the completed line’s highlight across shorter gaps. Gaps at or above the limit use normal dimming and dots. Set to 0 to disable.",
+    "Musixmatch, LRCLIB and Spotify. Holds the completed highlight across shorter gaps for line sync, including rich sync that falls back to Line. Apply to word sync also holds rich sync that passes the minimum. Gaps at or above the limit use normal dimming and dots. Set to 0 to disable all holds.",
     "", 0, undefined, "any");
+  const holdWordSync = toggle(holdOptions, "Apply to word sync", "BL-RichSyncHoldWordSync", GetRichSyncSettings().holdWordSync,
+    "Musixmatch, LRCLIB and Spotify. On also holds rich sync that passes the minimum segments per line, keeping word precision. Off holds line sync only, including rich sync that falls back to Line. The gap limit must be greater than 0.", "On");
+  checkbox(holdWordSync, value => SaveRichSyncSetting("holdWordSync", value), () => GetRichSyncSettings().holdWordSync);
   numeric(behaviorSection, "Minimum timed segments per line", "BL-RichSyncMinimumSegments",
     () => GetRichSyncSettings().minimumSegmentsPerLine, value => SaveRichSyncSetting("minimumSegmentsPerLine", value),
-    "Musixmatch only. Uses Line sync when the average number of distinct timed starts per lyric line falls below this value. Set to 0 to disable.",
+    "Musixmatch, LRCLIB and Spotify. Uses Line sync when the average number of distinct timed starts per lyric line falls below this value. Line sync and rich sync that falls back to Line can hold shorter gaps. Rich sync that passes the minimum is held only when Apply to word sync is On. Set to 0 to disable the resolution test; the gap limit and Apply to word sync still control holds.",
     "", 0, undefined, "any");
   const lyricsSection = document.createElement("section"); content.append(lyricsSection); heading(lyricsSection, "Lyrics");
   const family=document.createElement("input");family.id="JEL-FontFamily";family.type="text";family.value=PresentationSettings.getFontFamily();family.placeholder="Spotify / theme font";family.disabled=presentationReadOnly;
@@ -560,7 +600,7 @@ export const ProviderControlsReady = OnSpotifyReady.then(() => {
   if (GlobalMaid.IsDestroyed()) return;
   // One bounded local probe per extension startup, even in on-demand mode.
   // No polling, upstream request or token transmission. Disposal cancels it.
-  if (GetSpicyToken()) {
+  if (IsProviderEnabled('Spicy') && GetSpicyToken()) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
     GlobalMaid.Give(() => { clearTimeout(timeout); controller.abort(); });
@@ -571,7 +611,7 @@ export const ProviderControlsReady = OnSpotifyReady.then(() => {
         throw new Error('Relay unavailable');
       }
     }).catch(() => {
-      if (!GlobalMaid.IsDestroyed() && GetSpicyToken()) {
+      if (!GlobalMaid.IsDestroyed() && IsProviderEnabled('Spicy') && GetSpicyToken()) {
         ShowNotification('Just Enough Lyrics: Spicy relay is unavailable. Run node spicy-proxy.mjs start to use Spicy.', 'warning', 8);
       }
     }).finally(() => clearTimeout(timeout));

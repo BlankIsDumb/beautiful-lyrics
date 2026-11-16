@@ -39,10 +39,10 @@ test('stale songs never call the provider',async()=>{
   const provider=await setup(async()=>{throw new Error('must not fetch');});
   await assert.rejects(provider.FetchMusixmatchLyrics(track,3,()=>false),/Track changed/);
 });
-test('wrong recording cannot populate the cache',async()=>{
+test('wrong recording is an authoritative not-found',async()=>{
   const body=structuredClone(richBody);body.macro_calls['matcher.track.get'].message.body.track.track_spotify_id='other';
   const provider=await setup(async()=>response(body));
-  await assert.rejects(provider.FetchMusixmatchLyrics(track,3,()=>true),/different recording/);
+  assert.equal(await provider.FetchMusixmatchLyrics(track,3,()=>true,'KNOWN-ISRC'),undefined);
 });
 test('same recording on a re-release is accepted by ISRC',async()=>{
   const body=structuredClone(richBody);Object.assign(body.macro_calls['matcher.track.get'].message.body.track,{track_spotify_id:'reissue',track_isrc:'TEST00000001'});
@@ -65,4 +65,38 @@ test('a track changed during provider spacing never dispatches its waiting reque
   setTimeout(()=>{current=false;},20);
   await assert.rejects(waiting,/Track changed/);
   assert.equal(calls,1);
+});
+
+test('a joined pending request stays shared until its response arrives',async()=>{
+ let calls=0,release,begin;const began=new Promise(resolve=>{begin=resolve});
+ const p=await setup(()=>{calls++;begin();return new Promise(resolve=>{release=resolve})});
+ const first=p.FetchMusixmatchLyrics(track,3,()=>true);await began;const joined=p.FetchMusixmatchLyrics(track,3,()=>true);assert.equal(first,joined);assert.equal(calls,1);
+ release(response(richBody));assert.equal((await joined).Type,'Syllable');assert.equal(calls,1);
+});
+
+test('a reopened consumer joins the spacing job without inheriting the closed consumer state',async()=>{
+ let calls=0,current=true,releaseSpacing,beginSpacing;const began=new Promise(resolve=>{beginSpacing=resolve});
+ const p=await setup(async()=>{calls++;return response(richBody)});await p.FetchMusixmatchLyrics(track,3,()=>true);
+ const setTimeout=globalThis.setTimeout;
+ try {
+  globalThis.setTimeout=(callback,ms,...args)=>{if(ms>0&&ms<=2000){releaseSpacing=()=>callback(...args);beginSpacing();return 12345}return setTimeout(callback,ms,...args)};
+  const first=p.FetchMusixmatchLyrics(track,3,()=>current);await began;current=false;
+  const reopen=p.FetchMusixmatchLyrics(track,3,()=>true);assert.equal(first,reopen);assert.equal(calls,1);
+  releaseSpacing();assert.equal((await reopen).Type,'Syllable');assert.equal(calls,2);
+ } finally {globalThis.setTimeout=setTimeout;}
+});
+
+test('missing ISRC cannot create an authoritative mismatch',async()=>{
+ const body=structuredClone(richBody);body.macro_calls['matcher.track.get'].message.body.track.track_spotify_id='other';
+ const p=await setup(async()=>response(body));const result=await p.FetchMusixmatchLyrics(track,3,()=>true);
+ assert.equal(result,p.UnverifiedMusixmatchRecording);assert.equal(p.IsMusixmatchResultCacheable(result),false);
+});
+
+test('lyrics.get access and quota denial call fail(), including when rich timing exists',async()=>{
+ for(const status of [401,402,403,429]) {
+  const body=structuredClone(richBody);body.macro_calls['track.lyrics.get']={message:{header:{status_code:status}}};
+  const p=await setup(async()=>response(body));await assert.rejects(p.FetchMusixmatchLyrics(track,3,()=>true),new RegExp(String(status)));
+  assert.ok(Number(localStorage.getItem('BeautifulLyricsLocal/MusixmatchCooldown'))>Date.now()+14*60000);
+  assert.equal(localStorage.getItem('BeautifulLyricsLocal/MusixmatchToken'),status===401?null:'test-token');
+ }
 });

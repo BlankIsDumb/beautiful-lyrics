@@ -11,16 +11,21 @@ export type BehaviorSettings = {
 };
 const behaviorKey = "BeautifulLyricsLocal/Behavior";
 const richSyncKey = "BeautifulLyricsLocal/RichSyncCompensation";
-export type RichSyncSettings = { holdSeconds: number; minimumSegmentsPerLine: number };
+export type RichSyncSettings = { holdSeconds: number; minimumSegmentsPerLine: number; holdWordSync: boolean };
 const nonnegative = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 export function GetRichSyncSettings(): RichSyncSettings {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(richSyncKey) || "{}"); } catch { /* Keep defaults for an invalid saved record. */ }
-  return { holdSeconds: nonnegative(saved?.holdSeconds, 5), minimumSegmentsPerLine: nonnegative(saved?.minimumSegmentsPerLine, 2) };
+  return { holdSeconds: nonnegative(saved?.holdSeconds, 5), minimumSegmentsPerLine: nonnegative(saved?.minimumSegmentsPerLine, 2),
+    holdWordSync: typeof saved?.holdWordSync === "boolean" ? saved.holdWordSync : true };
 }
-export function SaveRichSyncSetting(key: keyof RichSyncSettings, value: number) {
+export function SaveRichSyncSetting(key: "holdWordSync", value: boolean): void;
+export function SaveRichSyncSetting(key: "holdSeconds" | "minimumSegmentsPerLine", value: number): void;
+export function SaveRichSyncSetting(key: keyof RichSyncSettings, value: number | boolean) {
   const current = GetRichSyncSettings();
-  const next = nonnegative(value, current[key]);
+  // Keep boolean validation separate: checkbox values must never coerce either
+  // numeric setting, and malformed saved toggle values default to On above.
+  const next = key === "holdWordSync" ? (typeof value === "boolean" ? value : current.holdWordSync) : nonnegative(value, current[key]);
   if (next === current[key]) return;
   localStorage.setItem(richSyncKey, JSON.stringify({ ...current, [key]: next }));
   for (const listener of richSyncListeners) listener();

@@ -2,44 +2,12 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 const { version } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 import assert from "node:assert/strict";
-import { build } from "esbuild";
-const bundle = await build({
-  stdin: {contents: "export * from './Extension/Spices/Spicetify/Services/Player/AdditionalProviders.ts'; export * from './Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts';",resolveDir:process.cwd()},
-  bundle: true,
-  write: false,
-  format: "esm",
-  platform: "browser",
-  plugins: [
-    {
-      name: "cache",
-      setup(b) {
-        b.onResolve({ filter: /Cache\.ts$/ }, () => ({
-          path: "cache",
-          namespace: "mock",
-        }));
-        b.onLoad({ filter: /.*/, namespace: "mock" }, () => ({
-          contents:
-            "export const GetExpireStore=()=>({GetItem:async k=>globalThis.cache.get(k),SetItem:async(k,v)=>globalThis.cache.set(k,v)});",
-        }));
-      },
-    },
-  ],
-});
-let serial = 0;
+import { compileFixture, fakeCaches, storage } from './cache-fixture.mjs';
+const load = await compileFixture("export * from './Extension/Spices/Spicetify/Services/Player/AdditionalProviders.ts'; export * from './Extension/Spices/Spicetify/Services/Player/ProviderSettings.ts';");
 async function setup() {
-  const storage = new Map();
-  globalThis.cache = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => storage.get(k) ?? null,
-    setItem: (k, v) => storage.set(k, v),
-    removeItem: (k) => storage.delete(k),
-  };
-  return import(
-    "data:text/javascript;base64," +
-      Buffer.from(bundle.outputFiles[0].text + `\n//${serial++}`).toString(
-        "base64",
-      )
-  );
+  storage();
+  globalThis.caches = fakeCaches();
+  return load();
 }
 const tokenKey = "BeautifulLyricsLocal/SpicyToken";
 test('Spicy sends credentials only to the loopback relay',async()=>{

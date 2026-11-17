@@ -33,6 +33,7 @@ import FullscreenPageView from "./Page/Fullscreen.ts"
 // Our Modules
 import { CreateElement } from "./Shared.ts"
 import Icons from "./Icons.ts"
+import { PresentationSettings } from "../PresentationSettings.ts"
 
 // Create our maid
 const ViewMaid = GlobalMaid.Give(new Maid())
@@ -189,6 +190,7 @@ export const ViewReady = OnSpotifyReady
 						return
 					} else if (HaveSongLyricsLoaded === false) { // Render a template if we're still loading our lyrics
 						const card = nowPlayingViewMaid.Give(CreateElement<HTMLDivElement>(LoadingLyricsCard), "Card")
+						card.dataset.cardHeight = PresentationSettings.getLayout("NowPlaying").cardHeight
 						cardAnchor.after(card)
 
 						return

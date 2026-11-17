@@ -25,12 +25,37 @@ test('Spicy disk hits survive module restart and preserve sanitized Attribution 
  stored.Content.Attribution.People.push({Name:'Other credit',URL:'javascript:alert(1)'});caches.seed(storeName,'/'+id,stored);
  p=await load();const lookup=await p.FetchLyricLookup(track,3,()=>true);const hit=lookup.Candidates[0];
  assert.equal(hit.Source.Provider,'Spicy');assert.equal(calls,1);assert.equal(hit.Attribution.Source,'42');
- assert.deepEqual(hit.Attribution.People,[{Name:'123',URL:'https://spicylyrics.org/user/uploader'},{Name:'Maker',URL:undefined},{Name:'Other credit',URL:undefined}]);
+ assert.deepEqual(hit.Attribution.People,[{Name:'123',Role:'Uploader',URL:'https://spicylyrics.org/user/uploader'},{Name:'Maker',Role:'Maker',URL:undefined},{Name:'Other credit',URL:undefined}]);
  assert.deepEqual((await p.GetLyricsCacheCounts()).Spicy,1);
 });
 
+test('Spicy stores roles before filtering absent contributors, including a maker-only response',async()=>{
+ for(const onlyMaker of [false,true]) {
+  const p=await setup();globalThis.fetch=async()=>{
+   const data=body();if(onlyMaker)delete data.UploadAttribution.Uploader;
+   return Response.json({Status:200,Body:data});
+  };
+  const lyrics=await p.FetchSpicy(id,3,()=>true);
+  const roles=onlyMaker?['Maker']:['Uploader','Maker'];
+  assert.deepEqual(lyrics.Attribution.People.map(person=>person.Role),roles);
+  assert.deepEqual(caches.item(storeName,'/'+id).Content.Attribution.People.map(person=>person.Role),roles);
+ }
+});
+
+test('old Spicy cache remains a hit and invalid string roles are dropped on read without rewriting the entry',async()=>{
+ const p=await setup();let calls=0;globalThis.fetch=async()=>{calls++;return response()};
+ const saved=entry({Type:'Static',Lines:[{Text:'old cache'}],Attribution:{Source:'spicy_lyrics',People:[
+  {Name:'Legacy'}, {Name:'Invalid',Role:'Administrator'}, {Name:'Maker',Role:'Maker'},
+ ]}});
+ caches.seed(storeName,'/'+id,saved);
+ const lyrics=await p.FetchSpicy(id,3,()=>true);
+ assert.equal(calls,0);assert.equal(lyrics.Lines[0].Text,'old cache');
+ assert.deepEqual(lyrics.Attribution.People,[{Name:'Legacy',URL:undefined},{Name:'Invalid',URL:undefined},{Name:'Maker',Role:'Maker',URL:undefined}]);
+ assert.deepEqual(caches.item(storeName,'/'+id),saved);
+});
+
 test('malformed Spicy Attribution is deleted as a miss and the provider still fetches',async()=>{
- for(const attribution of [undefined,null,{}, {Source:1,People:[]},{Source:'x',People:{}},{Source:'x',People:[null]},{Source:'x',People:[{Name:12}]},{Source:'x',People:[{Name:'name',URL:123}]}]) {
+ for(const attribution of [undefined,null,{}, {Source:1,People:[]},{Source:'x',People:{}},{Source:'x',People:[null]},{Source:'x',People:[{Name:12}]},{Source:'x',People:[{Name:'name',URL:123}]},{Source:'x',People:[{Name:'name',Role:123}]}]) {
   const p=await setup();let calls=0;globalThis.fetch=async()=>{calls++;return response()};
   caches.seed(storeName,'/'+id,entry({Type:'Static',Lines:[{Text:'stale'}],Attribution:attribution}));
   const lyrics=await p.FetchSpicy(id,3,()=>true);assert.equal(calls,1);assert.equal(lyrics.Lines[0].Text,'hello');assert.equal(lyrics.Attribution.People[0].Name,'Uploader');

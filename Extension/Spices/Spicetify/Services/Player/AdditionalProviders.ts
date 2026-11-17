@@ -41,6 +41,7 @@ const sanitizeSpicyAttribution = (attribution: NonNullable<ProviderLyrics['Attri
   Source: String(attribution.Source),
   People: attribution.People.map(person => ({
     Name: String(person.Name),
+    ...(person.Role === 'Uploader' || person.Role === 'Maker' ? { Role: person.Role } : {}),
     URL: typeof person.URL === 'string' && person.URL.startsWith('https://spicylyrics.org/') ? person.URL : undefined,
   })),
 });
@@ -172,16 +173,21 @@ export async function FetchSpicy(
     : undefined;
   if (lyrics) {
     const attribution = body.Body.UploadAttribution;
-    const people = [attribution?.Uploader, attribution?.Maker]
-      .filter(Boolean)
-      .map((p) => ({
-        Name: String(p.username || "Contributor"),
-        URL:
-          typeof p.url === "string" &&
-          p.url.startsWith("https://spicylyrics.org/")
-            ? p.url
-            : undefined,
-      }));
+    // Keep the role before filtering: a maker-only response is still a maker.
+    const people = (["Uploader", "Maker"] as const)
+      .filter(role => attribution?.[role])
+      .map((role) => {
+        const p = attribution[role];
+        return {
+          Role: role,
+          Name: String(p.username || "Contributor"),
+          URL:
+            typeof p.url === "string" &&
+            p.url.startsWith("https://spicylyrics.org/")
+              ? p.url
+              : undefined,
+        };
+      });
     lyrics.Attribution = sanitizeSpicyAttribution({
       Source: String(body.Body.source || "unknown"),
       People: people,

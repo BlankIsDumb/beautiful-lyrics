@@ -209,6 +209,16 @@ export function OpenProviderSettings() {
       const expansion = () => { fields.hidden = !sidebar!.checked; fields.disabled = !sidebar!.checked; sidebar!.setAttribute("aria-expanded", String(sidebar!.checked)); TypographyMeasured(); };
       checkbox(sidebar, value => SaveBehaviorSettings({ ...GetBehaviorSettings(), sidebarEnabled: value }), () => GetBehaviorSettings().sidebarEnabled, expansion); expansion();
     }
+    if (view === "NowPlaying") {
+      const height = select(fields, "Card height", "JEL-NowPlaying-Layout-cardHeight",
+        [["default", "Default"], ["extended", "Extended"], ["max", "Max"]], PresentationSettings.getLayout(view).cardHeight,
+        "Height of the lyrics card. Default is 340 px, Extended 500 px, Max 620 px. Max also keeps one earlier line visible above the current one, unless Anchor is changed.", "Default");
+      height.disabled = presentationReadOnly;
+      listen(height, "change", () => {
+        apply(() => SaveLayoutField("NowPlaying", "cardHeight", height.value as LayoutProfile["cardHeight"]));
+        height.value = PresentationSettings.getLayout("NowPlaying").cardHeight;
+      });
+    }
     const backgroundGroup = document.createElement("details"), backgroundSummary = document.createElement("summary"), backgroundFields = document.createElement("fieldset");
     backgroundGroup.className = "BL-CaseSettings"; backgroundSummary.textContent = "Background";
     backgroundFields.className = "BL-GroupOptions"; backgroundFields.disabled = presentationReadOnly;

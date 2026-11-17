@@ -26,7 +26,7 @@
 	animation: BackgroundShimmer 1s infinite linear;
 }
 
-:is(#BeautifulLyrics-CardView, .BeautifulLyricsPage) .ViewControl {
+.BeautifulLyricsPage .ViewControl {
 	--ViewControlHeight: var(--ViewControlSize, 100cqh);
 
 	display: flex;

@@ -18,5 +18,6 @@ export function IsCachedSpicyLyrics(content: unknown): boolean {
   return !!attribution && typeof attribution.Source === 'string'
     && Array.isArray(attribution.People) && attribution.People.every((person: any) =>
       !!person && typeof person.Name === 'string'
+      && (person.Role === undefined || typeof person.Role === 'string')
       && (person.URL === undefined || typeof person.URL === 'string'));
 }

@@ -70,7 +70,7 @@ export type SyllableSyncedLyrics = (
 )
 
 export type Lyrics = (StaticSyncedLyrics | LineSyncedLyrics | SyllableSyncedLyrics) & {
-	Attribution?: { Source: string; People: { Name: string; URL?: string }[] };
+	Attribution?: { Source: string; People: { Name: string; URL?: string; Role?: "Uploader" | "Maker" }[] };
 	Source?: {
 		Provider: string; TrackId: string; UniqueTimings: number; CacheKey: string; HasWordSync?: boolean;
 		RichSyncHoldSeconds?: number;

@@ -3,6 +3,7 @@ import { SongLyrics, SongLyricChoices, SongChanged, SongLyricsLoaded, SelectLyri
 import type { Maid } from "@Universal/Modules/Maid.ts";
 import { PresentationSettings } from "./PresentationSettings.ts";
 import { TimingSettings } from "./TimingSettings.ts";
+import { BuildProviderCredit, BuildProviderCreditDOM } from "./ProviderCredit.ts";
 import { SaveTimingOffset, SaveLayoutField, SaveBackgroundField, TimingOffsetInput, PrimarySizeInput } from "./ViewSettingsControls.ts";
 
 // A view transition can briefly leave two surfaces mounted. Coordinate their
@@ -19,6 +20,8 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
   const lifetime = new AbortController();
   const controls = document.createElement("div");
   controls.className = "BL-CornerControls";
+  const creditElement = document.createElement("div"); creditElement.className = "BL-CornerCredit";
+  controls.append(creditElement);
   lyricsArea.append(controls);
   const listen = (element: EventTarget, type: string, callback: EventListener) =>
     element.addEventListener(type, callback, {signal: lifetime.signal});
@@ -120,6 +123,9 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
   const empty = document.createElement("button"); empty.type = "button"; empty.disabled = true;
   empty.className = "BL-ProviderChoice"; empty.textContent = "No lyrics for this song";
   const updateProviders = () => {
+    const credit = BuildProviderCredit(SongLyrics);
+    creditElement.hidden = !credit;
+    creditElement.replaceChildren(...(credit ? [BuildProviderCreditDOM(credit)] : []));
     const current = SongLyrics?.Source?.Provider;
     const title = current ? `Lyrics provider: ${current}` : "Lyrics provider";
     provider.button.setAttribute("aria-label", title); provider.tooltip.setContent(title);

@@ -1,7 +1,7 @@
 import { NormalizeContextAppearance, type ContextAppearance } from "./ContextAppearance.ts";
 import { NormalizeBackground, DefaultBackgrounds, BackgroundFields, type BackgroundProfile } from "./BackgroundSettings.ts";
 import { HorizontalSurfaces, NormalizeHorizontalSpacing, type HorizontalSurface } from "./HorizontalSpacing.ts";
-import { NormalizeLayout, NormalizeFontFamily, LayoutFields, LayoutCategories, DefaultLayouts, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
+import { NormalizeLayout, NormalizeFontFamily, LayoutFields, LayoutCategories, DefaultLayouts, EffectiveLayout, type LayoutProfile, type LayoutCategory } from "./LayoutSettings.ts";
 import { NormalizeAnnotations, NormalizeConversions, EffectiveConversion, type ConversionProfile, type AnnotationProfile } from "./AnnotationSettings.ts";
 import { NormalizeRendering, ApplyTextPreset, ClassicRendering, NormalizeCues, type CueSettings, SourceCases, type SourceCase, type RenderingProfile } from "./RenderingSettings.ts";
 // Presentation owns no provider, player or annotation dependencies. Saving a view
@@ -181,6 +181,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     saveContextAppearance: (view: PresentationView, value: ContextAppearance) => save(view, { ...read().profiles[view], contextAppearance: NormalizeContextAppearance(value) }),
     subscribeContextAppearance: (listener: (view: PresentationView) => void) => { contextAppearanceListeners.add(listener); return () => { contextAppearanceListeners.delete(listener); }; },
     getLayout: (view: PresentationView) => ({ ...read().profiles[view].layout }),
+    getEffectiveLayout: (view: PresentationView) => EffectiveLayout(view, { ...read().profiles[view].layout }),
     saveLayout: (view: PresentationView, value: LayoutProfile) => save(view, { ...read().profiles[view], layout: NormalizeLayout(value, DefaultLayouts[view]) }),
     resetLayout: (view: PresentationView, category: LayoutCategory) => {
       const current = { ...read().profiles[view].layout };

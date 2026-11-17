@@ -82,7 +82,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	public constructor(
 		scrollContainer: HTMLDivElement, lyricsContainer: HTMLDivElement,
 		vocalGroups: VocalGroups<V>, lyricsAreSynced: boolean, private BlurEnabled = true, private counters?: RenderingCounters,
-        private options: { profile?: LayoutProfile; browsing?: (browsing: boolean) => void; measured?: () => void; surface?: HorizontalSurface; spacing?: () => number; reservation?: HTMLElement; navigationTargets?: () => readonly HTMLElement[] } = {}
+        private options: { profile?: LayoutProfile; browsing?: (browsing: boolean) => void; measured?: () => void; surface?: HorizontalSurface; spacing?: () => number; reservation?: HTMLElement; navigationTargets?: () => readonly HTMLElement[]; followLead?: () => 0 | 1 } = {}
 	) {
 		this.Profile = { ...ClassicLayout, ...options.profile }
 		// Mark our synced-state
@@ -499,6 +499,20 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         }
         this.NavigationPending=false
         if(!bounds.length)return // Ordinary silence and the ending hold their viewport.
+        if(this.options.followLead?.() === 1) {
+            const firstGroup=Math.min(...bounds.map(bound=>bound.group))
+            // Include the nearest earlier source, skipping cue slots. Use the
+            // same union for classic resume and follow, including navigation.
+            // fixedAnchorTarget still owns tall-union fallback and end clamping.
+            for(let index=firstGroup-1;index>=0;index--) {
+                if((groups[index].Role??"source")!=="source")continue
+                for(const vocal of groups[index].Vocals) {
+                    const earlier=this.VoiceBounds.get(vocal)
+                    if(earlier)bounds.push(earlier)
+                }
+                break
+            }
+        }
         if(this.AutoScrollBlocked) {
             if(this.Scroller.isScrolling)return
             if(this.Profile.resume==="delay") { if(performance.now()<this.ManualDeadline)return }

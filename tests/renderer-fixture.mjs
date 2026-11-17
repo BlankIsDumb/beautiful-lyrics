@@ -5,12 +5,13 @@ import {readFile} from 'node:fs/promises';
 
 // Shared by standalone Chromium tests and the private parent-run native fixture.
 // It bundles real components/layout, without player/session/storage dependencies.
-export async function buildVocalFixture(baselineRoot, includeScroller = false, realConverters = false, includeLayout = false, includeRenderer = false) {
+export async function buildVocalFixture(baselineRoot, includeScroller = false, realConverters = false, includeLayout = false, includeRenderer = false, includeCard = false) {
   const baseline = baselineRoot ? ['SyllableVocals','LineVocals','Interlude'].map((name,index)=>`export {default as ${['Baseline','BaselineLine','BaselineInterlude'][index]}} from ${JSON.stringify(path.join(baselineRoot, 'Extension/Source/Modules/LyricsRenderer/Components/'+name+'.ts').replaceAll('\\','/'))};`).join('\n') : '';
   const result = await build({ stdin: { contents: `
     ${includeScroller ? "export {LyricsScroller} from './Extension/Source/Modules/LyricsRenderer/LyricsScroller.ts';" : ''}
     ${includeLayout ? "export * from './Extension/Source/LayoutSettings.ts';export {PresentationSettings} from './Extension/Source/PresentationSettings.ts';export * from './Extension/Source/Modules/LyricsRenderer/TypographyPreview.ts';" : ''}
     ${includeRenderer ? "export {default as LyricsRenderer} from './Extension/Source/Modules/LyricsRenderer.ts';" : ''}
+    ${includeCard ? "export {default as CardView} from './Extension/Source/LyricViews/Card/mod.ts';export {Store} from './Extension/Source/LyricViews/Shared.ts';export {SetSong} from '@Spices/Spicetify/Services/Player/mod.ts';" : ''}
     export {VocalController} from './Extension/Source/Modules/LyricsRenderer/VocalController.ts';
     export {CueController} from './Extension/Source/Modules/LyricsRenderer/CueController.ts';
     export {RenderScheduler} from './Extension/Source/Modules/LyricsRenderer/RenderScheduler.ts';
@@ -25,7 +26,16 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false, r
     export {AlignJapanese,ConvertVoice} from './Extension/Source/Modules/AnnotationConverters.ts';${baseline}`, resolveDir: process.cwd() },
     bundle: true, write: false, format: 'iife', globalName: 'fixtureModule', plugins: [{ name: 'isolated-vocals', setup(b) {
       if(includeRenderer)b.onResolve({filter:/LyricClock\.ts$/},()=>({path:'fixture-clock',namespace:'clock'}));
-      b.onLoad({filter:/.*/,namespace:'clock'},()=>({contents:'export const PlayerLyricClock={};'}));
+      b.onLoad({filter:/.*/,namespace:'clock'},()=>({contents:includeCard ? 'export const PlayerLyricClock=globalThis.fixtureClock;' : 'export const PlayerLyricClock={};'}));
+      if(includeCard) {
+        b.onResolve({filter:/Player\/mod\.ts$/},()=>({path:'player',namespace:'card-host'}));
+        b.onResolve({filter:/Services\/Cache\.ts$/},()=>({path:'cache',namespace:'card-host'}));
+        b.onResolve({filter:/BackgroundController\.ts$/},()=>({path:'background',namespace:'card-host'}));
+        b.onLoad({filter:/.*/,namespace:'card-host'},args=>({contents:args.path==='player'
+          ? 'export let SongLyrics;export const Song=undefined,SongContext=undefined;export function SetSong(lyrics){SongLyrics=lyrics}'
+          : args.path==='background' ? 'export default class BackgroundController{Destroy(){}}'
+          : 'export const GetInstantStore=(key,version,defaults)=>({Items:JSON.parse(localStorage.getItem(key)||"null")?.Items||defaults,SaveChanges(){throw Error("Unexpected legacy store write")}});'}));
+      }
       b.onResolve({ filter: /^@|^npm:/ }, args => {
         if (args.importer.endsWith('AnnotationConverters.ts') && (!realConverters || args.path.includes('KuromojiAnalyzer'))) return { path: 'unused-language', namespace: 'fixture' };
         if (args.path.startsWith('@Universal/')) return { path: path.resolve('Universal', args.path.slice('@Universal/'.length)) };

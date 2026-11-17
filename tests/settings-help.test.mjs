@@ -82,6 +82,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const type=(control,value)=>{control.value=value;control.dispatchEvent(new Event('input',{bubbles:true}))};
       const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       await frame();
+      check(form.querySelector('p[role=status]').textContent==='','opening settings leaves status empty');
       const sections=[...form.querySelectorAll(':scope > section')];
       check(sections.map(section=>section.querySelector(':scope > h3')?.textContent).join('|')==='Behavior|Timings|Now Playing|Fullscreen|Providers|Lyrics Font|Spicy','top-level section order and centered h3 hierarchy');
       check(sections.every(section=>section.children.length===2&&section.lastElementChild.matches('div.BL-Block')),'each section owns one continuous block');
@@ -103,6 +104,11 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
         else check(block.firstElementChild===fields&&!block.querySelector('.BL-GroupHeader')&&fields.firstElementChild.querySelector('summary').textContent==='Background','Fullscreen block starts with groups and has no band');
       }
       const helpText=id=>form.querySelector(id).closest('.BL-HelpRow').querySelector('.BL-HelpDescription').textContent;
+      const cardHeight=form.querySelector('#JEL-NowPlaying-Layout-cardHeight'),heightRow=cardHeight.closest('.BL-HelpRow'),nowOptions=form.querySelector('#JEL-NowPlaying-Options');
+      check(heightRow.parentElement===nowOptions&&nowOptions.firstElementChild===heightRow&&heightRow.nextElementSibling.querySelector('summary').textContent==='Background','Card height is first plain options row before Background');
+      check(!form.querySelector('#JEL-FullLyrics-Layout-cardHeight'),'Fullscreen has no card height control');
+      check(cardHeight.labels[0].textContent==='Card height'&&[...cardHeight.options].map(option=>option.textContent+':'+option.value).join('|')==='Default:default|Extended:extended|Max:max','Card height label and ordered options');
+      check(helpText('#JEL-NowPlaying-Layout-cardHeight')==='Height of the lyrics card. Default is 340 px, Extended 500 px, Max 620 px. Max also keeps one earlier line visible above the current one, unless Anchor is changed. Classic: Default','exact Card height help and Classic footer');
       check(helpText('#BL-FetchMode')==='On song change loads lyrics as each song starts. When required waits until a view shows lyrics. Now Playing counts while enabled. Classic: On song change','fetch help');
       check(helpText('#BL-LyricsCache')==='Clears saved lyrics for one provider, or All. All also clears track details and provider cooldowns. Tokens stay saved. The current song reloads.','cache help has no footer');
       check(helpText('#JEL-FullLyrics-TimingOffset')==='Added to Lyric delay in Fullscreen only. Classic: 0 s','Fullscreen offset help');
@@ -155,6 +161,10 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const statusLine=form.querySelector('p[role=status]');
       check(getComputedStyle(statusLine).display==='none','empty status is hidden');statusLine.textContent='Applied.';
       check(getComputedStyle(statusLine).position==='sticky'&&getComputedStyle(statusLine).bottom==='0px','status is a sticky footer');statusLine.textContent='';
+      // Exercise writes after the pristine/empty footer checks above: successful
+      // select changes intentionally leave the normal Applied status visible.
+      cardHeight.value='max';change(cardHeight);check(PresentationSettings.getLayout('NowPlaying').cardHeight==='max'&&form.querySelector('[role=status]').textContent==='Applied.','Card height saves through normal apply/status path');
+      cardHeight.value='default';change(cardHeight);
       for(const fields of form.querySelectorAll('.BL-GroupOptions')) {
         const buttons=fields.querySelector(':scope > .BL-ButtonRow');if(buttons)check(buttons===fields.lastElementChild,'group buttons stay at the end');
       }

@@ -6,11 +6,13 @@ export type LayoutProfile = {
   before: number | null; after: number | null; follow: boolean;
   transition: "classic" | "instant" | "smooth"; anchor: number;
   resume: "classic" | "delay"; resumeDelay: number;
+  cardHeight: "default" | "extended" | "max";
 };
 export const ClassicLayout: Readonly<LayoutProfile> = Object.freeze({
   primaryRatio: 1, backingRatio: .75, leadWeight: 700, backingWeight: 500,
   leading: 1.1818181818, groupGap: null, before: null, after: null,
   follow: true, transition: "classic", anchor: 45, resume: "classic", resumeDelay: .75,
+  cardHeight: "default",
 });
 export const DefaultLayouts = {
   NowPlaying: Object.freeze({ ...ClassicLayout, anchor: 0, before: 0 }),
@@ -38,10 +40,21 @@ export function NormalizeLayout(value?: Partial<LayoutProfile>, defaults = Class
   if (typeof value?.follow === "boolean") result.follow = value.follow;
   if (["classic", "instant", "smooth"].includes(value?.transition as string)) result.transition = value!.transition!;
   if (value?.resume === "classic" || value?.resume === "delay") result.resume = value.resume;
+  result.cardHeight = value?.cardHeight === "extended" || value?.cardHeight === "max" ? value.cardHeight : "default";
   return result;
 }
 export const LayoutFields = (previous: LayoutProfile, next: LayoutProfile) =>
   (Object.keys(next) as (keyof LayoutProfile)[]).filter(key => previous[key] !== next[key]);
+
+export function AutoLeadActive(view: "NowPlaying" | "FullLyrics", layout: LayoutProfile): boolean {
+  return view === "NowPlaying" && layout.cardHeight === "max" && layout.anchor === DefaultLayouts.NowPlaying.anchor;
+}
+
+// Max follows one earlier group at the default top anchor. Expose that group
+// only when needed; All/positive context choices and stored values stay intact.
+export function EffectiveLayout(view: "NowPlaying" | "FullLyrics", layout: LayoutProfile): LayoutProfile {
+  return AutoLeadActive(view, layout) && layout.before === 0 ? { ...layout, before: 1 } : layout;
+}
 export function NormalizeFontFamily(value: unknown): string {
   // A local CSS family list only. setProperty supplies the value, never markup.
   // Reject rule delimiters/control characters and CSS functions/URLs entirely.

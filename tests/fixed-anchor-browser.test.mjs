@@ -18,7 +18,7 @@ test('fixed anchor actual clock/sources: three surfaces, Word/Line/forced Line, 
   const check=(value,message)=>{if(!value)throw Error(message)};
   window.anchorFixture={async run(kind,precision,context,anchor,count=20,hostHeight=800){
    const host=document.createElement('div');host.style.cssText='width:'+(kind==='Card'?420:900)+'px;height:'+hostHeight+'px;position:relative;container-type:size';document.body.append(host);
-   if(kind==='Card')host.innerHTML='<div id="BeautifulLyrics-CardView"><div class="Header" data-encore-id="type"><div class="Title">Lyrics</div><div class="Controls"><button class="ViewControl">R</button><button class="ViewControl">P</button><button class="ViewControl">X</button></div></div><div class="LyricsContent"><div class="ContentContainer"></div></div></div>';
+   if(kind==='Card')host.innerHTML='<div id="BeautifulLyrics-CardView"><div class="Header" data-encore-id="type"><div class="Title">Lyrics</div><div class="BL-CardCredit" hidden></div></div><div class="LyricsContent"><div class="ContentContainer"></div></div></div>';
    else{host.classList.add('Root__main-view');host.innerHTML='<div class="BeautifulLyricsPage '+kind+'"><div class="Content"></div></div>';}
    const parent=host.querySelector(kind==='Card'?'.ContentContainer':'.Content'),view=kind==='Card'?'NowPlaying':'FullLyrics';
    const reservation=document.createElement('div');reservation.style.cssText='position:absolute;left:0;top:0;width:400px;height:800px';host.append(reservation);

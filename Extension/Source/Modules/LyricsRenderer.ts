@@ -1,6 +1,6 @@
 import type { HorizontalSurface } from "../HorizontalSpacing.ts";
 import { EffectiveConversion } from "../AnnotationSettings.ts";
-import { ApplyLayoutStyle } from "../LayoutSettings.ts";
+import { ApplyLayoutStyle, AutoLeadActive } from "../LayoutSettings.ts";
 import { LyricContext } from "./LyricsRenderer/LyricContext.ts";
 import { RegisterTypography, TypographyMeasured } from "./LyricsRenderer/TypographyPreview.ts";
 // Import Types
@@ -59,19 +59,6 @@ export default class LyricsRenderer implements Giveable {
         const bind = (voice: (typeof lyricDocument.groups)[number]["voices"][number], vocal: VocalController, base = LayoutVoice(voice)) => {
             bindings.set(voice.id, { voice, base, current: base, vocal })
         }
-    // Attribution belongs to every rendering surface, including the sidebar.
-    if (transformedLyrics.Attribution) {
-      const credit=this.Maid.Give(document.createElement('div'));
-      credit.className='BL-Attribution';
-      const source=transformedLyrics.Attribution.Source;
-      credit.textContent=`${({apple_music:'Apple Music',spotify:'Spotify',spicy_lyrics:'Spicy Lyrics'} as Record<string,string>)[source]||source} via Spicy Lyrics`;
-      for(const person of transformedLyrics.Attribution.People){
-        credit.append(' · ');
-        if(person.URL){const link=document.createElement('a');link.href=person.URL;link.textContent=person.Name;link.target='_blank';link.rel='noopener noreferrer';credit.append(link);}
-        else credit.append(person.Name);
-      }
-      parentContainer.append(credit);
-    }
 		// Create our containers
 		const scrollContainer = this.Maid.Give(document.createElement("div"))
 		scrollContainer.classList.add("LyricsScrollContainer")
@@ -97,7 +84,7 @@ export default class LyricsRenderer implements Giveable {
         }
         let rendering = readRendering()
         let cueSettings = PresentationSettings.getCues(view)
-        let layout = PresentationSettings.getLayout(view)
+        let layout = PresentationSettings.getEffectiveLayout(view)
         let contextAppearance = PresentationSettings.getContextAppearance(view)
         ApplyLayoutStyle(lyricsContainer, layout, PresentationSettings.getFontFamily())
         const vocals: VocalController[] = []
@@ -165,6 +152,7 @@ export default class LyricsRenderer implements Giveable {
             lyricDocument.type !== "Static", rendering.blur, counters, { profile: layout,
                 browsing: () => { updateContext(); scheduler.update(contextTime, 0) }, measured: TypographyMeasured, surface, reservation: options.reservation,
                 spacing:()=>PresentationSettings.getEffectiveHorizontalSpacing(surface),
+                followLead:()=>AutoLeadActive(view, PresentationSettings.getLayout(view)) ? 1 : 0,
                 navigationTargets:()=> { const [start,end]=context.getNavigationSpan();return sourceSlots.slice(start,end+1).map(slot=>slot.element) } }))
         const offsets = () => [TimingSettings.get("Shared"), TimingSettings.get(view)] as const
         let effectiveOffset = TimingSettings.get("Shared") + TimingSettings.get(view)
@@ -305,11 +293,14 @@ export default class LyricsRenderer implements Giveable {
         }))
         this.Maid.Give(PresentationSettings.subscribeLayout((changedView,fields) => {
             if(changedView!==view)return
-            layout=PresentationSettings.getLayout(view)
+            layout=PresentationSettings.getEffectiveLayout(view)
             ApplyLayoutStyle(lyricsContainer,layout,PresentationSettings.getFontFamily())
             scroller.SetProfile(layout)
-            if(fields.some(field=>["primaryRatio","backingRatio","leadWeight","backingWeight","leading","groupGap"].includes(field))) scroller.RefreshLayout()
-            if(fields.some(field=>["before","after","follow"].includes(field))) { contextKey="";updateContext();scheduler.update(contextTime,0) }
+            // Rebuild context and queue the existing measure/follow batch for
+            // lead-affecting edits, even when paused with no further clock tick.
+            const followLeadChanged = view === "NowPlaying" && fields.some(field=>["cardHeight","anchor","before"].includes(field))
+            if(followLeadChanged || fields.some(field=>["primaryRatio","backingRatio","leadWeight","backingWeight","leading","groupGap"].includes(field))) scroller.RefreshLayout()
+            if(followLeadChanged || fields.some(field=>["before","after","follow"].includes(field))) { contextKey="";updateContext();scheduler.update(contextTime,0) }
         }))
         this.Maid.Give(PresentationSettings.subscribeHorizontalSpacing(changedSurface=> {
             if(changedSurface===surface)scroller.RefreshLayout()

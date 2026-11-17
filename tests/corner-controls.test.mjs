@@ -194,10 +194,32 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
             check(getComputedStyle(view.root).pointerEvents==='none'&&getComputedStyle(view.buttons[0]).pointerEvents==='auto','pointer-event isolation');
           }
           const [providerButton,quickButton]=first.buttons,[provider,quick]=first.panels;
+          for(const id of ['Musixmatch','AMLL','LRCLIB','Spotify']) {
+            m.SetSong(lyric(id,'Line'));check(first.root.firstElementChild.textContent===id,'plain provider credit '+id);
+            near(first.root.firstElementChild.getBoundingClientRect().bottom,providerButton.getBoundingClientRect().bottom,'one-line credit bottom aligns with provider button');
+          }
+          for(const [source,text] of [['apple_music','Apple Music'],['spotify','Spotify'],['unknown','Unknown source']]) {
+            m.SetSong({...lyric('Spicy','Line'),Attribution:{Source:source,People:[]}});
+            check(first.root.firstElementChild.textContent===text+' \\u00b7 Spicy Lyrics','Spicy source before provider');
+          }
+          const spicy={...lyric('Spicy','Line'),Attribution:{Source:'spicy_lyrics',People:[{Name:'Sppq',Role:'Uploader',URL:'https://spicylyrics.org/user/sppq'},{Name:'ShoQB',Role:'Maker'}]}};
+          m.SetSong(spicy,choices,m.SongLyricsLoaded);
+          check(first.root.firstElementChild.textContent==='Spicy Lyrics \\u00b7 Sppq \\u00b7 ShoQB','Spicy people after provider');
+          const creditLink=first.root.firstElementChild.querySelector('a');
+          check(creditLink.target==='_blank'&&creditLink.rel==='noopener noreferrer'&&creditLink.title==='Uploader: Sppq','corner safe links and role title');
+          check(first.root.firstElementChild.querySelector('span.BL-CreditPerson').title==='Maker: ShoQB','unlinked person title');
+          m.SetSong({...spicy,Attribution:{Source:'spicy_lyrics',People:[{Name:'Long contributor '.repeat(30),Role:'Uploader'}]}});await frame();
+          for(const view of mounted) {
+            const credit=view.root.firstElementChild,box=view.area.getBoundingClientRect();
+            check(credit.getBoundingClientRect().height>40&&getComputedStyle(credit).textOverflow!=='ellipsis','corner wraps without truncation');
+            near(box.right-view.buttons[1].getBoundingClientRect().right,16,'long credit keeps rightmost button right inset');
+            for(const button of view.buttons)near(box.bottom-button.getBoundingClientRect().bottom,16,'long credit keeps button bottom inset');
+          }
+          m.SetSong(lyric('Musixmatch','Line',false),choices);await frame();
           check(first.area.getBoundingClientRect().top>=0&&first.area.getBoundingClientRect().bottom<=document.documentElement.clientHeight,'first lyric area fits fixture viewport');
           click(providerButton);check(shown().length===1&&provider.matches(':popover-open'),'provider opens');
           insetRows(provider);
-          check([...first.root.children].every((el,index)=>el===[providerButton,provider,quickButton,quick][index]),'panels follow their triggers in DOM tab order');
+          check([...first.root.children].every((el,index)=>el===[first.root.querySelector('.BL-CornerCredit'),providerButton,provider,quickButton,quick][index]),'credit first, panels follow their triggers in DOM tab order');
           near(provider.getBoundingClientRect().right,first.root.getBoundingClientRect().right,'menu right-aligns to button row');
           near(provider.getBoundingClientRect().bottom,providerButton.getBoundingClientRect().top-8,'menu opens directly above button');
           // Reproduce an anchor just beyond the viewport bottom independently;
@@ -218,8 +240,10 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
           check(provider.querySelector('[data-provider="AMLL"]').getAttribute('aria-pressed')==='true','check moves');
           insetRows(provider);
           check(providerButton.getAttribute('aria-label')==='Lyrics provider: AMLL'&&tooltips[0].content==='Lyrics provider: AMLL','current provider tooltip');
+          check(first.root.firstElementChild.textContent==='AMLL','credit follows provider switch');
           const focused=provider.querySelector('[data-provider="AMLL"]');focused.focus();m.SongLyricsLoaded.fire();check(document.activeElement===focused,'refresh preserves focused provider row');
           m.SetSong(undefined,[]);check(provider.matches(':popover-open')&&provider.querySelector('button').disabled&&provider.textContent.includes('No lyrics for this song'),'empty state refresh stays open');
+          check(first.root.firstElementChild.hidden&&first.root.firstElementChild.getClientRects().length===0,'no lyrics hides credit without layout space');
           insetRows(provider);
           check(tooltips[0].content==='Lyrics provider','empty tooltip');
           m.SetSong(choices[0],choices);click(quickButton);
@@ -243,6 +267,7 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
             check([...quick.querySelectorAll('input,select,.BL-Stepper button')].every(el=>el.disabled),'future settings disable every quick edit');
             click(button(quick,'All settings'));await frame();check(form,'All settings still available read-only');
             check(form.querySelector('#JEL-FullLyrics-TimingOffset').disabled&&form.querySelector('#JEL-FullLyrics-Layout-primaryRatio').disabled&&form.querySelector('#JEL-FullLyrics-ConversionsEnabled').disabled,'modal read-only matches');
+            check(form.querySelector('#JEL-NowPlaying-Layout-cardHeight').disabled,'card height is read-only with future presentation settings');
           }else{
             for(let i=0;i<6;i++)click(plus(steppers[0]));check(output(steppers[0])==='0.3'&&t.get('FullLyrics')===.3,'offset rounds every step');
             click(plus(steppers[1]));check(p.getLayout('FullLyrics').primaryRatio===1.05,'size writes ratio');

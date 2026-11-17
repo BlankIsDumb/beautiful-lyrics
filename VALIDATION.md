@@ -1,5 +1,32 @@
 # Validation
 
+## Provider credit, card cleanup and card height — 5.1.0-local.40, 2026-11-17
+
+All 689 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`14D360D2CC4647ABE37D8BFD8DB0967A52B2967E8A702E0B6764B6CE5A5CC087`.
+
+Every view now shows a credit for the provider that answered. On the lyrics
+page and in the fullscreen view it sits on the corner row, left of the two
+buttons. In the Now Playing card it sits on the "Lyrics" row. Spicy credits
+name the source, or the uploader and the maker with links for community syncs,
+and say when the source is unknown. On the corner row the credit is bottom-aligned
+with the buttons; the full suite ran before that one-line change, and the corner,
+card and settings tests were rerun after it. The pinned credit box is removed. Spicy
+contributors keep their role in the cache; older cache entries stay valid.
+
+The Now Playing card no longer has hover buttons or a collapsed state. A new
+"Card height" setting offers Default (340 px), Extended (500 px) and Max
+(620 px). With Max and the default top anchor, one earlier line stays at the
+top with the current line below it. Saved anchor and context settings are not
+changed.
+
+In Spotify on Windows, the three heights, the live switch, the Max follow
+position on a paused active line, the credit in the card and on the lyrics
+page, and the removed buttons were checked. Not checked natively: a community
+credit with long names, real browser fullscreen, and Max during playback
+across gaps and the end of a song.
+
 ## Fullscreen corner controls — 5.1.0-local.39, 2026-11-16
 
 All 676 tests passed. The four production bundles passed syntax and dictionary

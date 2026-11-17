@@ -61,6 +61,47 @@ test('muted context preserves real Word/Line/ruby/Above geometry, exclusions, fo
   },async nativeReset(){PresentationSettings.saveLayout('NowPlaying',{...PresentationSettings.getLayout('NowPlaying'),follow:false});PresentationSettings.saveLayout('NowPlaying',{...PresentationSettings.getLayout('NowPlaying'),follow:true});state.tick();state.groups[0].focus();await frame();await frame();check(state.groups[0].classList.contains('ContextExcluded'),'reset retains excluded focus');const r=state.host.querySelector('.simplebar-content-wrapper').getBoundingClientRect();return {x:r.left+100,y:r.top+100};
   },async nativeCheck(kind){await frame();await frame();if(kind==='enter')check(state.seeks.length===1&&state.seeks[0]===1,'trusted Enter button activation seeks exactly once '+JSON.stringify({seeks:state.seeks,focused:document.activeElement?.outerHTML?.slice(0,200)}));else check(!state.host.querySelector('.ContextExcluded')&&state.host.querySelector('.LyricsScrollContainer').classList.contains('UserScrolling'),'explicit '+kind+' still enters manual browsing while muted focus held');return true;
   },nativeDestroy(){state.renderer.Destroy();state.host.remove();check(state.consumers.size===0,'native fixture cleanup');return true;}
+  ,async fade(view){
+   // Fade with distance: one flat per-line opacity, Fullscreen only.
+   let time=42;const consumers=new Set();
+   const clock={now:()=>time,duration:()=>90,seek:t=>{time=t;for(const f of consumers)f(0,true)},subscribe:f=>{consumers.add(f);return()=>consumers.delete(f)}};
+   const tick=t=>{time=t;for(const f of consumers)f(1/60,true)};
+   const set=value=>PresentationSettings.saveContextAppearance(view,{...PresentationSettings.getContextAppearance(view),...value});
+   PresentationSettings.resetLayout(view,'context');PresentationSettings.saveLayout(view,{...ClassicLayout,transition:'instant',before:0,after:0});
+   set({mode:'muted',opacity:35,fade:false,fadeLength:4,fadeEnd:0});
+   const host=document.createElement('div');host.className='host';document.body.append(host);
+   const source={Type:'Line',NaturalAlignment:'Left',StartTime:1,EndTime:90,Content:Array.from({length:20},(_,i)=>({Type:'Vocal',Text:'Fade source '+i,StartTime:1+i*4,EndTime:3+i*4}))};
+   const renderer=new LyricsRenderer(host,source,false,view,clock);await frame();await frame();tick(time);await frame();
+   const groups=[...host.querySelectorAll('.VocalsGroup')].filter(n=>n.querySelector('.Vocals'));check(groups.length===20,'twenty source slots');
+   const prop=(g,name)=>g.style.getPropertyValue(name);
+   const offValues=groups.filter(g=>g.classList.contains('ContextMuted')).map(g=>[prop(g,'--jel-context-hover-opacity'),prop(g,'--jel-context-filter')]);
+   check(offValues.length===19&&offValues.every(v=>v[0]===offValues[0][0]&&v[1]===offValues[0][1]),'fade off paints every other line identically');
+   check(groups.every((g,i)=>i===10||prop(g,'--jel-context-opacity')==='0.35'),'fade off keeps 0.35');
+   set({fade:true});await frame();
+   const expected=['0.35','0.2625','0.175','0.0875'];
+   const verify=(active,label)=>{for(const [i,g] of groups.entries()){
+    const d=Math.abs(i-active);if(d===0)continue;
+    if(d<=4)check(g.classList.contains('ContextMuted')&&prop(g,'--jel-context-opacity')===expected[d-1]&&prop(g,'--jel-context-hover-opacity')===offValues[0][0]&&prop(g,'--jel-context-filter')===offValues[0][1]&&!g.inert,label+' distance '+d+' slot '+i+' '+prop(g,'--jel-context-opacity'));
+    else check(!g.classList.contains('ContextMuted')&&g.inert&&g.getAttribute('aria-hidden')==='true'&&!prop(g,'--jel-context-opacity'),label+' beyond fade slot '+i);
+   }};
+   const snapshot=()=>groups.map((g,i)=>g.classList.contains('ContextMuted')+':'+prop(g,'--jel-context-opacity'));
+   if(view==='FullLyrics')verify(10,'fade on');
+   else check(groups.every((g,i)=>i===10||g.classList.contains('ContextMuted')&&prop(g,'--jel-context-opacity')==='0.35'),'Now Playing never fades');
+   const beforeState=snapshot(),writes=new Map();
+   for(const g of groups){const s=g.style,setProperty=s.setProperty.bind(s),removeProperty=s.removeProperty.bind(s);
+    const log=name=>{if(name.startsWith('--jel-context'))writes.set(g,[...(writes.get(g)||[]),name])};
+    s.setProperty=(name,...rest)=>{log(name);return setProperty(name,...rest)};s.removeProperty=name=>{log(name);return removeProperty(name)};}
+   tick(46);await frame();
+   if(view==='FullLyrics'){
+    verify(11,'advanced');
+    const afterState=snapshot();
+    for(const [i,g] of groups.entries())check(writes.has(g)===(beforeState[i]!==afterState[i]),'only changed slots written, slot '+i+' '+JSON.stringify(writes.get(g)||[]));
+    for(const i of [7,8,9,12,13,14])check(JSON.stringify(writes.get(groups[i]))==='["--jel-context-opacity"]','still-muted slot rewrites only its opacity '+i);
+   }
+   set({fade:false});await frame();
+   check(groups.every((g,i)=>i===11||g.classList.contains('ContextMuted')&&prop(g,'--jel-context-opacity')==='0.35'),'fade off restores 0.35 everywhere');
+   PresentationSettings.resetLayout(view,'context');renderer.Destroy();host.remove();check(consumers.size===0,'fade fixture cleanup');return true;
+  }
   };jelTestComplete('CONTEXT_READY');
  }
  const directory=path.resolve(await mkdtemp(path.join(tmpdir(),'jel-context-')));
@@ -70,6 +111,7 @@ test('muted context preserves real Word/Line/ruby/Above geometry, exclusions, fo
  await evaluate('contextFixture.nativeSetup()');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',unmodifiedText:'\r',windowsVirtualKeyCode:13});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await evaluate('contextFixture.nativeCheck("enter")');
  const point=await evaluate('contextFixture.nativeReset()');await send('Input.dispatchMouseEvent',{type:'mouseWheel',...point,deltaX:0,deltaY:40});await evaluate('contextFixture.nativeCheck("wheel")');
  await evaluate('contextFixture.nativeReset()');await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40});await evaluate('contextFixture.nativeCheck("ArrowDown")');await evaluate('contextFixture.nativeDestroy()');
+ for(const view of ['FullLyrics','NowPlaying'])assert.equal(await evaluate(`contextFixture.fade(${JSON.stringify(view)})`),true);
  }),'CONTEXT_READY');
  }finally{assert.ok(directory.startsWith(path.resolve(tmpdir())+path.sep)&&path.basename(directory).startsWith('jel-context-'));await rm(directory,{recursive:true,force:true,maxRetries:3})}
 });

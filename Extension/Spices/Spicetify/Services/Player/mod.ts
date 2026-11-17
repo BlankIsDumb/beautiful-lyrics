@@ -22,6 +22,7 @@ import {
 } from "./LyricUtilities.ts"
 
 import { FetchLyricLookup, type ProviderOutcome } from "./LyricsProviders.ts"
+import { ClearTrackLyricsCache } from "./LyricsCache.ts"
 import { OnProviderSettingsChanged, OnBehaviorSettingsChanged, GetBehaviorSettings, GetRichSyncSettings, OnRichSyncSettingsChanged } from "./ProviderSettings.ts"
 import { SelectCompensatedLyrics } from "../../../../Source/Modules/RichSyncCompensation.ts"
 import { lyricsRequired } from "./LyricDemand.mjs"
@@ -364,6 +365,22 @@ export function SelectLyricsProvider(provider: string) {
   SongLyricsLoadedSignal.Fire();
 }
 export function ReloadLyrics() { LoadSongLyrics(latestDetailsReady); }
+// Local files are allowed: LRCLIB caches them by URI.
+export function CanClearSongLyricsCache(): boolean {
+  return Song !== undefined && Song.Type !== "DJ" && typeof SpotifyPlayer.data?.item?.uri === "string";
+}
+export function ClearSongLyricsCache(): Promise<{ removed: number; failed: boolean }> {
+  if (!CanClearSongLyricsCache()) return Promise.resolve({ removed: 0, failed: true });
+  const song = Song, uri = SpotifyPlayer.data!.item!.uri as string, provider = manualProvider;
+  const canonical = SongDetails && !SongDetails.IsLocal ? (SongDetails.Raw as any).canonical_uri : undefined;
+  return ClearTrackLyricsCache(uri, canonical, () => {
+    if (Song !== song) return;
+    ReloadLyrics();
+    // LoadSongLyrics resets the pin synchronously. Selection falls back to
+    // automatic when this provider is no longer among the reloaded choices.
+    manualProvider = provider;
+  });
+}
 PlayerMaid.Give(OnProviderSettingsChanged(ReloadLyrics))
 PlayerMaid.Give(OnRichSyncSettingsChanged(() => {
   // Re-select from prepared candidates; a presentation preference does not

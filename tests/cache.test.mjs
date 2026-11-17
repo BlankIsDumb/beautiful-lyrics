@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileFixture, fakeCaches, settle, storage } from './cache-fixture.mjs';
 const load = await compileFixture("export * from './Extension/Spices/Spicetify/Services/Cache.ts'; export * from './Extension/Spices/Spicetify/Services/Player/LyricsCache.ts';");
@@ -181,4 +181,21 @@ test('cancelling while a sweep read is pending skips validation and deletion',as
  const open=caches.open.bind(caches);caches.open=async name=>{const c=await open(name),match=c.match;c.match=async key=>{begin();await new Promise(resolve=>{release=resolve});return match(key)};return c};
  const sweep=m.SweepExpireStores(async()=>{},()=>cancelled);await began;cancelled=true;release();await sweep;
  assert.equal(validated,0);assert.equal(caches.stores.get('test').size,1);assert.equal(caches.operations.filter(([op])=>op==='delete').length,0);
+});
+
+test('ClearCacheItems deletes only named keys, advances generations, counts removals and reports one failing store',async()=>{
+ const m=await setup(),a=store(m,'a'),b=store(m,'b'),c=store(m,'c'),memory=m.GetMemoryStore('mem',40);
+ for(const s of [a,b,c])for(const key of ['one','two'])await s.SetItem(key,{value:key});
+ memory.SetItem('one','kept');
+ const generations=[a.GetGeneration(),b.GetGeneration(),c.GetGeneration()];
+ const clearing=m.ClearCacheItems([{store:'a',keys:['one','missing']},{store:'b',keys:['two']},{store:'unregistered',keys:['one']},{store:'mem',keys:['one']}]);
+ assert.deepEqual([a.GetGeneration(),b.GetGeneration(),c.GetGeneration()],[generations[0]+1,generations[1]+1,generations[2]]);
+ await a.SetItem('late',{value:'old'},generations[0]);
+ assert.deepEqual(await clearing,{removed:2,failed:false});
+ assert.equal(await a.GetItem('late'),undefined);assert.equal(caches.item('a','/one'),undefined);assert.equal(caches.item('a','/two').Content.value,'two');
+ assert.equal(caches.item('b','/one').Content.value,'one');assert.equal(caches.item('b','/two'),undefined);
+ assert.equal(caches.stores.get('c').size,2);assert.equal(memory.Count(),1);assert.equal(caches.stores.has('unregistered'),false);
+ const open=caches.open.bind(caches);caches.open=async name=>{if(name==='a')throw Error('unavailable');return open(name)};
+ assert.deepEqual(await m.ClearCacheItems([{store:'a',keys:['two']},{store:'c',keys:['one','two']}]),{removed:2,failed:true});
+ assert.equal(caches.item('a','/two').Content.value,'two');assert.equal(caches.stores.get('c').size,0);
 });

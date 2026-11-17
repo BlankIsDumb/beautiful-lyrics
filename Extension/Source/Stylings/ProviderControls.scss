@@ -282,7 +282,7 @@
   // Host display resets must not expose closed popovers or their tab stops.
   &:not(:popover-open) { display: none; }
   h3 { margin: 0; padding: 10px 8px; font-size: 14px; font-weight: 700; text-align: left; }
-  .BL-QuickRow, .BL-ProviderChoice, .BL-AllSettings {
+  .BL-QuickRow, .BL-ProviderChoice, .BL-AllSettings, .BL-ClearSong {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -297,7 +297,7 @@
     font-weight: 600;
   }
   // Inset rows leave room for theme-defined button corners and selection tints.
-  .BL-ProviderChoice, .BL-AllSettings {
+  .BL-ProviderChoice, .BL-AllSettings, .BL-ClearSong {
     background: transparent;
     text-align: left;
     &:hover:not(:disabled), &[aria-pressed="true"] { background: rgba(255,255,255,.07); }
@@ -315,6 +315,7 @@
     output { width: 36px; height: 28px; padding: 3px 0; text-align: center; font-variant-numeric: tabular-nums; }
   }
   .BL-QuickRow[aria-disabled="true"], .BL-QuickRow:has(> input:disabled, > select:disabled), button:disabled { opacity: .5; cursor: default; }
+  .BL-ClearSong[aria-disabled="true"] { opacity: .5; cursor: default; }
 }
 // Spotify's native title-bar drag surface overlaps the injected right-side
 // buttons. Mark each wrapper and descendant explicitly, independent of load order.

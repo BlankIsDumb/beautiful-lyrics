@@ -164,7 +164,7 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
           near(bounds.width,240,'menu width stays fixed');
           for(const side of ['Top','Right','Bottom','Left'])near(parseFloat(style['padding'+side]),4,'menu inner padding');
           near(titleLeft-bounds.left-borderLeft,12,'title text keeps 12px inset');
-          const rows=panel.querySelectorAll('.BL-QuickRow,button.BL-ProviderChoice,button.BL-AllSettings');
+          const rows=panel.querySelectorAll('.BL-QuickRow,button.BL-ProviderChoice,button.BL-AllSettings,button.BL-ClearSong');
           check(rows.length>0,'menu has full-width rows');
           for(const row of rows){
             const rowBounds=row.getBoundingClientRect(),rowStyle=getComputedStyle(row);
@@ -175,7 +175,7 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
             if(row.matches('.BL-QuickRow')){
               near(row.firstElementChild.getBoundingClientRect().left,titleLeft,'title and row labels align');
               near(bounds.right-borderRight-row.lastElementChild.getBoundingClientRect().right,12,'controls keep 12px inset');
-            }else if(row.matches('.BL-AllSettings'))near(textLeft(row),titleLeft,'All settings text aligns with title');
+            }else if(row.matches('.BL-AllSettings,.BL-ClearSong'))near(textLeft(row),titleLeft,'All settings and clear text align with title');
             if(row.matches('button'))check(rowStyle.borderRadius==='8px','theme can round menu buttons');
           }
         };
@@ -249,6 +249,28 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
           check(providerButton.getAttribute('aria-label')==='Lyrics provider: AMLL'&&tooltips[0].content==='Lyrics provider: AMLL','current provider tooltip');
           check(first.root.firstElementChild.textContent==='AMLL','credit follows provider switch');
           const focused=provider.querySelector('[data-provider="AMLL"]');focused.focus();m.SongLyricsLoaded.fire();check(document.activeElement===focused,'refresh preserves focused provider row');
+          // Clear this song's cache: divider, button and its own status end the menu.
+          const clearSong=provider.querySelector('.BL-ClearSong'),[clearDivider,clearLast,clearStatus]=[...provider.children].slice(-3);
+          check(clearDivider.tagName==='DIV'&&clearDivider.className==='BL-MenuDivider'&&clearDivider.getAttribute('role')==='separator'&&clearLast===clearSong&&clearStatus.tagName==='P'&&clearStatus.getAttribute('role')==='status'&&clearStatus!==quick.querySelector('[role=status]'),'provider menu ends with divider, clear button and status');
+          check(clearSong.type==='button'&&clearSong.textContent==="Clear this song's cache"&&!clearSong.hasAttribute('disabled'),'clear button text and never natively disabled');
+          const clearState=()=>clearSong.getAttribute('aria-disabled'),settled=async()=>{await frame()};
+          m.clearSong.available=false;m.SongLyricsLoaded.fire();check(clearState()==='true','unavailable song disables clear');
+          clearSong.focus();click(clearSong);check(m.clearSong.calls===0,'unavailable click does nothing');
+          m.clearSong.available=true;m.SongLyricsLoaded.fire();check(clearState()==='false','available song enables clear');
+          click(clearSong);check(m.clearSong.calls===1&&clearState()==='true'&&clearStatus.textContent==='','click starts clearing');
+          click(clearSong);check(m.clearSong.calls===1,'second click while clearing does nothing');
+          m.SongLyricsLoaded.fire();m.SongChanged.fire();check(clearState()==='true','signals while clearing keep it unavailable');
+          m.clearSong.resolve({removed:3,failed:false});await settled();
+          check(clearStatus.textContent==='Cache cleared. Fetching again.'&&clearState()==='true','success reports and waits for lyrics');
+          click(clearSong);check(m.clearSong.calls===1,'click while loading does nothing');
+          m.SongLyricsLoaded.fire();check(clearState()==='false'&&clearStatus.textContent==='Cache cleared. Fetching again.','lyrics loaded re-enables clear');
+          click(clearSong);m.clearSong.reject(Error('fixture'));await settled();
+          check(m.clearSong.calls===2&&clearStatus.textContent==='Could not clear the cache on this device.'&&clearState()==='false','rejection reports and re-enables');
+          m.SongChanged.fire();check(clearStatus.textContent==='','song change clears status');
+          click(clearSong);m.clearSong.resolve({removed:0,failed:true});await settled();
+          check(m.clearSong.calls===3&&clearStatus.textContent==='Could not clear the cache on this device.'&&clearState()==='false','failed result reports and re-enables');
+          check(document.activeElement===clearSong,'focus stays on clear button through the flow');
+          click(providerButton);click(providerButton);check(provider.matches(':popover-open')&&clearStatus.textContent==='','opening the menu while idle clears status');
           m.SetSong(undefined,[]);check(provider.matches(':popover-open')&&provider.querySelector('button').disabled&&provider.textContent.includes('No lyrics for this song'),'empty state refresh stays open');
           check(first.root.firstElementChild.hidden&&first.root.firstElementChild.getClientRects().length===0,'no lyrics hides credit without layout space');
           insetRows(provider);

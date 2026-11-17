@@ -122,7 +122,12 @@
 
 		.ContentContainer {
 			display: block;
-			width: 100cqw;
+			// Clip edges sit 16px outside the text so the active line's glow is
+			// not cut at the left and right; the content box stays 100cqw.
+			width: calc(100cqw + 32px);
+			box-sizing: border-box;
+			padding-inline: 16px;
+			margin-inline: -16px;
 			height: 25cqh;
             // The card caps at340px: subtract outer padding, header and gap.
             // A tall ancestor's25cqh otherwise leaves a scrollport extending
@@ -136,4 +141,15 @@
 			z-index: 100;
 		}
 	}
+
+	// SimpleBar copies the root's padding onto its content element and a
+	// negative margin onto its wrapper: the scrollport widens, the text stays.
+	.LyricsScrollContainer {
+		box-sizing: border-box;
+		width: calc(100cqw + 32px);
+		padding-inline: 16px;
+		margin-inline: -16px;
+	}
+	.Lyrics { overflow-clip-margin: 16px; }
+	.simplebar-track.simplebar-vertical { right: 16px; }
 }

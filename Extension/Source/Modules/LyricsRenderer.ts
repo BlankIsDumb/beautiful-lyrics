@@ -16,6 +16,7 @@ import { ResolveDetail } from "./RenderProjection.ts"
 import { PlayerLyricClock, type LyricClock } from "./LyricClock.ts"
 import { TimingSettings } from "../TimingSettings.ts"
 import { PresentationSettings, type PresentationView } from "../PresentationSettings.ts"
+import { ContextOpacity } from "../ContextAppearance.ts"
 import { AnnotationService, VoiceLanguage } from "./AnnotationService.ts"
 import { LayoutVoice, type DisplayRun } from "./TextLayout.ts"
 
@@ -175,15 +176,17 @@ export default class LyricsRenderer implements Giveable {
             const filter=[contextAppearance.blurEnabled && contextAppearance.blur > 0 ? `blur(${contextAppearance.blur}px)` : "",
                 contextAppearance.darkeningEnabled && contextAppearance.darkening > 0 ? `brightness(${1-contextAppearance.darkening/100})` : ""].filter(Boolean).join(" ")
             const mutedProperties: Record<string,string> = muted ? {
-                "--jel-context-opacity":String(contextAppearance.opacity/100),
                 "--jel-context-hover-opacity":String(Math.max(.6,contextAppearance.opacity/100)),
                 "--jel-context-filter":filter || "none",
             } : {}
+            // Fullscreen only: one flat opacity per line by distance from the range.
+            const fade=view === "FullLyrics" && contextAppearance.fade
             for(const [index,slot] of sourceSlots.entries()) {
                 // Muted focus is paint-only. Hide retains its existing focused-row
                 // pin; neither hover nor focus starts excluded timing effects.
                 const shown=index>=start&&index<=end || !muted && index===focused
-                const paintedMuted=!shown && muted && (contextAppearance.opacity > 0 || index===focused)
+                const percent=!shown && muted ? ContextOpacity(contextAppearance,fade,index<start ? start-index : index-end) : 0
+                const paintedMuted=!shown && muted && (percent > 0 || index===focused)
                 const interactive=shown || paintedMuted
                 if(slot.element.classList.contains("ContextExcluded")===shown)slot.element.classList.toggle("ContextExcluded",!shown)
                 const wasMuted=slot.element.classList.contains("ContextMuted")
@@ -195,7 +198,7 @@ export default class LyricsRenderer implements Giveable {
                 // that would invalidate every timed glyph on source transitions.
                 if(paintedMuted || wasMuted) {
                     for(const name of ["--jel-context-opacity","--jel-context-hover-opacity","--jel-context-filter"]) {
-                        const value=paintedMuted ? mutedProperties[name] : undefined
+                        const value=!paintedMuted ? undefined : name==="--jel-context-opacity" ? String(Number((percent/100).toFixed(4))) : mutedProperties[name]
                         if(value) { if(slot.element.style.getPropertyValue(name)!==value)slot.element.style.setProperty(name,value) }
                         else if(slot.element.style.getPropertyValue(name))slot.element.style.removeProperty(name)
                     }

@@ -352,6 +352,15 @@ export function OpenProviderSettings() {
       "0% is no change, 100% is black.","60%",0,100,"1");
     const opacity = numeric(appearanceFields,"Opacity (%)",`JEL-${view}-Context-opacity`,()=>appearanceRead().opacity,value=>appearanceWrite("opacity",value),
       "Opacity of muted lines. 0% hides them. Hovering raises it to at least 60%.","35%",0,100,"1");
+    // Fullscreen only: Now Playing never fades, so it has no fade rows.
+    const fadeRows = view === "FullLyrics" ? {
+      fade: toggle(appearanceFields,"Fade with distance",`JEL-${view}-Context-fade`,appearanceRead().fade,
+        "Dims muted lines more the further they are from the shown range.","Off"),
+      fadeLength: numeric(appearanceFields,"Fade length (lines)",`JEL-${view}-Context-fadeLength`,()=>appearanceRead().fadeLength,value=>appearanceWrite("fadeLength",value),
+        "Number of lines over which muted lines fade from Opacity to End opacity, 1–20.","4",1,20,"1"),
+      fadeEnd: numeric(appearanceFields,"End opacity (%)",`JEL-${view}-Context-fadeEnd`,()=>appearanceRead().fadeEnd,value=>appearanceWrite("fadeEnd",value),
+        "Opacity at the end of the fade and beyond. 0% hides those lines. A value above Opacity counts as Opacity.","0%",0,100,"1"),
+    } : undefined;
     syncContextAppearance = () => {
       const value=appearanceRead();
       appearanceMode.value=value.mode;
@@ -361,10 +370,17 @@ export function OpenProviderSettings() {
       for(const [input,amount] of [[blur,value.blur],[darkening,value.darkening],[opacity,value.opacity]] as const) {
         input.value=String(amount);input.removeAttribute("aria-invalid");
       }
+      if(fadeRows) {
+        fadeRows.fade.checked=value.fade;
+        for(const [input,amount] of [[fadeRows.fadeLength,value.fadeLength],[fadeRows.fadeEnd,value.fadeEnd]] as const) {
+          input.value=String(amount);input.removeAttribute("aria-invalid");input.disabled=!value.fade;
+        }
+      }
     };
     listen(appearanceMode,"change",()=>{apply(()=>appearanceWrite("mode",appearanceMode.value as ContextAppearance["mode"]));syncContextAppearance();});
     checkbox(blurEnabled,value=>appearanceWrite("blurEnabled",value),()=>appearanceRead().blurEnabled,syncContextAppearance);
     checkbox(darkeningEnabled,value=>appearanceWrite("darkeningEnabled",value),()=>appearanceRead().darkeningEnabled,syncContextAppearance);
+    if(fadeRows)checkbox(fadeRows.fade,value=>appearanceWrite("fade",value),()=>appearanceRead().fade,syncContextAppearance);
     syncContextAppearance();
     const scrolling=layoutSection("Scrolling","scrolling");
     const follow=toggle(scrolling,"Auto-follow",`JEL-${view}-Layout-follow`,layoutRead().follow,"Scrolls along with the song. Off shows the whole song. Clicking a line still seeks.","On");layoutInputs.set("follow",follow);checkbox(follow,value=>layoutWrite("follow",value),()=>layoutRead().follow);

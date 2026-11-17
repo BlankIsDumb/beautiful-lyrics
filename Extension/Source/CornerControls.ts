@@ -1,5 +1,5 @@
 import { Spotify } from "@Spices/Spicetify/Services/Session.ts";
-import { SongLyrics, SongLyricChoices, SongChanged, SongLyricsLoaded, SelectLyricsProvider } from "@Spices/Spicetify/Services/Player/mod.ts";
+import { SongLyrics, SongLyricChoices, SongChanged, SongLyricsLoaded, SelectLyricsProvider, CanClearSongLyricsCache, ClearSongLyricsCache } from "@Spices/Spicetify/Services/Player/mod.ts";
 import type { Maid } from "@Universal/Modules/Maid.ts";
 import { PresentationSettings } from "./PresentationSettings.ts";
 import { TimingSettings } from "./TimingSettings.ts";
@@ -87,7 +87,7 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
     if (active === menu) { close(); return; }
     closeActiveMenu?.(); active = menu; closeActiveMenu = close;
     if (menu === quick) syncQuick();
-    else updateProviders();
+    else { if (clearPhase === "idle") clearStatus.textContent = ""; updateProviders(); }
     placeInFullscreen(); menu.panel.showPopover(); position();
     menu.button.setAttribute("aria-expanded", "true");
     menu.tooltip.hide();
@@ -122,7 +122,27 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
   const providerRows = new Map<string, HTMLButtonElement>();
   const empty = document.createElement("button"); empty.type = "button"; empty.disabled = true;
   empty.className = "BL-ProviderChoice"; empty.textContent = "No lyrics for this song";
+  const providerDivider = document.createElement("div"); providerDivider.className = "BL-MenuDivider"; providerDivider.setAttribute("role", "separator");
+  // Never natively disabled: focus must stay on the button through the flow.
+  const clearSong = document.createElement("button"); clearSong.type = "button"; clearSong.className = "BL-ClearSong"; clearSong.textContent = "Clear this song's cache";
+  const clearStatus = document.createElement("p"); clearStatus.setAttribute("role", "status");
+  provider.panel.append(providerDivider, clearSong, clearStatus);
+  let clearPhase: "idle" | "clearing" | "loading" = "idle";
+  const syncClearSong = () => clearSong.setAttribute("aria-disabled", String(clearPhase !== "idle" || !CanClearSongLyricsCache()));
+  const setClearPhase = (phase: typeof clearPhase) => { clearPhase = phase; syncClearSong(); };
+  listen(clearSong, "click", () => {
+    if (clearSong.getAttribute("aria-disabled") === "true") return;
+    setClearPhase("clearing"); clearStatus.textContent = ""; position();
+    const settle = (ok: boolean) => {
+      if (lifetime.signal.aborted) return;
+      setClearPhase(ok ? "loading" : "idle");
+      clearStatus.textContent = ok ? "Cache cleared. Fetching again." : "Could not clear the cache on this device.";
+      position();
+    };
+    ClearSongLyricsCache().then(result => settle(!result.failed), () => settle(false));
+  });
   const updateProviders = () => {
+    syncClearSong();
     const credit = BuildProviderCredit(SongLyrics);
     creditElement.hidden = !credit;
     creditElement.replaceChildren(...(credit ? [BuildProviderCreditDOM(credit)] : []));
@@ -234,7 +254,10 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
     background.disabled = readOnly; background.value = PresentationSettings.getBackground("FullLyrics").mode;
   };
   const changed = () => { updateProviders(); if (active === quick) syncQuick(); position(); };
-  maid.Give(SongChanged.Connect(changed)); maid.Give(SongLyricsLoaded.Connect(changed));
+  // Signals during clearing belong to the old lookup; only loading ends here.
+  const finishLoading = () => { if (clearPhase === "loading") setClearPhase("idle"); };
+  maid.Give(SongChanged.Connect(() => { finishLoading(); clearStatus.textContent = ""; changed(); }));
+  maid.Give(SongLyricsLoaded.Connect(() => { finishLoading(); changed(); }));
   maid.Give(TimingSettings.subscribe(scopes => { if (active === quick && scopes.includes("FullLyrics")) syncQuick(); }));
   const presentationChanged = (view: string) => { if (view === "FullLyrics" && active === quick) syncQuick(); };
   maid.Give(PresentationSettings.subscribe(presentationChanged));

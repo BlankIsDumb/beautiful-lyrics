@@ -233,6 +233,27 @@ export const ClearCacheEntries = async (names: readonly string[]) => {
 	}
 	return { removed, failed }
 }
+export const ClearCacheItems = async (entries: readonly { store: string; keys: readonly string[] }[]) => {
+	// Same invalidation as ClearCacheEntries, before the first await. Memory
+	// stores are never touched; only the named keys are deleted.
+	for (const entry of entries) { const store = Stores.get(entry.store); if (store) ++store.Generation }
+	let removed = 0
+	let failed = false
+	for (const entry of entries) {
+		const store = Stores.get(entry.store)
+		if (!store) continue
+		let count = 0
+		try {
+			await enqueue(store, async () => {
+				if (!(await caches.keys()).includes(entry.store)) return
+				const cache = await caches.open(entry.store)
+				for (const key of entry.keys) if (await cache.delete('/' + key)) ++count
+			})
+		} catch { failed = true }
+		removed += count
+	}
+	return { removed, failed }
+}
 
 const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 export const SweepExpireStores = async (yieldWork: () => Promise<void> = yieldTask, isCancelled = () => false, now = () => performance.now()) => {

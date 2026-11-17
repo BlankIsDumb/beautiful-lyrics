@@ -1,5 +1,37 @@
 # Validation
 
+## Song cache clear, distance fade and card glow — 5.1.0-local.42, 2026-11-17
+
+All 699 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`59F686853AFC744DF0FFB1C4FB0985D4FFD9AB5ECBC6CE605558598888258C70`.
+
+The corner provider menu ends with "Clear this song's cache". It removes the
+playing track's entries from all five provider caches, resets provider
+cooldowns and refetches the song. Other songs, track details and both tokens
+are untouched, and a manually picked provider stays picked when it still has
+lyrics. In Spotify on Windows, one click rewrote the song's five entries and
+left every other entry at its earlier timestamp; the button stayed focused and
+was unavailable until the lyrics had loaded again.
+
+The Fullscreen profile has "Fade with distance" with "Fade length (lines)" and
+"End opacity (%)" under Context. Each muted line gets one flat opacity by its
+distance from the shown range; there is no mask, overlay or transition, and
+values are written only when the shown range changes. The Now Playing card
+never fades. In Spotify, with Opacity 70 and Fade length 4, the lines beside the
+range carried 0.7, 0.525, 0.35 and 0.175, and further lines were hidden.
+
+The Now Playing card no longer cuts the active line's glow at its left and
+right edges. The five clip boxes around the lyrics now end at the card's edge,
+16 px outside the text. In a headless browser the glow reached past the text on
+both sides (0 lit pixels before, 174 left and 112 right after) with identical
+text position, lyric width, scroll range and scrollbar position. In Spotify the
+boxes span the card and a forced glow painted into the left gutter and stopped
+at the card edge. The live glow during playback was not looked at natively,
+because Spotify's window was covered and its animation was paused. The cost of
+the fade and of the wider clip boxes is not measured. macOS and Linux are
+untested.
+
 ## Pass 9 fixes and docs — 5.1.0-local.41, 2026-11-17
 
 All 694 tests passed. The four production bundles passed syntax and dictionary

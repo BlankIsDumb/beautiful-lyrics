@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileFixture, fakeCaches, settle, storage } from './cache-fixture.mjs';
 const load = await compileFixture("export * from './Extension/Spices/Spicetify/Services/Player/LyricsProviders.ts';export * from './Extension/Spices/Spicetify/Services/Player/SpotifyProvider.ts';export * from './Extension/Spices/Spicetify/Services/Player/AdditionalProviders.ts';export * from './Extension/Spices/Spicetify/Services/Player/Musixmatch.ts';export * from './Extension/Spices/Spicetify/Services/Player/LyricsCache.ts';");
@@ -114,4 +114,26 @@ test('All resets AMLL in-memory retry before one reload; a provider-only clear l
  const waiting=await p.FetchLyricLookup(track,3,()=>true);assert.match(waiting.Error,/cooling down/);assert.equal(calls,1);
  await p.ClearLyricsCache('All',()=>reloads++);assert.equal(reloads,2);assert.equal(calls,1);assert.equal(localStorage.getItem('BeautifulLyricsLocal/MusixmatchToken'),'fixture-token');
  globalThis.fetch=async()=>{calls++;return new Response('',{status:404})};const result=await p.FetchLyricLookup(track,3,()=>true);assert.equal(result.Error,undefined);assert.equal(calls,2);
+});
+
+test('ClearTrackLyricsCache removes only this song from every provider store, resets cooldowns, keeps tokens and reloads once after deleting',async()=>{
+ const p=await setup(),alias='1123456789012345678901',other='2223456789012345678901',otherUri='spotify:track:'+other;
+ const entry={CacheVersion:1,ExpiresAt:Date.now()+86400000,Content:false};
+ const keys={Spotify:[id,alias],Musixmatch:[id],AMLL:[id,alias],LRCLIB:[encodeURIComponent(track.uri)],Spicy:[id]};
+ const otherKeys={Spotify:[other],Musixmatch:[other],AMLL:[other],LRCLIB:[encodeURIComponent(otherUri)],Spicy:[other]};
+ for(const [provider,list] of Object.entries(keys))for(const key of [...list,...otherKeys[provider]])caches.seed('BeautifulLyricsLocal_'+provider,'/'+key,{...entry,CacheVersion:provider==='Musixmatch'?2:1});
+ for(const name of ['Spotify','Musixmatch','LRCLIB','Spicy'])localStorage.setItem('BeautifulLyricsLocal/'+name+'Cooldown',String(Date.now()+60000));
+ localStorage.setItem('BeautifulLyricsLocal/SpicyToken','fixture-spicy');
+ const tokens=['MusixmatchToken','SpicyToken'].map(name=>localStorage.getItem('BeautifulLyricsLocal/'+name));
+ let reloads=0;const remaining=[];
+ const result=await p.ClearTrackLyricsCache(track.uri,'spotify:track:'+alias,()=>{reloads++;for(const provider of Object.keys(keys))remaining.push(...keys[provider].filter(key=>caches.item('BeautifulLyricsLocal_'+provider,'/'+key)))});
+ assert.deepEqual(result,{removed:7,failed:false});assert.equal(reloads,1);assert.deepEqual(remaining,[]);
+ for(const [provider,list] of Object.entries(otherKeys))for(const key of list)assert.ok(caches.item('BeautifulLyricsLocal_'+provider,'/'+key),provider+' keeps the other song');
+ for(const name of ['Spotify','Musixmatch','LRCLIB','Spicy'])assert.equal(localStorage.getItem('BeautifulLyricsLocal/'+name+'Cooldown'),null);
+ assert.deepEqual(['MusixmatchToken','SpicyToken'].map(name=>localStorage.getItem('BeautifulLyricsLocal/'+name)),tokens);
+ const local='spotify:local:artist:album:title:180';caches.seed('BeautifulLyricsLocal_LRCLIB','/'+encodeURIComponent(local),entry);
+ const before=caches.operations.length;
+ assert.deepEqual(await p.ClearTrackLyricsCache(local,undefined,()=>reloads++),{removed:1,failed:false});assert.equal(reloads,2);
+ const deleted=caches.operations.slice(before).filter(([op])=>op==='delete');
+ assert.deepEqual(deleted,[['delete','BeautifulLyricsLocal_LRCLIB',new URL('/'+encodeURIComponent(local),'https://fixture.test').href]]);
 });

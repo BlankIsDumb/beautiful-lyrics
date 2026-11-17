@@ -32,7 +32,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
         ? `export const IsDevelopment=false; export const SpotifyInternalFetch={}; export const Spotify={PopupModal:fixtureModal,Tippy:fixtureTippy};
            export const GlobalMaid={items:[],Give(fn){this.items.push(fn);return fn},Destroy(){for(const fn of this.items)fn()}};
            export const OnSpotifyReady=new Promise(()=>{});export const ShowNotification=()=>{throw Error('unexpected notification')};`
-        : a.path === 'player' ? `export const SongLyrics=undefined,SongLyricChoices=[],SongChanged={},SongLyricsLoaded={};export const SelectLyricsProvider=()=>{};export const ReloadLyrics=()=>{globalThis.fixtureReloads=(globalThis.fixtureReloads||0)+1};`
+        : a.path === 'player' ? `export const SongLyrics=undefined,SongLyricChoices=[],SongChanged={},SongLyricsLoaded={};export const SelectLyricsProvider=()=>{};export const CanClearSongLyricsCache=()=>false,ClearSongLyricsCache=async()=>({removed:0,failed:true});export const ReloadLyrics=()=>{globalThis.fixtureReloads=(globalThis.fixtureReloads||0)+1};`
         : `export default {LyricsPage:''};` }));
     } }] });
   const css = ["Extension/Source/Stylings/ProviderControls.scss", "Extension/Source/Stylings/TypographyPreview.scss", "Extension/Source/Stylings/Lyrics.scss"].map(file=>sass.compile(file).css).join("\n");
@@ -286,11 +286,31 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       check(contextBlur.value==='3.25'&&contextOpacity.value==='48','Hide retains customized amounts');
       const beforeControlFailure=JSON.stringify([...data]);failStorage=true;contextMode.value='hide';change(contextMode);failStorage=false;
       check(JSON.stringify([...data])===beforeControlFailure&&contextMode.value==='muted'&&!contextOpacity.matches(':disabled'),'failed mode save restores enabled state');
+      // Fade with distance: three flat Fullscreen-only rows after Opacity.
+      const [contextFade,fadeLength,fadeEnd]=['fade','fadeLength','fadeEnd'].map(key=>outside('FullLyrics',key));
+      const opacityRow=contextOpacity.closest('.BL-HelpRow'),appearanceRows=[...opacityRow.parentElement.children].filter(el=>el.classList.contains('BL-HelpRow'));
+      check(opacityRow.parentElement.classList.contains('BL-ContextAppearance')&&[contextFade,fadeLength,fadeEnd].every(input=>input&&input.closest('.BL-HelpRow').parentElement===opacityRow.parentElement),'fade rows are flat rows in the appearance fieldset');
+      check(appearanceRows.slice(appearanceRows.indexOf(opacityRow)+1).map(row=>row.querySelector('input,select').id).join()==='JEL-FullLyrics-Context-fade,JEL-FullLyrics-Context-fadeLength,JEL-FullLyrics-Context-fadeEnd','fade rows follow Opacity in order');
+      const described=input=>{const row=input.closest('.BL-HelpRow');return row.querySelector('label').textContent+'|'+row.querySelector('.BL-HelpDescription').textContent};
+      check(described(contextFade)==='Fade with distance|Dims muted lines more the further they are from the shown range. Classic: Off'&&contextFade.type==='checkbox'&&contextFade.getAttribute('role')==='switch','fade switch label, help and Classic');
+      check(described(fadeLength)==='Fade length (lines)|Number of lines over which muted lines fade from Opacity to End opacity, 1\\u201320. Classic: 4'&&fadeLength.min==='1'&&fadeLength.max==='20'&&fadeLength.step==='1','fade length label, help, Classic and bounds');
+      check(described(fadeEnd)==='End opacity (%)|Opacity at the end of the fade and beyond. 0% hides those lines. A value above Opacity counts as Opacity. Classic: 0%'&&fadeEnd.min==='0'&&fadeEnd.max==='100'&&fadeEnd.step==='1','end opacity label, help, Classic and bounds');
+      check(!contextFade.checked&&!contextFade.matches(':disabled')&&fadeLength.matches(':disabled')&&fadeEnd.matches(':disabled')&&fadeLength.value==='4'&&fadeEnd.value==='0','fade numbers disabled while the switch is off');
+      contextFade.click();check(PresentationSettings.getContextAppearance('FullLyrics').fade===true&&!fadeLength.matches(':disabled')&&!fadeEnd.matches(':disabled'),'fade switch saves and enables its numbers');
+      type(fadeLength,'6');type(fadeEnd,'12');const fadeSaved=JSON.stringify([...data]);for(const invalid of ['0','21','2.5',''])type(fadeLength,invalid);for(const invalid of ['-1','101',''])type(fadeEnd,invalid);
+      check(JSON.stringify([...data])===fadeSaved,'invalid fade numbers never persist');fadeLength.dispatchEvent(new FocusEvent('blur'));fadeEnd.dispatchEvent(new FocusEvent('blur'));
+      const storedFade=JSON.parse(data.get('JustEnoughLyrics/Presentation')).profiles.FullLyrics.contextAppearance;
+      check(storedFade.fade===true&&storedFade.fadeLength===6&&storedFade.fadeEnd===12&&fadeLength.value==='6'&&fadeEnd.value==='12','fade rows save to storage');
+      contextMode.value='hide';change(contextMode);check(contextFade.matches(':disabled')&&fadeLength.matches(':disabled')&&fadeEnd.matches(':disabled'),'Hide disables the fade rows');
+      contextMode.value='muted';change(contextMode);check(!fadeLength.matches(':disabled')&&fadeLength.value==='6','muted restores enabled fade rows');
+      const nowPlayingOptions=form.querySelector('#JEL-NowPlaying-Options');
+      check(nowPlayingOptions&&!nowPlayingOptions.querySelector('[id$="-Context-fade"],[id$="-Context-fadeLength"],[id$="-Context-fadeEnd"]')&&!form.querySelector('[id^="JEL-NowPlaying-Context-fade"]'),'Now Playing has no fade rows');
       const beforeCount=form.querySelector('#JEL-FullLyrics-Layout-before'),afterCount=form.querySelector('#JEL-FullLyrics-Layout-after');type(beforeCount,'1');type(afterCount,'2');
       const preservedLayout=PresentationSettings.getLayout('FullLyrics'),preservedRendering=JSON.stringify(PresentationSettings.getRendering('FullLyrics','Word')),resetWrites=storageWrites;
       const contextBody=contextMode.closest('details');[...contextBody.querySelectorAll('button')].find(button=>button.textContent==='Reset context').click();
       check(storageWrites===resetWrites+1&&beforeCount.value===''&&afterCount.value===''&&contextMode.value==='hide','Context reset is one save for counts and appearance');
       check(contextBlur.value==='2'&&contextDark.value==='60'&&contextOpacity.value==='35'&&contextBlur.matches(':disabled'),'Context reset restores appearance defaults and disabling');
+      check(!contextFade.checked&&fadeLength.value==='4'&&fadeEnd.value==='0'&&fadeLength.matches(':disabled')&&PresentationSettings.getContextAppearance('FullLyrics').fade===false&&PresentationSettings.getContextAppearance('FullLyrics').fadeLength===4&&PresentationSettings.getContextAppearance('FullLyrics').fadeEnd===0,'Context reset restores Off, 4, 0');
       check(PresentationSettings.getLayout('FullLyrics').primaryRatio===preservedLayout.primaryRatio&&PresentationSettings.getLayout('FullLyrics').anchor===preservedLayout.anchor&&JSON.stringify(PresentationSettings.getRendering('FullLyrics','Word'))===preservedRendering,'Context reset preserves typography scrolling and effects');
       check(sourceEvents===0&&demandEvents===0&&renderEvents===0,'appearance changes never invalidate provider or text rendering profiles');
       const anchor=form.querySelector('#JEL-FullLyrics-Layout-anchor');

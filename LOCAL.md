@@ -1,6 +1,6 @@
 # Just Enough Lyrics local build notes
 
-Current local build is **5.1.0-local.41**. See [VALIDATION.md](VALIDATION.md) for
+Current local build is **5.1.0-local.42**. See [VALIDATION.md](VALIDATION.md) for
 build and installation evidence.
 
 ## Where things are
@@ -17,7 +17,9 @@ spacing alone has three independent surfaces.
   Gap dots, Word sync, Line sync and Conversions.
 - The lyrics page and the fullscreen view have two always-visible buttons in the
   bottom right corner. The first lists the providers that have lyrics for the
-  song and switches on click. The second opens quick settings (offset, text
+  song and switches on click; its last row, "Clear this song's cache", removes
+  the song's cached lyrics from every provider and fetches them again. The
+  second opens quick settings (offset, text
   size, conversions for the song's language, auto-follow, background mode) and
   a link to all settings. Quick settings write the same stored values as the
   settings menu.
@@ -74,7 +76,11 @@ context; before the first vocal it uses the first group. Context hiding preserve
 scroll extents and suspends excluded visual work. Manual browsing and Auto-follow
 Off reveal the entire song while remembering counts. Outside context can instead
 show static muted lyrics, immediately clickable by mouse or keyboard. Blur (CSS
-pixels), darkening (brightness toward black) and opacity are independent. Hover or
+pixels), darkening (brightness toward black) and opacity are independent. In
+the Fullscreen profile, "Fade with distance" dims each muted line by its
+distance from the shown range: the nearest keeps Opacity, and the value falls in
+equal steps over "Fade length" lines to "End opacity". Each line has one flat
+opacity; a line at 0% is hidden. The Now Playing card never fades. Hover or
 focus raises opacity to at least60% while retaining the chosen effects; zero
 opacity hides nonfocused hit targets. Reading opacity, including zero, remains
 independent. Focus alone never starts excluded timing animation. Reset Context
@@ -124,8 +130,10 @@ for 1 day. Each store is capped at 2000 entries, and expired, corrupt or
 old-version entries are deleted when found. Prepared (transformed) lyrics are
 kept in memory only. Behavior → Lyrics cache clears one provider or All; All
 also clears track details and provider cooldowns. Tokens and preferences are
-separate from lyric records and are never cleared. There is no "current song
-only" clear yet. Derived annotations
+separate from lyric records and are never cleared. "Clear this song's cache"
+in the corner provider menu removes only the playing track's entries from all
+five provider caches, resets provider cooldowns and refetches the song; track
+details and other songs stay. Derived annotations
 use a separate bounded memory cache keyed by immutable identity, actual content,
 effective language/form options and converter version.
 

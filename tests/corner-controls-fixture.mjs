@@ -41,6 +41,11 @@ export async function buildCornerFixture(withModal = true) {
       export function SetSong(lyrics,choices=SongLyricChoices,event=SongChanged){SongLyrics=lyrics;SongLyricChoices=choices;event.fire()}
       export function SelectLyricsProvider(name){selected.push(name);SongLyrics=SongLyricChoices.find(lyrics=>lyrics.Source.Provider===name);SongLyricsLoaded.fire()}
       export const ReloadLyrics=()=>{throw Error('unexpected provider reload')};
+      // Test-controlled song cache clear: availability, call count and the
+      // pending promise of the latest call.
+      export const clearSong={available:true,calls:0,resolve:undefined,reject:undefined};
+      export const CanClearSongLyricsCache=()=>clearSong.available;
+      export function ClearSongLyricsCache(){clearSong.calls++;return new Promise((resolve,reject)=>{clearSong.resolve=resolve;clearSong.reject=reject})}
     `}));
   }}]});
   return result.outputFiles[0].text;

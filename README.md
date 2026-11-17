@@ -11,7 +11,7 @@ here rather than sending the original author bugs from this build.
 ## What works now
 
 - Word/syllable, line-synced, and plain-text lyrics, depending on available data.
-- Musixmatch, AMLL community TTML, LRCLIB, and Spotify integration.
+- AMLL community TTML, LRCLIB, and Spotify integration.
 - Provider selection with word-sync labels; a failed source doesn't erase a
   successful result from another source.
 - Overlapping lead/backing vocals, with scrolling based on measured line bounds.

@@ -16,7 +16,7 @@ LOCAL.md disagree, LOCAL.md is current.
 ## What works now
 
 - Word/syllable, line-synced, and plain-text lyrics, depending on available data.
-- Musixmatch, AMLL community TTML, LRCLIB, and Spotify integration.
+- AMLL community TTML, LRCLIB, and Spotify integration.
 - Provider selection with word-sync labels; a failed source doesn't erase a
   successful result from another source.
 - Overlapping lead/backing vocals, with scrolling based on measured line bounds.
@@ -145,12 +145,12 @@ voices (100 means 100 seconds). Very short eligible gaps use static dots. Minima
 is a text preset; it does not turn off independently enabled dots or backgrounds.
 
 **Timings → Hold highlight across gaps** and **Minimum timed segments per line**
-apply to Musixmatch, LRCLIB and Spotify. By
+apply to synced lyrics from providers such as LRCLIB and Spotify. By
 default, internal gaps shorter than 5 seconds hold the completed lyric's
 highlight instead of showing dots. Below 2 distinct timed starts per lyric line
-on average, Musixmatch uses the viewer's Line sync profile. Set either field to
+on average, a source uses the viewer's Line sync profile. Set either field to
 0 to disable it. Auto prefers an equally detailed Word-sync alternative when
-Musixmatch needs a hold. A manual Musixmatch selection stays selected.
+a source needs a hold. A manual provider selection stays selected.
 
 Each view has one **Conversions** group: enable a language, choose its conversion,
 then choose **Replace** or **Above**. Japanese supports **Romaji**, orthographic

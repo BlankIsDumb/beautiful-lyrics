@@ -121,6 +121,7 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
   try {
     for(const future of [false,true]) {
       const script=`window.addEventListener('load',async()=>{
+        document.body.style.background='#000';
         const check=(ok,message)=>{if(!ok)throw Error(message)};
         const near=(a,b,message)=>check(Math.abs(a-b)<1,message+' '+a+' / '+b);
         const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -147,7 +148,7 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
           // Keep the first anchor inside the headless viewport so normal
           // above-button placement is tested separately from viewport clamping.
           const host=document.createElement('div');host.className='Root__main-view';host.style.cssText='width:760px;height:min(360px, calc(100vh - 32px));position:relative;container-type:size';document.body.append(host);
-          host.innerHTML=templates[surface];const area=host.querySelector('.Content');
+          host.innerHTML=templates[surface];const area=host.querySelector('.Content');area.style.background='#000';
           const maid=new Maid();m.SetupProviderControls(area,maid);
           const root=area.querySelector('.BL-CornerControls'),buttons=[...root.querySelectorAll(':scope > button')],panels=[...root.querySelectorAll(':scope > .BL-CornerMenu')];
           const result={host,area,maid,root,buttons,panels};mounted.push(result);return result;
@@ -189,8 +190,14 @@ test('corner controls: native layout, menus, modal parity, keyboard, fullscreen 
             check(!view.root.closest('.ViewControls,.PlayPanel'),'corners outside hover/inactivity subtree');
             for(const old of view.host.querySelectorAll('.ViewControls')){old.style.opacity='0';old.style.display='none'}
             check(view.buttons.every(visible),'corners survive hidden legacy controls');
+            check(getComputedStyle(document.body).backgroundColor==='rgb(0, 0, 0)','corner contrast fixture uses a black page');
             const box=view.area.getBoundingClientRect(),bounds=view.root.getBoundingClientRect();near(box.right-bounds.right,16,'right inset');near(box.bottom-bounds.bottom,16,'bottom inset');
             near(view.buttons[0].getBoundingClientRect().width,40,'button width');near(view.buttons[0].getBoundingClientRect().height,40,'button height');
+            for(const button of view.buttons){
+              near(button.getBoundingClientRect().width,40,'each corner button remains 40px wide');near(button.getBoundingClientRect().height,40,'each corner button remains 40px tall');
+              check(getComputedStyle(button).boxShadow!=='none','corner button inset outline is visible on black');
+            }
+            check(getComputedStyle(view.root.querySelector('.BL-CornerCredit')).boxShadow!=='none','corner credit inset outline is visible on black');
             check(getComputedStyle(view.root).pointerEvents==='none'&&getComputedStyle(view.buttons[0]).pointerEvents==='auto','pointer-event isolation');
           }
           const [providerButton,quickButton]=first.buttons,[provider,quick]=first.panels;

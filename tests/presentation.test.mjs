@@ -16,12 +16,127 @@ const legacyKey = 'BeautifulLyrics/LyricViews';
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
   return {
+    get length() { return data.size; },
+    key: index => [...data.keys()][index] ?? null,
     getItem: key => data.get(key) ?? null,
     setItem: (key, value) => data.set(key, value),
     removeItem: key => data.delete(key),
   };
 }
 const languages = { Chinese: false, Japanese: true, Korean: false };
+
+const backupKey = schema => key + '/Migration/schema' + schema;
+const backupEntries = schemas => Object.fromEntries(schemas.map(schema => [backupKey(schema), 'backup ' + schema]));
+const storageKeys = storage => Array.from({length: storage.length}, (_, index) => storage.key(index)).sort();
+
+test('current stores prune once at creation and retain every key of the two highest backup schemas', () => {
+  const seed = memoryStorage();
+  CreatePresentationSettings(seed).saveFontFamily('sans-serif');
+  const raw = seed.getItem(key);
+  const unrelated = {
+    [key]: raw,
+    [key + '/Migration/schema9-extra']: 'not a schema backup',
+    [key + '/Migration/schema9.5']: 'not an integer schema',
+    [key + '/Migration/schema-9']: 'not a positive schema',
+    ['Other/' + backupKey(9)]: 'different prefix',
+    [key + '/Migration/schema']: 'missing schema number',
+    [key + '/Other/schema9']: 'different path',
+  };
+  const kept = {
+    ...backupEntries([10, 11]),
+    [backupKey(10) + '/1000']: 'schema10 collision',
+    [backupKey(11) + '/1000-1']: 'schema11 collision',
+  };
+  const storage = memoryStorage({...unrelated, ...backupEntries([6, 7, 8, 9]), ...kept});
+  const settings = CreatePresentationSettings(storage);
+  // No getter is needed: creation itself must perform the bounded cleanup.
+  assert.deepEqual(storageKeys(storage), Object.keys({...unrelated, ...kept}).sort());
+  for (const [entry, value] of Object.entries({...unrelated, ...kept})) assert.equal(storage.getItem(entry), value);
+  assert.equal(settings.getFontFamily(), 'sans-serif');
+  storage.setItem(backupKey(6), 'added after creation');
+  settings.saveFontFamily('serif');
+  assert.equal(storage.getItem(backupKey(6)), 'added after creation', 'ordinary saves do not repeatedly prune');
+});
+
+test('future, missing and malformed stores never prune migration backups', () => {
+  for (const raw of [JSON.stringify({version: 99}), undefined, '{broken', 'null', JSON.stringify({version: '12'})]) {
+    const initial = {...backupEntries([6, 7, 8, 9, 10, 11]), ...(raw === undefined ? {} : {[key]: raw})};
+    const storage = memoryStorage(initial), settings = CreatePresentationSettings(storage);
+    settings.getLayout('FullLyrics');
+    assert.deepEqual(storageKeys(storage), Object.keys(initial).sort());
+    for (const [entry, value] of Object.entries(initial)) assert.equal(storage.getItem(entry), value);
+    if (raw === JSON.stringify({version: 99})) assert.throws(() => settings.saveFontFamily('serif'), /newer version/);
+  }
+});
+
+test('pending migrations prune only after backup and main writes succeed, counting the new backup', () => {
+  const raw = JSON.stringify({version: 11}, null, 2);
+  const storage = memoryStorage({[key]: raw, ...backupEntries([6, 7, 8, 9, 10]), [backupKey(11)]: 'distinct schema11 backup'});
+  const originalSet = storage.setItem, originalRemove = storage.removeItem;
+  let failKey = backupKey(11), removals = 0;
+  storage.setItem = (entry, value) => {
+    if (entry === failKey || (failKey === backupKey(11) && entry.startsWith(failKey + '/'))) throw Error('quota');
+    originalSet(entry, value);
+  };
+  storage.removeItem = entry => {
+    assert.equal(JSON.parse(storage.getItem(key)).version, 12, 'main save precedes pruning');
+    assert.ok(storageKeys(storage).some(entry => entry.startsWith(backupKey(11) + '/') && storage.getItem(entry) === raw), 'exact collision backup precedes pruning');
+    removals++;
+    originalRemove(entry);
+  };
+  const before = storageKeys(storage), settings = CreatePresentationSettings(storage);
+  settings.getLayout('FullLyrics');
+  settings.saveFontFamily(''); // A no-op is not a successful migration save.
+  assert.deepEqual(storageKeys(storage), before);
+  assert.throws(() => settings.saveFontFamily('serif'), /quota/);
+  assert.deepEqual(storageKeys(storage), before);
+  failKey = key;
+  assert.throws(() => settings.saveFontFamily('serif'), /quota/);
+  assert.equal(storage.getItem(key), raw);
+  assert.equal(removals, 0, 'failed main writes retain all old backups');
+  for (const schema of [6, 7, 8, 9, 10]) assert.equal(storage.getItem(backupKey(schema)), 'backup ' + schema);
+  failKey = undefined;
+  settings.saveFontFamily('serif');
+  assert.equal(settings.getFontFamily(), 'serif');
+  assert.equal(removals, 4);
+  const remaining = storageKeys(storage).filter(entry => entry !== key);
+  assert.equal(remaining.length, 3);
+  assert.ok(remaining.every(entry => entry === backupKey(10) || entry === backupKey(11) || entry.startsWith(backupKey(11) + '/')));
+  assert.equal(storage.getItem(backupKey(11)), 'distinct schema11 backup');
+});
+
+test('pruning exceptions never break reads, saves or migration notifications', () => {
+  for (const version of [11, 12]) {
+    const storage = memoryStorage({[key]: JSON.stringify({version}), ...backupEntries([6, 7, 8])});
+    let attempts = 0, notifications = 0;
+    storage.removeItem = () => { attempts++; throw Error('blocked removal'); };
+    const settings = CreatePresentationSettings(storage);
+    assert.equal(settings.getFontFamily(), '');
+    settings.subscribeFontFamily(() => notifications++);
+    assert.doesNotThrow(() => settings.saveFontFamily('serif'));
+    assert.equal(settings.getFontFamily(), 'serif');
+    assert.equal(JSON.parse(storage.getItem(key)).fontFamily, 'serif');
+    assert.equal(notifications, 1);
+    assert.equal(attempts, 1);
+  }
+  for (const member of ['length', 'key']) {
+    const storage = memoryStorage({[key]: JSON.stringify({version: 12}), ...backupEntries([6, 7, 8])});
+    Object.defineProperty(storage, member, {get() { throw Error('blocked enumeration'); }});
+    assert.doesNotThrow(() => CreatePresentationSettings(storage).saveFontFamily('serif'));
+    assert.equal(JSON.parse(storage.getItem(key)).fontFamily, 'serif');
+  }
+});
+
+test('storage without enumeration or removal skips pruning and still saves', () => {
+  for (const missing of ['length', 'key', 'removeItem']) {
+    const storage = memoryStorage({[key]: JSON.stringify({version: 12}), ...backupEntries([6, 7, 8])});
+    delete storage[missing];
+    const settings = CreatePresentationSettings(storage);
+    settings.saveFontFamily('serif');
+    for (const schema of [6, 7, 8]) assert.equal(storage.getItem(backupKey(schema)), 'backup ' + schema);
+    assert.equal(settings.getFontFamily(), 'serif');
+  }
+});
 
 test('schema 11 migrates background only, backs up exact raw and isolates notifications', async () => {
   const storage=memoryStorage(), original=CreatePresentationSettings(storage);

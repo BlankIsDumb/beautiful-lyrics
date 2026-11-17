@@ -1,9 +1,36 @@
 # Just Enough Lyrics local build notes
 
-Current local build is **5.1.0-local.40**. See [VALIDATION.md](VALIDATION.md) for
-build and installation evidence. Pass 6 typography, context and
-following controls live under Lyrics → Now Playing / Full Lyrics. Fullscreen/cinema and the ordinary lyrics page share Full Lyrics typography,
-context and scrolling. Horizontal spacing alone has three independent surfaces.
+Current local build is **5.1.0-local.41**. See [VALIDATION.md](VALIDATION.md) for
+build and installation evidence.
+
+## Where things are
+
+The settings menu opens from the topbar icon. Its sections are Behavior, Timings,
+Now Playing, Fullscreen, Providers, Lyrics Font and Spicy. "Fullscreen" covers
+the ordinary lyrics page, cinema and fullscreen, which share typography, context
+and scrolling. Storage and code still call that profile `FullLyrics`. Horizontal
+spacing alone has three independent surfaces.
+
+- Timings holds the shared lyric delay, one offset per view, the "Hold highlight
+  across gaps" group and the minimum timed segments per line.
+- Each view groups its options under Background, Typography, Context, Scrolling,
+  Gap dots, Word sync, Line sync and Conversions.
+- The lyrics page and the fullscreen view have two always-visible buttons in the
+  bottom right corner. The first lists the providers that have lyrics for the
+  song and switches on click. The second opens quick settings (offset, text
+  size, conversions for the song's language, auto-follow, background mode) and
+  a link to all settings. Quick settings write the same stored values as the
+  settings menu.
+- Every view credits the provider that answered: left of the corner buttons on
+  the lyrics page and fullscreen, and on the "Lyrics" row of the Now Playing
+  card. Spicy credits name the source, or link the uploader and the maker of a
+  community sync.
+- The Now Playing card has no buttons and is always expanded. Hide it with Now
+  Playing → Enabled. "Card height" offers Default (340 px), Extended (500 px)
+  and Max (620 px). With Max and the default top anchor, one earlier line stays
+  above the current one.
+- The lyrics page opens and closes from the playbar's "Lyrics Page" button, and
+  fullscreen from "Enter Fullscreen".
 
 Easing changes the curve between effect keyframes. Response changes how quickly
 scale, vertical motion and glow reach their targets. Direct applies the current
@@ -31,10 +58,12 @@ Readouts report physical column gaps/width in CSS pixels, not glyph ink edges.
 Dragging previews without writing storage; release/confirmed number commits, Escape
 or closing cancels. Typography reset also resets that viewer's spacing surfaces.
 
-Schema 11 adds animation presets and the gap-dot window. Older schemas migrate
+The current presentation schema is 12. Schema 11 added animation presets and the gap-dot window. Older schemas migrate
 on the first changed save, which backs up the exact prior payload under
 JustEnoughLyrics/Presentation/Migration/schemaN. Existing appearance and spacing
-choices carry forward. Recovery copies are collision-safe and a failed save
+choices carry forward. Only the backups of the two newest schemas are kept;
+older ones are removed once the store is on the current schema.
+Recovery copies are collision-safe and a failed save
 leaves the prior settings active. For rollback after a schema 11 save, pair the
 prior bundle with its corresponding settings backup. Future schemas open read-only.
 
@@ -88,27 +117,27 @@ Word timing outranks line timing; more distinct starts rank word-timed candidate
 Line-only selection uses fixed source preference rather than line count. Use the
 picker to override it. Local files use metadata lookup, not made-up Spotify IDs.
 
-## Cache behavior (current, not the planned redesign)
-Musixmatch and transformed lyrics use inherited calendar-month expiry, not 30 days.
-AMLL, LRCLIB and Spotify records use two weeks rounded to midnight. Missing records
-can be cached too. Expired entries are ignored rather than proactively deleted.
-Credentials and preferences are separate from lyric records. There is no clear-all
-or per-track clear button yet. Those changes remain planned.
-Transformed cache version 4 stores source preparation only, excluding annotations
-and synthetic cues; provider cache versions are unchanged. Derived annotations
+## Cache behavior
+Provider results are cached on disk with absolute lifetimes: Musixmatch for 30
+days, AMLL, LRCLIB, Spotify and Spicy for 14 days. A "not found" result is kept
+for 1 day. Each store is capped at 2000 entries, and expired, corrupt or
+old-version entries are deleted when found. Prepared (transformed) lyrics are
+kept in memory only. Behavior → Lyrics cache clears one provider or All; All
+also clears track details and provider cooldowns. Tokens and preferences are
+separate from lyric records and are never cleared. There is no "current song
+only" clear yet. Derived annotations
 use a separate bounded memory cache keyed by immutable identity, actual content,
 effective language/form options and converter version.
 
 ## UI and language processing
 Settings are event-driven. Disabling the sidebar cleans up its observers/card.
-The sidebar card also has a separate collapsed/expanded state and is hidden while
-our main lyric view is open. Its integration still depends on Spotify's DOM.
+The sidebar card is hidden while our main lyric view is open. Its integration still depends on Spotify's DOM.
 Now Playing mount/remount detection watches relevant child-list changes within
 the sidebar, coalescing checks and retaining the renderer when its anchor is
 unchanged. Disabling Now Playing removes the card and disconnects its watchers.
 The settings modal uses centered headings, tiles and keyboard-accessible switches.
-Now Playing and Full Lyrics have versioned independent language preferences.
-Each view's Alternate text master switch gates its remembered language choices;
+Now Playing and Fullscreen have versioned independent language preferences.
+Each view's Conversions "Enabled" switch gates its remembered language choices;
 the settings modal nests those choices inside a connected collapsible card.
 Presentation schema 8 reads schemas 1–7. Each view owns independent Word/Line
 text cases plus universal cue settings, while language/master/Japanese form and
@@ -195,7 +224,7 @@ Implementation sources: `Extension/Source/Modules/TextLayout.ts`,
 in `LyricDocument.ts` and `Player/LyricUtilities.ts`; renderer component projection
 updates plus `PresentationSettings.ts`/`ProviderControls.ts` for schema/UI scope.
 The modal uses compact labels and question-mark help with Classic footer values;
-shared delay is under Behavior and each view adds its own signed offset. Native
+shared delay is under Timings and each view adds its own signed offset. Native
 change/input events apply scoped values immediately; invalid partial numeric edits
 never reach storage. Completed credential edits use their own setter; behavior
 controls cannot rewrite stale password-field contents. The disconnected modal

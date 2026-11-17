@@ -16,7 +16,7 @@ type Settings = { version: typeof schemaVersion; fontFamily: string; horizontalS
 const storageKey = "JustEnoughLyrics/Presentation";
 const legacyKey = "BeautifulLyrics/LyricViews";
 
-export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "setItem">) {
+export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "setItem"> & Partial<Pick<Storage, "length" | "key" | "removeItem">>) {
   const contextAppearanceListeners = new Set<(view: PresentationView) => void>();
   const backgroundListeners = new Set<(view: PresentationView, fields: readonly (keyof BackgroundProfile)[]) => void>();
   const layoutListeners = new Set<(view: PresentationView, fields: readonly (keyof LayoutProfile)[]) => void>();
@@ -71,6 +71,25 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     try { return JSON.parse(storage.getItem(key) || "null"); }
     catch { return null; }
   };
+  const pruneMigrationBackups = () => {
+    try {
+      if (typeof storage.length !== "number" || typeof storage.key !== "function" || typeof storage.removeItem !== "function") return;
+      const pattern = new RegExp(`^${storageKey}/Migration/schema(\\d+)(/.*)?$`);
+      const backups: { key: string; schema: bigint }[] = [];
+      // Snapshot keys before deleting: localStorage indices shift after removal.
+      for (let index = 0, length = storage.length; index < length; index++) {
+        const key = storage.key(index);
+        const match = key === null ? null : pattern.exec(key);
+        if (match) backups.push({ key: key!, schema: BigInt(match[1]) });
+      }
+      const schemas = [...new Set(backups.map(backup => backup.schema))].sort((a, b) => a > b ? -1 : a < b ? 1 : 0);
+      const kept = new Set(schemas.slice(0, 2));
+      for (const backup of backups) if (!kept.has(backup.schema)) storage.removeItem(backup.key);
+    } catch { /* Optional housekeeping must never block reading or saving. */ }
+  };
+  // Pending migrations retain every recovery copy until the new main payload
+  // is durable. Missing, malformed and future stores must not trigger cleanup.
+  if (parse(storageKey)?.version === schemaVersion) pruneMigrationBackups();
   let settings: Settings | undefined;
   let futureVersion = false;
   let migrationRaw: string | undefined;
@@ -104,6 +123,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
   // canonical payload second, and only then observable in-memory state/events.
   const persist = (updated: Settings) => {
     if (futureVersion) throw new Error("Presentation settings require a newer version.");
+    const migrated = migrationRaw !== undefined;
     if (migrationRaw !== undefined) {
       if (!migrationBackupKey) {
         const base = storageKey + "/Migration/schema" + migrationVersion;
@@ -118,6 +138,7 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
     storage.setItem(storageKey, JSON.stringify(updated));
     migrationRaw = undefined;
     settings = updated;
+    if (migrated) pruneMigrationBackups();
   };
   const saveSpacing = (surface: HorizontalSurface, value: number) => {
     const current = read(), normalized = NormalizeHorizontalSpacing(value);
@@ -274,9 +295,12 @@ export function CreatePresentationSettings(storage: Pick<Storage, "getItem" | "s
   };
 }
 
-// Lazy storage access keeps module loading cheap and lets migration read the
-// existing installation only when a view or the settings form actually needs it.
+// Only backup housekeeping runs at creation. Profile normalization and migration
+// remain lazy until a view or the settings form actually needs them.
 export const PresentationSettings = CreatePresentationSettings({
   getItem: key => localStorage.getItem(key),
   setItem: (key, value) => localStorage.setItem(key, value),
+  get length() { return localStorage.length; },
+  key: index => localStorage.key(index),
+  removeItem: key => localStorage.removeItem(key),
 });

@@ -37,6 +37,7 @@ import "./Stylings/ProviderControls.scss";
 export function OpenProviderSettings() {
   const content = document.createElement("form");
   content.className = "BL-Settings";
+  content.tabIndex = -1;
   const lifetime = new AbortController();
   let disposeTypography: (() => void) | undefined;
   const spacingOutputs = new Map<HorizontalSurface, HTMLOutputElement>();
@@ -89,20 +90,26 @@ export function OpenProviderSettings() {
   const checkbox = (input: HTMLInputElement, write: (value: boolean) => void, read: () => boolean, after?: () => void) => {
     listen(input, "change", () => { apply(() => write(input.checked), () => { input.checked = read(); }); after?.(); });
   };
+  const formatLeading = (leading: number) => String(Number(leading.toFixed(4)));
   const numeric = (parent: HTMLElement, text: string, id: string, read: () => number, write: (value: number) => void,
-    help: string, classic: string, minimum: number, maximum?: number, step = "0.05", disabled = false) => {
+    help: string, classic: string, minimum: number, maximum?: number, step = "0.05", disabled = false,
+    format?: (value: number) => string) => {
+    const display = () => format ? format(read()) : String(read());
     const input = document.createElement("input"); input.type = "number"; input.id = id; input.required = true;
     input.min = String(minimum); if (maximum !== undefined) input.max = String(maximum);
-    input.step = step; input.value = String(read()); input.disabled = disabled;
+    input.step = step; input.value = display(); input.disabled = disabled;
     input.setAttribute("aria-label", text); row(parent, text, input, help, classic);
     const valid = () => input.value.trim() !== "" && input.validity.valid && Number.isFinite(input.valueAsNumber);
     listen(input, "input", () => {
       if (!valid()) { input.setAttribute("aria-invalid", "true"); status.textContent = "Enter a valid number; the previous value is still active."; return; }
-      input.removeAttribute("aria-invalid"); apply(() => write(input.valueAsNumber), () => { input.value = String(read()); });
+      input.removeAttribute("aria-invalid");
+      // Display rounding must never turn an untouched stored value into a save.
+      if (format && input.value === display()) return;
+      apply(() => write(input.valueAsNumber), () => { input.value = display(); });
     });
     listen(input, "blur", () => {
       if (valid()) return;
-      input.value = String(read()); input.removeAttribute("aria-invalid");
+      input.value = display(); input.removeAttribute("aria-invalid");
       status.textContent = "Invalid number discarded; the previous value is still active.";
     });
     return input;
@@ -269,11 +276,11 @@ export function OpenProviderSettings() {
       details.className="BL-CaseSettings";summary.textContent=title;body.className="BL-GroupOptions";body.disabled=presentationReadOnly;
       details.append(summary,body);fields.append(details);
       const reset=document.createElement("button");reset.type="button";reset.textContent=category==="scrolling"?`Reset scrolling (${defaults.anchor}% anchor)`:category==="context"?"Reset context":`Classic ${title.toLowerCase()}`;buttonRow(body).append(reset);
-      listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=value===null?"":String(value)}if(category==="context")syncContextAppearance();});
+      listen(reset,"click",()=>{if(category==="typography")for(const surface of (view==="NowPlaying"?["Card"]:["Contained","Fullscreen"]) as HorizontalSurface[])spacingControls.get(surface)?.cancel();apply(()=>PresentationSettings.resetLayout(view,category));for(const control of spacingControls.values())control.sync();for(const [key,input] of layoutInputs){const value=layoutRead()[key];if(input instanceof HTMLInputElement&&input.type==="checkbox")input.checked=value as boolean;else input.value=key==="leading"?formatLeading(value as number):value===null?"":String(value)}if(category==="context")syncContextAppearance();});
       return body;
     };
     const layoutNumber=(parent: HTMLElement,key: keyof LayoutProfile,label: string,min: number,max: number,step: string,help: string,classic: string)=>{
-      const input=numeric(parent,label,`JEL-${view}-Layout-${key}`,()=>layoutRead()[key] as number,value=>layoutWrite(key,value),help,classic,min,max,step,presentationReadOnly);layoutInputs.set(key,input);return input;
+      const input=numeric(parent,label,`JEL-${view}-Layout-${key}`,()=>layoutRead()[key] as number,value=>layoutWrite(key,value),help,classic,min,max,step,presentationReadOnly,key==="leading"?formatLeading:undefined);layoutInputs.set(key,input);return input;
     };
     const nullable=(parent:HTMLElement,key:"groupGap"|"before"|"after",label:string,min:number,max:number,step:string,empty:string,help:string,classic:string)=>{
       const input=document.createElement("input");input.type="number";input.id=`JEL-${view}-Layout-${key}`;input.min=String(min);input.max=String(max);input.step=step;input.placeholder=empty;input.value=layoutRead()[key]===null?"":String(layoutRead()[key]);input.setAttribute("aria-label",label);
@@ -622,7 +629,7 @@ export function OpenProviderSettings() {
   content.append(status);
   (Spotify as any).PopupModal.display({ title: "Just Enough Lyrics Settings", content, isLarge: true });
   disposeTypography=CreateTypographyPreview(content,sizeOutputs,spacingOutputs);
-  fetchMode.focus({ preventScroll: true });
+  content.focus({ preventScroll: true });
   const scrollContainer = content.closest(".spicetify-popup-content"); if (scrollContainer) scrollContainer.scrollTop = 0;
 }
 

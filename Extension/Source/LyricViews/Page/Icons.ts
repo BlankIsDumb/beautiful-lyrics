@@ -12,11 +12,6 @@ export default {
 			<path d="M1.47 1.47a.75.75 0 0 1 1.06 0L8 6.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L9.06 8l5.47 5.47a.75.75 0 1 1-1.06 1.06L8 9.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L6.94 8 1.47 2.53a.75.75 0 0 1 0-1.06z"></path>
 		</svg>
 	`,
-	SmallerView: `
-		<svg role="img" height="18" width="18" aria-hidden="true" viewBox="0 0 16 16" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-16-icon Small">
-			<path d="M14.55 1c.8 0 1.45.65 1.45 1.45V7h-1.5V2.5H2.595L5.5 5.406V4.021a.75.75 0 0 1 1.5 0v3.946H3.055a.75.75 0 0 1 0-1.5H4.44L1.5 3.527V13.5h5.507V15H1.45C.65 15 0 14.35 0 13.55V2.45C0 1.65.65 1 1.45 1h13.1z"></path><path d="M16 9.757a.75.75 0 0 0-.75-.75H9.325a.75.75 0 0 0-.75.75v4.493c0 .414.336.75.75.75h5.925a.75.75 0 0 0 .75-.75V9.757z"></path>
-		</svg>
-	`,
 	FullscreenClose: `
 		<svg role="img" height="24" width="24" aria-hidden="true" viewBox="0 0 24 24" data-encore-id="icon" class="Svg-sc-ytk21e-0 Svg-img-24-icon Fullscreen">
 			<path d="M21.707 2.293a1 1 0 0 1 0 1.414L17.414 8h1.829a1 1 0 0 1 0 2H14V4.757a1 1 0 1 1 2 0v1.829l4.293-4.293a1 1 0 0 1 1.414 0zM2.293 21.707a1 1 0 0 1 0-1.414L6.586 16H4.757a1 1 0 0 1 0-2H10v5.243a1 1 0 0 1-2 0v-1.829l-4.293 4.293a1 1 0 0 1-1.414 0z">

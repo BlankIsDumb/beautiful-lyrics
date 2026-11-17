@@ -8,17 +8,10 @@ rest are still on the increasingly unreasonable to-do list.
 This is an independent fork, not an upstream release. Please report fork problems
 here rather than sending the original author bugs from this build.
 
-Current local build is **5.1.0-local.28**. Pass 7 adds easing and response
-presets, a duration limit for gap dots, and emphasis for intact shaping-sensitive
-segments. It also corrects the reproduced ruby row gaps and clipped lyric paint.
-Pass 6v3 gives the Sidecard natural song-edge limits and per-view outside-context
-Hide or static muted lyrics with independent blur, darkening and opacity. Distance
-gradient is deferred. Pass 6v2 follows every newly active source block at
-a fixed readable-viewport anchor and adds independent signed horizontal spacing
-for Sidecard, Ordinary lyrics page and Fullscreen/cinema. Typography and context
-retain their two viewer profiles; the lyric font family remains shared.
-Oversized timed segments wrap while retaining their original timing and animation
-owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
+Current local build is **5.1.0-local.41**. See [LOCAL.md](LOCAL.md) for where
+the settings and controls are, and [VALIDATION.md](VALIDATION.md) for checks and
+installation status. This README is a stopgap and is due a rewrite; where it and
+LOCAL.md disagree, LOCAL.md is current.
 
 ## What works now
 
@@ -32,14 +25,14 @@ owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
   enable/disable under **Now Playing → Enabled**. See [LOCAL.md](LOCAL.md).
 - Shared skip debounce: first change starts immediately; rapid skips settle for
   800 ms before another lookup. Provider-specific cooldowns still apply.
-- Demand-driven alternate text with separate Now Playing and Full Lyrics choices:
+- Demand-driven alternate text with separate Now Playing and Fullscreen choices:
   Japanese Romaji/Kana/Furigana, Chinese pinyin and Korean romaja. Original text
   appears immediately; conversion/alignment failures keep it readable. Dictionaries
   are bundled locally, and every real backing voice is eligible.
 - Optional above readings and attached Japanese furigana for each real voice, with per-view
   size, spacing, opacity and alignment. Reading effects inherit the current text
   case or use independent Word/Line overrides. Off stops their work.
-- Four independent text-rendering cases: **Lyrics → Now Playing / Full Lyrics →
+- Four independent text-rendering cases: **Lyrics → Now Playing / Fullscreen →
   Word sync / Line sync**. Word display starts expressive and Line display starts muted.
   Word-timed lyrics displayed as Line use that viewer’s Line sync text and reading settings.
   Untimed lyrics stay plain without an extra configurable branch.
@@ -47,7 +40,7 @@ owners. See [VALIDATION.md](VALIDATION.md) for checks and installation status.
   settings belong to each view and are never changed by a text preset.
 - Shared lyric delay and independent per-view offsets; positive means lyrics later.
 - One lyric font family, with an empty value following Spotify/theme fonts.
-  Independent Now Playing/Full Lyrics primary-size multipliers retain responsive
+  Independent Now Playing/Fullscreen primary-size multipliers retain responsive
   sizing and show current CSS pixels; backing ratio, weights, source leading,
   group spacing are adjustable. Each surface has its own −100…+100 horizontal
   adjustment, effective column readouts and cancellable live preview. Word/Line effects remain independent.
@@ -70,11 +63,11 @@ No promise of unlimited requests or word timing for every track.
 
 ## Planned, not implemented
 
-- Detailed effect amounts/curves and background controls.
-- Translation and further presentation controls.
-- Exact 30-day positive caches, clear-all and clear-current-track controls.
-- Better alternate-name/edition matching and sidebar compatibility.
-- Further background/effect profiling before larger optimization work.
+- Translation.
+- A "clear cache for the current song" control.
+- Better alternate-name/edition matching.
+- Further effect profiling before larger optimization work.
+- macOS and Linux testing. Only Windows has been checked.
 
 ## Build
 
@@ -139,7 +132,7 @@ extension itself. Keep your existing theme; no Comfy-specific dependency is requ
 Open Just Enough Lyrics Settings from its topbar icon. For less background fetching,
 choose **When required** and disable **Now Playing sidebar lyrics**. An enabled
 sidebar requests lyrics on track changes even when the full page is closed.
-Under **Lyrics**, each viewer has collapsible **Word sync** and **Line sync**
+Each view has collapsible **Word sync** and **Line sync**
 settings. Word-timed lyrics displayed as Line use that viewer’s Line sync settings.
 **Text preset** copies editable text effects; changing an effect makes it Custom.
 Line sources use whole-line rendering and expose only supported effects. Turning
@@ -151,7 +144,8 @@ viewer. Zero disables dots; positive values mean minimum real silence across all
 voices (100 means 100 seconds). Very short eligible gaps use static dots. Minimal
 is a text preset; it does not turn off independently enabled dots or backgrounds.
 
-**Behavior → Rich sync compensation** applies to Musixmatch rich sync. By
+**Timings → Hold highlight across gaps** and **Minimum timed segments per line**
+apply to Musixmatch, LRCLIB and Spotify. By
 default, internal gaps shorter than 5 seconds hold the completed lyric's
 highlight instead of showing dots. Below 2 distinct timed starts per lyric line
 on average, Musixmatch uses the viewer's Line sync profile. Set either field to

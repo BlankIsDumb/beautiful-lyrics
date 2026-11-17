@@ -50,7 +50,7 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
     let fixtureForm;
     const modal=document.createElement('div');
     modal.className='spicetify-popup-container';
-    const fixtureModal={display({content}){const scroll=document.createElement('div');scroll.className='spicetify-popup-content';scroll.append(content);modal.replaceChildren(scroll);document.body.append(modal);fixtureForm=content},hide(){modal.remove()}};
+    const fixtureModal={display({content}){const scroll=document.createElement('div');scroll.className='spicetify-popup-content';scroll.append(content);const close=document.createElement('button');close.id='fixture-close';close.textContent='Close';modal.replaceChildren(close,scroll);document.body.append(modal);scroll.scrollTop=100;fixtureForm=content},hide(){modal.remove()}};
     const popups=[];
     // Only the host Tippy service is substituted. Form/settings/help code, native
     // label activation, focus, styles and custom-element disconnection are real
@@ -69,6 +69,9 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
     ${result.outputFiles[0].text}
     try {
       const {OpenProviderSettings,PresentationSettings,TimingSettings,OnProviderSettingsChanged,OnBehaviorSettingsChanged,OnRichSyncSettingsChanged,GetRichSyncSettings,GlobalMaid}=formModule;
+      // Seed a canonical payload so unchanged display edits can be checked against
+      // actual stored leading bytes, rather than only an absent/default store.
+      PresentationSettings.saveFontFamily('sans-serif');PresentationSettings.saveFontFamily('');
       let sourceEvents=0,demandEvents=0,timingEvents=0,languageEvents=0,renderEvents=0,cueEvents=0;
       OnProviderSettingsChanged(()=>sourceEvents++);OnBehaviorSettingsChanged(()=>demandEvents++);
       TimingSettings.subscribe(()=>timingEvents++);PresentationSettings.subscribe(()=>languageEvents++);
@@ -83,6 +86,22 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const frame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       await frame();
       check(form.querySelector('p[role=status]').textContent==='','opening settings leaves status empty');
+      check(document.activeElement===form&&form.tabIndex===-1,'opening focuses the form root');
+      check(!form.querySelector(':focus-visible'),'no control or help button has focus-visible on open');
+      check(getComputedStyle(form).outlineStyle==='none','focused form has no outline');
+      check(form.closest('.spicetify-popup-content').scrollTop===0,'opening still resets the modal scroll');
+      const firstFocusable=[...form.querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].find(element=>element.tabIndex>=0&&!element.matches(':disabled')&&element.getClientRects().length);
+      check(firstFocusable===form.querySelector('#BL-FetchMode').previousElementSibling&&firstFocusable.getAttribute('aria-label')==='Fetch lyrics help','first focusable descendant remains the existing Fetch lyrics help button');
+      // Pause only the fixture: CDP sends trusted native Tab/Shift+Tab events.
+      globalThis.fixtureFocusReady=true;
+      await new Promise(resolve=>{globalThis.fixtureContinue=resolve});
+      const openingBytes=JSON.stringify([...data]),openingWrites=storageWrites;
+      for(const view of ['NowPlaying','FullLyrics']) {
+        const leading=form.querySelector('#JEL-'+view+'-Layout-leading');
+        check(JSON.parse(data.get('JustEnoughLyrics/Presentation')).profiles[view].layout.leading===1.1818181818&&leading.value==='1.1818','stored leading is rounded only for display '+view);
+        type(leading,leading.value);change(leading);leading.dispatchEvent(new FocusEvent('blur'));
+        check(JSON.stringify([...data])===openingBytes&&storageWrites===openingWrites&&form.querySelector('[role=status]').textContent==='','unchanged rounded leading neither writes nor reports Applied '+view);
+      }
       const sections=[...form.querySelectorAll(':scope > section')];
       check(sections.map(section=>section.querySelector(':scope > h3')?.textContent).join('|')==='Behavior|Timings|Now Playing|Fullscreen|Providers|Lyrics Font|Spicy','top-level section order and centered h3 hierarchy');
       check(sections.every(section=>section.children.length===2&&section.lastElementChild.matches('div.BL-Block')),'each section owns one continuous block');
@@ -161,6 +180,26 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
       const statusLine=form.querySelector('p[role=status]');
       check(getComputedStyle(statusLine).display==='none','empty status is hidden');statusLine.textContent='Applied.';
       check(getComputedStyle(statusLine).position==='sticky'&&getComputedStyle(statusLine).bottom==='0px','status is a sticky footer');statusLine.textContent='';
+      for(const view of ['NowPlaying','FullLyrics']) {
+        const leading=form.querySelector('#JEL-'+view+'-Layout-leading'),group=leading.closest('fieldset');
+        const storedLeading=()=>JSON.parse(data.get('JustEnoughLyrics/Presentation')).profiles[view].layout.leading;
+        type(leading,'1.3');check(storedLeading()===1.3&&statusLine.textContent==='Applied.','edited leading saves the typed value '+view);
+        type(leading,'1.3456789');check(storedLeading()===1.3456789,'typed precision is never rounded in storage '+view);
+        failStorage=true;type(leading,'1.4');failStorage=false;
+        check(storedLeading()===1.3456789&&leading.value==='1.3457','failed apply restores a rounded display without changing storage '+view);
+        type(leading,'');leading.dispatchEvent(new FocusEvent('blur'));
+        check(storedLeading()===1.3456789&&leading.value==='1.3457','invalid edit restores the rounded stored value '+view);
+        type(leading,'1.5');check(storedLeading()===1.5,'simple leading saves '+view);
+        // Any layout reset synchronizes this input, even outside Typography.
+        const scrolling=form.querySelector('#JEL-'+view+'-Layout-anchor').closest('fieldset');
+        [...scrolling.querySelectorAll('button')].find(button=>button.textContent.startsWith('Reset scrolling')).click();
+        check(leading.value==='1.5','sync removes trailing zeros '+view);
+        [...group.querySelectorAll('button')].find(button=>button.textContent==='Classic typography').click();
+        check(storedLeading()===1.1818181818&&leading.value==='1.1818','Classic typography restores exact leading and rounded display '+view);
+        statusLine.textContent='';const before=JSON.stringify([...data]),writes=storageWrites;
+        type(leading,leading.value);change(leading);leading.dispatchEvent(new FocusEvent('blur'));
+        check(JSON.stringify([...data])===before&&storageWrites===writes&&statusLine.textContent==='','unchanged leading stays inert after reset '+view);
+      }
       // Exercise writes after the pristine/empty footer checks above: successful
       // select changes intentionally leave the normal Applied status visible.
       cardHeight.value='max';change(cardHeight);check(PresentationSettings.getLayout('NowPlaying').cardHeight==='max'&&form.querySelector('[role=status]').textContent==='Applied.','Card height saves through normal apply/status path');
@@ -474,7 +513,23 @@ test('immediate settings preserve four text cases/universal cues and abort on cl
   try {
     const html = path.join(directory, 'fixture.html');
     await writeFile(html, `<!doctype html><body><style>${css}</style><script>${script.replaceAll('</script', '<\\/script')}</script>`);
-    const result = await runFocusedFixture(chrome, html, path.join(directory, 'profile'));
+    const result = await runFocusedFixture(chrome, html, path.join(directory, 'profile'), async send => {
+      await send('Runtime.evaluate', {expression: `new Promise(resolve=>{const wait=()=>globalThis.fixtureFocusReady||document.body.textContent.startsWith('SETTINGS_HELP_FAIL:')?resolve():requestAnimationFrame(wait);wait()})`, awaitPromise: true});
+      const ready = await send('Runtime.evaluate', {expression: 'globalThis.fixtureFocusReady===true'});
+      assert.equal(ready.result.value, true, 'fixture reaches the opening focus assertions');
+      const tab = async (modifiers = 0) => {
+        await send('Input.dispatchKeyEvent', {type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers});
+        await send('Input.dispatchKeyEvent', {type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers});
+      };
+      await tab();
+      const firstTab = await send('Runtime.evaluate', {expression: `document.activeElement.getAttribute('aria-label')==='Fetch lyrics help'&&document.activeElement.matches(':focus-visible')`});
+      assert.equal(firstTab.result.value, true, 'native Tab reaches the unchanged first help button with its keyboard outline');
+      await send('Runtime.evaluate', {expression: `document.querySelector('.BL-Settings').focus({preventScroll:true})`});
+      await tab(8);
+      const shiftTab = await send('Runtime.evaluate', {expression: `document.activeElement.id==='fixture-close'&&!document.querySelector('.BL-Settings').contains(document.activeElement)`});
+      assert.equal(shiftTab.result.value, true, 'native Shift+Tab from the root leaves the form normally');
+      await send('Runtime.evaluate', {expression: `document.querySelector('.BL-Settings').focus({preventScroll:true});globalThis.fixtureContinue()`});
+    });
     assert.match(result, /SETTINGS_HELP_PASS/, result);
     assert.doesNotMatch(result, /SETTINGS_HELP_FAIL/);
 

@@ -1,5 +1,25 @@
 # Validation
 
+## Pass 9 fixes and docs — 5.1.0-local.41, 2026-11-17
+
+All 694 tests passed. The four production bundles passed syntax and dictionary
+checks. They match the three Windows install copies at SHA-256
+`9BF41C71B1F966259CB64FC50433B907325139BBC98E2B41A4696B9CE234EF72`.
+
+A read-only audit exercised every enabled control in the settings menu: all 109
+saved, and none was dead. Without a theme, the settings menu, the card, the
+corner menus and the fullscreen view rendered and worked. The stored tokens
+appear in no tracked file or bundle.
+
+Fixes: the settings menu opens without a focus outline; "Line height" shows a
+rounded value without changing the stored one; settings migration backups older
+than the two newest schemas are removed; the corner buttons and credit have a
+faint edge so they read on a black page; one unused icon is removed. LOCAL.md
+and README.md were corrected to match this build. In Spotify on Windows, the
+focus on open, the Line height display and stored value, and the backup pruning
+were checked. The corner edge was not looked at natively. macOS and Linux are
+untested.
+
 ## Provider credit, card cleanup and card height — 5.1.0-local.40, 2026-11-17
 
 All 689 tests passed. The four production bundles passed syntax and dictionary

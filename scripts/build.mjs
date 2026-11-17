@@ -58,10 +58,23 @@ if (/socalifornian\.live/.test(code)) throw new Error('Local bundle still contai
 // local extension, not the upstream loader that downloads an author-hosted bundle.
 const outputs = ['dist/just-enough-lyrics.mjs', 'Extension/Builds/Release/just-enough-lyrics.mjs',
   'dist/beautiful-lyrics-local.mjs', 'Extension/Builds/Release/beautiful-lyrics.mjs'];
+// On Windows, a process that maps a file to read it (git hashing a changed
+// copy, for example) blocks truncation with UNKNOWN/EBUSY until it unmaps.
+// Retry briefly; the bytes written and every check below stay the same.
+const writeOutput = async (destination, attempts = 10, delay = 250) => {
+  for (let attempt = 1; ; attempt++) {
+    try { return await writeFile(destination, code); }
+    catch (error) {
+      if (attempt >= attempts || !['UNKNOWN', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+      console.warn(`Output busy (${error.code}), retry ${attempt}/${attempts - 1}: ${path.relative(root, destination)}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+};
 for (const output of outputs) {
   const destination = path.join(root, output);
   await mkdir(path.dirname(destination), { recursive: true });
-  await writeFile(destination, code);
+  await writeOutput(destination);
   // Verify each persisted copy before it can be installed or published.
   verifyDictionary(await readFile(destination, 'utf8'), dictionary);
 }

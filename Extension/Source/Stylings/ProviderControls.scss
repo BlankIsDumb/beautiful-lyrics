@@ -314,7 +314,7 @@
     button { width: 28px; height: 28px; padding: 0; }
     output { width: 36px; height: 28px; padding: 3px 0; text-align: center; font-variant-numeric: tabular-nums; }
   }
-  .BL-QuickRow[aria-disabled="true"], .BL-QuickRow:has(> input:disabled, > select:disabled), button:disabled { opacity: .5; cursor: default; }
+  .BL-QuickRow[aria-disabled="true"], .BL-QuickRow.BL-QuickDisabled, button:disabled { opacity: .5; cursor: default; }
   .BL-ClearSong[aria-disabled="true"] { opacity: .5; cursor: default; }
 }
 // Spotify's native title-bar drag surface overlaps the injected right-side

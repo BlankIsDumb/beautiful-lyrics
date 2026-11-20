@@ -21,7 +21,7 @@ class Connection {
 	private Disconnected: boolean
 
 	// Constructor
-	constructor(connections: SignalConnectionReferences, callback: Callback) {
+	constructor(connections: SignalConnectionReferences, callback: Callback, private OnDisconnect?: () => void) {
 		// Store our signal/callback
 		this.ConnectionReferences = connections
 
@@ -49,6 +49,7 @@ class Connection {
 
 		// Remove ourselves from our signal
 		this.ConnectionReferences.Remove(this.Location)
+		this.OnDisconnect?.()
 	}
 
 	public IsDisconnected() {
@@ -80,14 +81,19 @@ class Signal<P extends Callback = DefaultCallback> {
 	// Private Properties
 	private ConnectionReferences: SignalConnectionReferences
 	private DestroyedState: boolean
+	private ConnectionCount = 0
+	private ConnectionRemoved?: () => void
 
 	// Constructor
-	constructor() {
+	constructor(private OnConnectionCountChanged?: (count: number) => void) {
 		// Create our list of connections
 		this.ConnectionReferences = new FreeArray()
 
 		// Store our initial destroyed state
 		this.DestroyedState = false
+		if (OnConnectionCountChanged) {
+			this.ConnectionRemoved = () => OnConnectionCountChanged(--this.ConnectionCount)
+		}
 	}
 
 	// Public Methods
@@ -97,8 +103,11 @@ class Signal<P extends Callback = DefaultCallback> {
 			throw('Cannot connect to a Destroyed Signal')
 		}
 
-		// Return our connection (since the connection handles everything itself)
-		return new Connection(this.ConnectionReferences, callback)
+		const connection = new Connection(
+			this.ConnectionReferences, callback, this.ConnectionRemoved
+		)
+		if (this.OnConnectionCountChanged) this.OnConnectionCountChanged(++this.ConnectionCount)
+		return connection
 	}
 
 	public Fire(...args: Parameters<P>) {

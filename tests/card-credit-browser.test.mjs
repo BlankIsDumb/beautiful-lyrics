@@ -147,7 +147,31 @@ test('mounted card: measured credit rows, fixed header, legacy collapse, live he
       check(current.bottom-previous.top>tallPort.clientHeight-16,'union is taller than usable viewport');
       near(current.top-tallPort.getBoundingClientRect().top,8,'oversized union falls back to active line at readable top');
       check(!host.querySelector('.BL-Attribution'),'renderer creates no old box');
-      view.Destroy();await settle();check(consumers.size===0,'renderer clock cleanup');
+      const panel=document.createElement('div');panel.style.cssText='width:760px;height:500px;overflow:auto';document.body.append(panel);panel.append(host);
+      const scrollTo=Element.prototype.scrollTo,writes=[];
+      Element.prototype.scrollTo=function(options){if(this===tallPort)writes.push(options);return scrollTo.call(this,options)};
+      try {
+        panel.scrollTop=800;await settle();
+        check(card.isConnected&&consumers.size===0,'clipped mounted card releases its clock');
+        const before=writes.length;
+        p.saveLayout('NowPlaying',{...p.getLayout('NowPlaying'),transition:'smooth',before:1});
+        await tick(21.5);
+        check(writes.length===before&&tallGroups[5].classList.contains('ContextExcluded'),'hidden seek and settings do not move or change context');
+        panel.scrollTop=0;await settle();
+        check(consumers.size===1&&tallGroups[5].querySelector('.Vocals').classList.contains('Active'),'reveal resumes at the current line');
+        check(!tallGroups[4].inert&&tallGroups[3].inert,'reveal applies latest context settings');
+        check(writes.length>before&&writes.slice(before).every(write=>write.behavior==='instant'),'reveal snaps even with Smooth follow');
+        panel.scrollTop=800;await settle();
+        check(consumers.size===0,'second hide releases the subscription');
+        const oldCard=card,next=source();
+        next.Content[7].Text='Replacement song line';time=29.5;
+        card=await mount(next);
+        check(!oldCard.isConnected&&consumers.size===0,'song change remounts the clipped card without keeping a clock');
+        panel.scrollTop=0;await settle();
+        check(consumers.size===1&&card.querySelector('.Vocals.Active')?.textContent.includes('Replacement song line'),'reveal uses the replacement song and current clock');
+        panel.scrollTop=800;await settle();
+        view.Destroy();panel.scrollTop=0;await settle();check(consumers.size===0,'destroy while hidden cannot resubscribe');
+      } finally {Element.prototype.scrollTo=scrollTo;panel.remove()}
       jelTestComplete('CARD_CREDIT_PASS');
     }catch(error){jelTestComplete('CARD_CREDIT_FAIL: '+error.stack)}finally{view?.Destroy();host.remove()}
   })();`;

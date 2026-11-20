@@ -69,11 +69,25 @@ export default class CardView implements Giveable {
     const lyricsContainer = this.Maid.Give(CreateElement<HTMLDivElement>(LyricsContainer))
     const content = lyricsContainer.querySelector<HTMLDivElement>(".ContentContainer")!
     this.Container.append(lyricsContainer)
-    this.Maid.Give(new LyricsRenderer(content, SongLyrics!,
+    const renderer = this.Maid.Give(new LyricsRenderer(content, SongLyrics!,
       SongLyrics!.RomanizedLanguage === undefined ? false : PresentationSettings.isRomanized("NowPlaying", SongLyrics!.RomanizedLanguage),
       "NowPlaying", undefined, undefined, {surface:"Card"}), "LyricsRenderer")
-    this.Maid.Give(new BackgroundController(this.Container, {view:"NowPlaying", surface:"Card"}))
+    const background = this.Maid.Give(new BackgroundController(this.Container, {view:"NowPlaying", surface:"Card"}))
     insertAfter.after(this.Container)
+    // The collapsed rail can leave a sliver intersecting the viewport.
+    // Measure width separately so vertical scrolling can leave the card active.
+    const visibility = new IntersectionObserver(entries => {
+      if (this.Maid.IsDestroyed()) return
+      const entry = entries[entries.length - 1]
+      if (!entry) return
+      const {boundingClientRect, intersectionRect, isIntersecting} = entry
+      const onScreen = isIntersecting && boundingClientRect.width > 0
+        && intersectionRect.height > 0 && intersectionRect.width >= 0.5 * boundingClientRect.width
+      renderer.SetOnScreen(onScreen)
+      background.SetOnScreen(onScreen)
+    }, {root:null, threshold:Array.from({length:21}, (_, index) => index / 20)})
+    this.Maid.Give(() => visibility.disconnect())
+    visibility.observe(this.Container)
     fitCredit()
   }
 

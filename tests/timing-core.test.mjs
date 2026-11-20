@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import path from 'node:path';
 
@@ -158,13 +159,14 @@ test('signed shared/view offsets invert seek, clamp transport only and persist w
 
 // Exercise the actual renderer orchestration with narrow host/visual substitutes.
 // No Spotify, real storage, source lookups or actual client's DOM is involved.
-test('renderer wires indexed work, true spring settling, paused offsets, inverse clicks and disposal', async () => {
+test('renderer wires indexed work, true spring settling, paused offsets, inverse clicks and disposal', async t => {
   const harness = { visuals: [], cues: [], scrollers: [], pending: new Set() };
   globalThis.__timingHarness = harness;
   class Element {
     classList = { add() {}, toggle() {}, contains() {return false} };
     style = {getPropertyValue(){return ""},setProperty(){},removeProperty(){}};
     attributes = new Map();
+    inert = false;
     setAttribute(key,value){this.attributes.set(key,value)} removeAttribute(key){this.attributes.delete(key)}
     hasAttribute(key){return this.attributes.has(key)} getAttribute(key){return this.attributes.get(key)??null}
     addEventListener(){} removeEventListener(){}
@@ -190,7 +192,7 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
       export function OnPreRender(callback){const set=globalThis.__timingHarness.pending;set.add(callback);return ()=>set.delete(callback)}`,
     'scroller-stub': `export class LyricsScroller {
       forced=[]; ended=[]; constructor(){globalThis.__timingHarness.scrollers.push(this)}
-      IsBrowsing(){return false} SetProfile(){} RefreshLayout(){} SetBlurEnabled(){} RefreshAnnotationLayout(){this.annotationRefreshes=(this.annotationRefreshes||0)+1} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(value){this.forced.push(value)} Destroy(){this.destroyed=true}
+      IsBrowsing(){return false} SetProfile(){} SetOnScreen(visible){this.visible=visible} RefreshLayout(){} SetBlurEnabled(){} RefreshAnnotationLayout(){this.annotationRefreshes=(this.annotationRefreshes||0)+1} RefreshCueLayout(){this.cueRefreshes=(this.cueRefreshes||0)+1} SetLyricsEnded(value){this.ended.push(value)} ForceToActive(...args){this.forced.push(args)} Destroy(){this.destroyed=true}
     }`,
     'controller-stub': `export class VocalController {
       calls=[];frames=0;renderChanges=0;RequestedTimeSkip={Connect:callback=>{this.click=callback}};
@@ -204,7 +206,7 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     }`,
     'cue-stub':`export class CueController {
       RequestedTimeSkip={Connect:()=>()=>{}};calls=[];
-      constructor(_root,cue,profile,_counters,gap){this.cue=cue;this.gap=gap;this.profile=profile;globalThis.__timingHarness.cues.push(this)}
+      constructor(root,cue,profile,_counters,gap){root.fixtureCue=true;this.cue=cue;this.gap=gap;this.profile=profile;globalThis.__timingHarness.cues.push(this)}
       GetDisplayInterval(){return this.profile.threshold>0&&this.gap>=this.profile.threshold?{...this.cue,StartTime:Math.max(this.cue.StartTime,this.cue.EndTime-(this.profile.lastSeconds??Infinity))}:undefined}
       Animate(){} SetSettings(profile,time){const before=this.GetDisplayInterval()?.StartTime;this.calls.push([profile,time]);this.profile=profile;return before!==this.GetDisplayInterval()?.StartTime}
       NeedsFrame(){return false} RequiresContinuous(){return false} Destroy(){}
@@ -397,6 +399,81 @@ test('renderer wires indexed work, true spring settling, paused offsets, inverse
     const mixedKana=jobs.at(-1);PresentationSettings.setRomanized('NowPlaying','Chinese',false);assert.equal(mixedChinese.released,true);assert.equal(mixedKana.released,false);mixed.Destroy();assert.equal(mixedKana.released,true);
 
     assert.equal(consumers.size, 0);
+
+    await t.test('card intersection parks clock, context and scroll until one instant reveal', () => {
+      const cardSource = readFileSync('Extension/Source/LyricViews/Card/mod.ts', 'utf8');
+      const start = cardSource.indexOf('const visibility = new IntersectionObserver');
+      const end = cardSource.indexOf('fitCredit()', start);
+      assert.ok(start >= 0 && end > start);
+      const observe = new Function('IntersectionObserver', 'renderer', 'background', cardSource.slice(start, end));
+      let observer;
+      class IntersectionObserver {
+        constructor(callback, options) { this.callback = callback; this.options = options; observer = this; }
+        observe(target) { this.target = target; }
+        disconnect() { this.disconnected = true; }
+        emit(width, height, cardWidth = 388, isIntersecting = true) {
+          this.callback([{ isIntersecting, boundingClientRect: { width: cardWidth, height: 426 }, intersectionRect: { width, height } }]);
+        }
+      }
+      const card = new Element(), redraw = [], cleanups = [];
+      let destroyed = false, subscriptions = 0;
+      const view = { Container: card, Maid: { Give: cleanup => cleanups.push(cleanup), IsDestroyed: () => destroyed } };
+      const gateClock = { ...clock, subscribe(fn) { subscriptions++; return clock.subscribe(fn); } };
+      time = 1.2;
+      const cardRenderer = new Renderer(card, lyrics, false, 'NowPlaying', gateClock);
+      const visual = harness.visuals.at(-96), cardScroller = harness.scrollers.at(-1);
+      const rows = card.children[0].children[0].children.filter(row => !row.fixtureCue);
+      observe.call(view, IntersectionObserver, cardRenderer, { SetOnScreen: value => redraw.push(value) });
+      assert.equal(observer.target, card);
+      assert.deepEqual(observer.options, {
+        root: null,
+        threshold: [0, .05, .1, .15, .2, .25, .3, .35, .4, .45, .5, .55, .6, .65, .7, .75, .8, .85, .9, .95, 1],
+      });
+      assert.equal(consumers.size, 1, 'initially visible');
+      observer.emit(388, 334);
+      assert.equal(consumers.size, 1, 'vertical clipping keeps the clock subscribed');
+      const queued = [...harness.pending][0];
+      observer.emit(24, 334);
+      assert.equal(consumers.size, 0, 'the measured 24 px sliver is off screen');
+      observer.emit(388, 0);
+      assert.equal(consumers.size, 0, 'a full-width intersection with zero height is off screen');
+      observer.emit(0, 334, 0);
+      assert.equal(consumers.size, 0, 'a zero-width card is off screen');
+      assert.equal(harness.pending.size, 0);
+      assert.equal(cardScroller.visible, false);
+      time = 4.5;
+      TimingSettings.save({ Shared: .25, NowPlaying: .25, FullLyrics: 0 });
+      const profile = PresentationSettings.getRendering('NowPlaying', 'Line');
+      PresentationSettings.saveRendering('NowPlaying', 'Line', { ...profile, glow: !profile.glow });
+      queued();
+      assert.equal(visual.calls.length, 0);
+      assert.equal(visual.renderChanges, 0);
+      assert.equal(cardScroller.forced.length, 0);
+      assert.equal(rows[3].inert, false);
+      observer.emit(193, 426);
+      assert.equal(consumers.size, 0, 'an expanding card under half width is off screen');
+      observer.emit(194, 426);
+      assert.equal(consumers.size, 1, 'half the card width is enough to reveal');
+      observer.emit(388, 334);
+      assert.equal(consumers.size, 1);
+      assert.equal(subscriptions, 2);
+      assert.equal(visual.renderChanges, 1);
+      assert.equal(visual.calls.length, 1);
+      assert.deepEqual(visual.calls[0], [4, 0, true]);
+      assert.deepEqual(cardScroller.forced, [[undefined, true]]);
+      assert.equal(cardScroller.visible, true);
+      assert.equal(rows[4].inert, false);
+      assert.equal(rows[3].inert, true);
+      assert.equal(rows[3].hasAttribute('aria-hidden'), false);
+      observer.emit(0, 0, 388, false);
+      cardRenderer.Destroy();
+      destroyed = true;
+      for (const cleanup of cleanups) cleanup();
+      observer.emit(388, 334);
+      assert.equal(observer.disconnected, true);
+      assert.equal(consumers.size, 0);
+      assert.deepEqual(redraw, [true, false, false, false, false, true, true, false]);
+    });
 
   } finally {
     Object.assign(globalThis, previous);

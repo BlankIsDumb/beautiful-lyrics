@@ -483,6 +483,7 @@ export default class PageView implements Giveable {
 
 												// Update our base class (allows us to be visible always or not)
 												addedStatus.classList.toggle("Active", alreadyAdded)
+												playlistCoverContainer.classList.toggle("HasAddedTrack", alreadyAdded)
 
 												/*
 													On the initial call, we already have details requested.
@@ -1177,10 +1178,12 @@ export default class PageView implements Giveable {
 					},
 					LeftPiece: {
 						Element: leftHeartPiece,
+						AnimationGroup: filledHeart,
 						PropertyValues: { ...TargetPropertyValues.LeftPiece }
 					},
 					RightPiece: {
 						Element: rightHeartPiece,
+						AnimationGroup: filledHeart,
 						PropertyValues: { ...TargetPropertyValues.RightPiece }
 					},
 				}
@@ -1233,6 +1236,7 @@ export default class PageView implements Giveable {
 					this.Maid.Clean("LikeStateLoading")
 					loading.classList.toggle("Full", false)
 					loading.classList.toggle("Outline", false)
+					likeStateContainer.classList.remove("HeartLoading")
 
 					// Update our last states (used for certain task conditions)
 					if (lastAnimationStates.length === 2) {
@@ -1258,7 +1262,10 @@ export default class PageView implements Giveable {
 							Maid: this.Maid,
 							LastAnimationStates: lastAnimationStates,
 							LikeStateUpdateShimmerAppearsAfter,
-							Loading: loading
+							ShowLoading: (shape: "Full" | "Outline") => {
+								loading.classList.add(shape)
+								likeStateContainer.classList.add("HeartLoading")
+							}
 						},
 
 						// We want to update to the correct state after our switch animation finishes
@@ -1439,7 +1446,23 @@ export default class PageView implements Giveable {
 			}
 
 			// Handle our timeline
-			const timelineSlider = this.Maid.Give(new Slider(timelineBar, undefined, 1))
+			let timestampText: Text | undefined
+			let lastTimestampLabel: string | undefined
+			const WriteTimestampLabel = (label: string, force = false) => {
+				if (!force && label === lastTimestampLabel) return
+				if (!timestampText) {
+					const child = timelineTimestamp.firstChild
+					timestampText = child instanceof Text ? child : timelineTimestamp.appendChild(document.createTextNode(""))
+				}
+				timestampText.data = label
+				lastTimestampLabel = label
+			}
+			const RewriteTimestampLabel = () => {
+				if (Song && Song.Type !== "DJ" && lastTimestampLabel !== undefined) WriteTimestampLabel(lastTimestampLabel, true)
+			}
+			const timelineSlider = this.Maid.Give(new Slider(timelineBar, undefined, 1, 0, {
+				pixelThreshold: true, onResize: RewriteTimestampLabel
+			}))
 			{
 				// Handle hiding our timeline when we're in DJ mode
 				const CheckForDJ = () => timelineBar.style.display = (Song?.Type === "DJ" ? "none" : "")
@@ -1449,13 +1472,13 @@ export default class PageView implements Giveable {
 				// Handle updating our slider timestamp to its active position
 				timelineSlider.ProgressChanged.Connect(
 					(progress, changedByUser) => {
-						if (changedByUser && (Song!.Type !== "DJ")) {
+						if (changedByUser && Song && (Song.Type !== "DJ")) {
 							const minutes = Math.floor(progress / 60)
 							const seconds = Math.floor(progress % 60)
-							timelineTimestamp.textContent = `${
-								(Song!.Duration >= 600) ? minutes.toString().padStart(2, "0")
+							WriteTimestampLabel(`${
+								(Song.Duration >= 600) ? minutes.toString().padStart(2, "0")
 								: minutes
-							}:${seconds.toString().padStart(2, "0")}`
+							}:${seconds.toString().padStart(2, "0")}`)
 						}
 					}
 				)
@@ -1465,6 +1488,7 @@ export default class PageView implements Giveable {
 				let seekApprovedDeltaDirection: (number | undefined) // Helps us determine if we're at a good seek-point
 				timelineSlider.IsActiveChanged.Connect(
 					(isActive, _, seekToTimestamp) => {
+						if (!isActive) RewriteTimestampLabel()
 						if ((isActive === false) && (seekToTimestamp !== undefined)) {
 							newSeekTimestamp = seekToTimestamp
 							seekApprovedDeltaDirection = ((Timestamp < seekToTimestamp) ? 1 : -1)
@@ -1484,14 +1508,15 @@ export default class PageView implements Giveable {
 						newSeekTimestamp = undefined
 						seekApprovedDeltaDirection = undefined
 
-						// Update our timeline immediately
-						timelineSlider.SetProgress(Timestamp, Song.Duration)
-	
 						// Update our duration time-label
 						timelineLength.textContent = GetDurationString()
 	
 						// Update our time-labels
-						const UpdateTimestampLabel = () => {
+						let previousTimestamp: number
+						const UpdateTimestampLabel = (deltaTime: number, skipped?: true) => {
+							// Running position corrections keep their frame delta. A
+							// jump differs from the clock's normal Timestamp + delta.
+							let force = skipped || Timestamp !== previousTimestamp + deltaTime
 							// FIRST, check if there is a seek point we need to be at/near (prevents flickering)
 							if (newSeekTimestamp !== undefined) {
 								const timestampDelta = (Timestamp - newSeekTimestamp)
@@ -1501,6 +1526,7 @@ export default class PageView implements Giveable {
 								) {
 									newSeekTimestamp = undefined
 									seekApprovedDeltaDirection = undefined
+									force = true
 								} else {
 									return
 								}
@@ -1508,12 +1534,16 @@ export default class PageView implements Giveable {
 
 							// Don't bother updating to our timestamp IF we're actively using the slider
 							if (timelineSlider.IsActive() === false) {
-								timelineTimestamp.textContent = GetTimestampString()
-								timelineSlider.SetProgress(Timestamp)
+								WriteTimestampLabel(GetTimestampString(), force)
+								timelineSlider.SetProgress(Timestamp, undefined, force)
+								previousTimestamp = Timestamp
 							}
 						}
-						UpdateTimestampLabel()
+						// The first connection can synchronously seed Timestamp.
 						this.Maid.Give(TimeStepped.Connect(UpdateTimestampLabel), "TimelineUpdater")
+						timelineSlider.SetProgress(Timestamp, Song.Duration)
+						WriteTimestampLabel(GetTimestampString(), true)
+						previousTimestamp = Timestamp
 					}
 				}
 				UpdateTimelineToSong()

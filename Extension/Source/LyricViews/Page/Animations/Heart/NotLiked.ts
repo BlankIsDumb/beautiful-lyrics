@@ -50,7 +50,7 @@ export const NotLikedAnimationState: AnimationStates<AnimationMetadata> = {
 		],
 		OnCompletion: (metadata) => (
 			metadata.Maid.Give(
-				Timeout(metadata.LikeStateUpdateShimmerAppearsAfter, () => metadata.Loading.classList.toggle("Outline", true)),
+				Timeout(metadata.LikeStateUpdateShimmerAppearsAfter, () => metadata.ShowLoading("Outline")),
 				"LikeStateLoading"
 			)
 		)

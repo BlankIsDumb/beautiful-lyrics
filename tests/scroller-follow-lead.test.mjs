@@ -15,7 +15,7 @@ function setup(definitions,lead=1,options={}) {
     const vocal={IsActive:()=>voice.active===true};bounds.set(vocal,{top:voice.top,bottom:voice.bottom,start:voice.start??group,group,voice:index});return vocal;
   })}));
   const targets=[],scroller=Object.create(LyricsScroller.prototype);
-  Object.assign(scroller,{LyricsAreSynced:true,Profile:{follow:true,anchor:0,resume:'classic'},GeometryValid:true,LayoutQueued:false,
+  Object.assign(scroller,{LyricsAreSynced:true,OnScreen:true,Profile:{follow:true,anchor:0,resume:'classic'},GeometryValid:true,LayoutQueued:false,
     VocalGroups:groups,VoiceBounds:bounds,NavigationPending:false,AutoScrollBlocked:false,Scroller:{isScrolling:false},
     ScrollerObject:{scrollTop:0,clientHeight:100,scrollHeight:1100},options:{surface:'Card',followLead:()=>lead,...options},
     ScrollTo:target=>targets.push(target),ToggleAutoScrollBlock(value){this.AutoScrollBlocked=value}});

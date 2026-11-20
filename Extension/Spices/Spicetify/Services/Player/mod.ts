@@ -38,6 +38,8 @@ PlayerMaid.Give(() => lyricRequestGate.dispose())
 
 // Create our signals/expose events
 type TimeStepped = (deltaTime: number, skipped?: true) => void
+let timeSteppedSubscribers = 0
+let UpdateClockMode: (() => void) | undefined
 const [
 	SongChangedSignal, SongContextChangedSignal,
 	SongDetailsLoadedSignal, SongLyricsLoadedSignal,
@@ -47,7 +49,10 @@ const [
 ] = PlayerMaid.GiveItems(
 	new Signal(), new Signal(),
 	new Signal(), new Signal(),
-	new Signal(), new Signal<TimeStepped>(),
+	new Signal(), new Signal<TimeStepped>(count => {
+		timeSteppedSubscribers = count
+		UpdateClockMode?.()
+	}),
 	new Signal(), new Signal(),
 	new Signal()
 )
@@ -697,47 +702,43 @@ export const PlayerReady = OnSpotifyReady.then(
 		// Handle timestamp updates
 		{
 			// Handle position syncing
-			type SyncedPostiion = ({ StartedSyncAt?: number; Position: number; })
-			let syncedPosition: (SyncedPostiion | undefined)
+			type SyncedPosition = ({ StartedSyncAt?: number; Position: number; })
+			let syncedPosition: (SyncedPosition | undefined)
 
-			const RequestPositionSync = async () => {
-				const startedAt = performance.now()
-				if (SpotifyPlatform.PlaybackAPI._isLocal) {
-					const { position } = await (SpotifyPlatform.PlayerAPI._contextPlayer.getPositionState({}) as Promise<{position: bigint}>)
-					syncedPosition = { StartedSyncAt: startedAt, Position: Number(position) }
-				} else {
-					// Connect updates this snapshot through its state stream. The local
-					// device flag is also false during handoff, so reading the clock
-					// here must never send a playback command.
-					const state = SpotifyPlatform.PlayerAPI._state
-					syncedPosition = undefined
-					if (state && Number.isFinite(state.positionAsOfTimestamp)) {
-						if (!IsPlaying) {
-							syncedPosition = { Position: state.positionAsOfTimestamp }
-						} else if (Number.isFinite(state.timestamp) && state.timestamp > 0) {
-							syncedPosition = {
-								StartedSyncAt: startedAt,
-								Position: state.positionAsOfTimestamp + (Date.now() - state.timestamp)
-							}
+			const ReadConnectPosition = (startedAt: number): SyncedPosition | undefined => {
+				const state = SpotifyPlatform.PlayerAPI._state
+				if (state && Number.isFinite(state.positionAsOfTimestamp)) {
+					if (!IsPlaying) {
+						return { Position: state.positionAsOfTimestamp }
+					} else if (Number.isFinite(state.timestamp) && state.timestamp > 0) {
+						return {
+							StartedSyncAt: startedAt,
+							Position: state.positionAsOfTimestamp + (Date.now() - state.timestamp)
 						}
 					}
 				}
+			}
 
-				PlayerMaid.Give(Timeout(1 / 30, RequestPositionSync), "TimestampPositionSync")
+			const RequestPositionSync = async (): Promise<SyncedPosition | undefined> => {
+				const startedAt = performance.now()
+				if (SpotifyPlatform.PlaybackAPI._isLocal) {
+					const { position } = await (SpotifyPlatform.PlayerAPI._contextPlayer.getPositionState({}) as Promise<{position: bigint}>)
+					return { StartedSyncAt: startedAt, Position: Number(position) }
+				}
+
+				// Connect updates this snapshot through its state stream. The local
+				// device flag is also false during handoff, so reading the clock
+				// here must never send a playback command.
+				return ReadConnectPosition(startedAt)
 			}
 
 			// Handle frame updating
-			let lastUpdatedAt = performance.now()
+			let lastUpdatedAt = 0
 			const Update = () => {
-				// Make sure we have an update
-				if (lastUpdatedAt === undefined) {
-					lastUpdatedAt = performance.now()
-					return PlayerMaid.Give(Defer(Update), "Timestep")
-				}
-
 				// Determine our frame variables
 				const updatedAt = performance.now()
 				const deltaTime = ((updatedAt - lastUpdatedAt) / 1000)
+				lastUpdatedAt = updatedAt
 
 				// Determine if we can update our timestamp at all
 				if (Song !== undefined) {
@@ -780,16 +781,61 @@ export const PlayerReady = OnSpotifyReady.then(
 						TimeSteppedSignal.Fire(fireDeltaTime, ((fireDeltaTime === 0) || undefined))
 					}
 				}
-
-				// Update our monitor state
-				lastUpdatedAt = updatedAt
-
-				// Schedule us for another update
-				PlayerMaid.Give(Defer(Update), "Timestep")
 			}
-			
-			// Finally, sync our position THEN update
-			RequestPositionSync().then(Update)
+
+			// The playback service can outlive every view. Only live clock
+			// subscribers keep the frame loop or the position sampler running.
+			let mode: "Idle" | "Running" | "PausedWatch" = "Idle"
+			let generation = 0
+			UpdateClockMode = () => {
+				const next = timeSteppedSubscribers === 0 ? "Idle" : IsPlaying ? "Running" : "PausedWatch"
+				if (next === mode) return
+				const wasIdle = mode === "Idle"
+				mode = next
+				const currentGeneration = ++generation
+				PlayerMaid.Clean("Timestep")
+				PlayerMaid.Clean("TimestampPositionSync")
+				syncedPosition = undefined
+				if (next === "Idle") return
+
+				lastUpdatedAt = performance.now()
+				if (wasIdle && Song !== undefined) {
+					// Connect returns before the native position promise can settle.
+					// Seed synchronous readers (including a revealing renderer) now.
+					const position = SpotifyPlatform.PlaybackAPI._isLocal
+						? SpotifyPlayer.getProgress()
+						: ReadConnectPosition(lastUpdatedAt)?.Position
+					if (position !== undefined && Number.isFinite(position)) Timestamp = position / 1000
+				}
+
+				const ScheduleFrame = () => {
+					PlayerMaid.Give(Defer(() => {
+						Update()
+						// A listener may disconnect the last connection during Fire.
+						if (currentGeneration === generation) ScheduleFrame()
+					}), "Timestep")
+				}
+				const Sync = async () => {
+					// An in-flight native read cannot be cancelled. Drop its result
+					// when demand or playback mode changed while it was pending.
+					let position: SyncedPosition | undefined
+					try {
+						position = await RequestPositionSync()
+					} catch {
+						// A failed native read leaves interpolation running until the next sample.
+					}
+					if (currentGeneration !== generation) return
+					syncedPosition = position
+					if (next === "PausedWatch") Update()
+					if (currentGeneration === generation) {
+						PlayerMaid.Give(Timeout(next === "Running" ? 1 / 30 : 0.1, Sync), "TimestampPositionSync")
+					}
+				}
+				void Sync()
+				if (next === "Running") ScheduleFrame()
+			}
+			PlayerMaid.Give(IsPlayingChanged.Connect(UpdateClockMode))
+			UpdateClockMode()
 		}
 	}
 )

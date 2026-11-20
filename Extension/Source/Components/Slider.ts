@@ -6,6 +6,8 @@ import { Defer } from "@Universal/Modules/Scheduler.ts"
 // Components
 import Button from "./Button.ts"
 
+let activeSliderCount = 0
+
 // Progress Calculation Helper
 const CalculateProgressFromMouse = (bar: HTMLDivElement, mouseEvent: MouseEvent) => {
 	const barBounds = bar.getBoundingClientRect()
@@ -32,7 +34,8 @@ export default class Slider implements Giveable {
 		bar: HTMLDivElement,
 		maximumValue: number = 1,
 		userValueChangeStep?: number,
-		minimumValue: number = 0
+		minimumValue: number = 0,
+		options: { pixelThreshold?: boolean; onResize?: () => void } = {}
 	) {
 		// Determine what we should use as our Hitbox
 		const hitbox = (bar.querySelector<HTMLDivElement>(".Hitbox") ?? bar)
@@ -44,6 +47,38 @@ export default class Slider implements Giveable {
 			new Signal<(progress: number, changedByUser?: true) => void>()
 		)
 		this.IsActiveChanged = isActiveChanged.GetEvent(), this.ProgressChanged = progressChanged.GetEvent()
+
+		let progress = 0
+		let lastVisualProgress: number | undefined
+		let visualThreshold = 0
+		const WriteVisualProgress = (force = false) => {
+			const normalizedProgress = (progress - minimumValue) / (maximumValue - minimumValue)
+			// Compare against the last painted position so subpixel ticks accumulate.
+			if (!force && lastVisualProgress !== undefined && Math.abs(normalizedProgress - lastVisualProgress) < visualThreshold) return
+			bar.style.setProperty("--SliderProgress", normalizedProgress.toString())
+			lastVisualProgress = normalizedProgress
+		}
+		if (options.pixelThreshold) {
+			const observer = this.Maid.Give(new ResizeObserver(([entry]) => {
+				const width = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width
+				visualThreshold = width > 0 ? 0.5 / (width * globalThis.devicePixelRatio) : 0
+				// The first SetProgress owns initialization, even if RO runs first.
+				if (lastVisualProgress !== undefined) WriteVisualProgress(true)
+				options.onResize?.()
+			}))
+			observer.observe(bar, { box: "border-box" })
+		}
+
+		// Keep the document cursor until every active slider has released it.
+		let barActive = false
+		const SetBarActive = (isActive: boolean) => {
+			if (barActive === isActive) return
+			barActive = isActive
+			bar.classList.toggle("Active", isActive)
+			activeSliderCount += isActive ? 1 : -1
+			document.body.classList.toggle("JEL-SliderActive", activeSliderCount > 0)
+		}
+		this.Maid.Give(() => SetBarActive(false))
 
 		// Store our active/mouse-event state and handle cancelling it
 		let lastActiveMouseEvent: (MouseEvent | undefined)
@@ -58,7 +93,8 @@ export default class Slider implements Giveable {
 			this.Maid.Clean("MouseDrag")
 
 			// Remove our class
-			bar.classList.toggle("Active", false)
+			SetBarActive(false)
+			if (options.pixelThreshold) WriteVisualProgress(true)
 
 			// Set the inactive state
 			active = false
@@ -67,18 +103,17 @@ export default class Slider implements Giveable {
 		}
 
 		// Store our progress and state methods
-		let progress = 0
-		const SetProgress = (newProgress: number, changedByUser?: true) => {
+		const SetProgress = (newProgress: number, changedByUser?: true, forceVisual?: boolean) => {
 			progress = (
 				((userValueChangeStep === undefined) || (changedByUser === undefined)) ? newProgress
 				: (Math.floor(newProgress / userValueChangeStep) * userValueChangeStep)
 			)
-			bar.style.setProperty("--SliderProgress", ((progress - minimumValue) / (maximumValue - minimumValue)).toString())
+			WriteVisualProgress(forceVisual)
 			progressChanged.Fire(progress, changedByUser)
 		}
 		this.IsActive = () => active
 		this.GetProgress = () => progress
-		this.SetProgress = (desiredProgress: number, newMaximumValue?: number) => {
+		this.SetProgress = (desiredProgress: number, newMaximumValue?: number, forceVisual = false) => {
 			if (active) {
 				CancelActiveState(undefined, true)
 			}
@@ -87,7 +122,7 @@ export default class Slider implements Giveable {
 				maximumValue = newMaximumValue
 			}
 
-			SetProgress(Math.max(minimumValue, Math.min(desiredProgress, maximumValue)))
+			SetProgress(Math.max(minimumValue, Math.min(desiredProgress, maximumValue)), undefined, forceVisual || newMaximumValue !== undefined)
 		}
 
 		// Handle bar interactions (only need the bar since most of the handle is on it)
@@ -112,7 +147,8 @@ export default class Slider implements Giveable {
 					isActiveChanged.Fire(true, mouseEvent, progress)
 
 					// Update our class-list
-					bar.classList.toggle("Active", true)
+					if (this.Maid.IsDestroyed()) return
+					SetBarActive(true)
 
 					// Immediately set our progress
 					UpdateProgressToMouse(mouseEvent)

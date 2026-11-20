@@ -9,7 +9,7 @@ export type AnimationMetadata = {
 	Maid: Maid,
 	LastAnimationStates: AnimationState[],
 	LikeStateUpdateShimmerAppearsAfter: number,
-	Loading: HTMLDivElement
+	ShowLoading: (shape: "Full" | "Outline") => void
 }
 
 export const TargetPropertyValues = {

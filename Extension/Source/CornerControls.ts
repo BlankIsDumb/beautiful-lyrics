@@ -247,11 +247,15 @@ export function SetupCornerControls(lyricsArea: HTMLElement, maid: Maid, openAll
   const syncQuick = () => {
     syncOffset(); syncSize();
     const readOnly = PresentationSettings.isReadOnly(), language = SongLyrics?.RomanizedLanguage;
-    conversions.disabled = readOnly || !language;
+    const setDisabled = (control: HTMLInputElement | HTMLSelectElement, disabled: boolean) => {
+      control.disabled = disabled;
+      control.parentElement!.classList.toggle("BL-QuickDisabled", disabled);
+    };
+    setDisabled(conversions, readOnly || !language);
     conversions.checked = !!language && PresentationSettings.isRomanized("FullLyrics", language);
-    follow.disabled = readOnly || SongLyrics?.Type === "Static";
+    setDisabled(follow, readOnly || SongLyrics?.Type === "Static");
     follow.checked = PresentationSettings.getLayout("FullLyrics").follow;
-    background.disabled = readOnly; background.value = PresentationSettings.getBackground("FullLyrics").mode;
+    setDisabled(background, readOnly); background.value = PresentationSettings.getBackground("FullLyrics").mode;
   };
   const changed = () => { updateProviders(); if (active === quick) syncQuick(); position(); };
   // Signals during clearing belong to the old lookup; only loading ends here.

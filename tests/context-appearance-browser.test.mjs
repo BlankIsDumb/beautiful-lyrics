@@ -40,7 +40,7 @@ test('muted context preserves real Word/Line/ruby/Above geometry, exclusions, fo
    set({blurEnabled:true,blur:2,darkeningEnabled:true,darkening:60});check(getComputedStyle(ghost).filter==='blur(2px) brightness(0.4)','effects composed once on group');
    ghost.focus();await frame();check(Number(getComputedStyle(ghost).opacity)>=.6&&ghost.classList.contains('ContextExcluded'),'focus lightens without eligibility');
    set({opacity:80});check(Number(getComputedStyle(ghost).opacity)>=.8,'focus never reduces stronger opacity');set({opacity:0});await frame();check(!ghost.inert&&!ghost.hasAttribute('aria-hidden')&&Number(getComputedStyle(ghost).opacity)>=.6,'zero-opacity focused safety');
-   groups[3].focus();await frame();check(ghost.inert&&ghost.getAttribute('aria-hidden')==='true'&&getComputedStyle(ghost).visibility==='hidden','zero opacity removes unfocused hit target');
+   groups[3].focus();await frame();check(ghost.inert&&!ghost.hasAttribute('aria-hidden')&&getComputedStyle(ghost).visibility==='hidden','zero opacity removes unfocused hit target via inert');
    groups[3].blur();set({opacity:35});await frame();let count=seeks.length;asyncSeek=true;ghost.querySelector('.Vocals').click();await frame();check(seeks.length===count+1&&seeks.at(-1)===5,'child click one async seek');tick(5);await frame();check(!ghost.classList.contains('ContextExcluded'),'clicked source revealed at target');asyncSeek=false;
    tick(13.5);await frame();count=seeks.length;groups[0].click();await frame();check(seeks.length===count+1&&seeks.at(-1)===1,'native button own click one seek');
    tick(13.5);await frame();groups[0].style.filter='sepia(1)';set({mode:'hide'});check(groups[0].style.filter==='sepia(1)','leaving treatment preserves unrelated inline filter');groups[0].style.removeProperty('filter');check(groups[0].inert&&!groups[0].classList.contains('ContextMuted'),'Hide restores old interaction');
@@ -82,7 +82,7 @@ test('muted context preserves real Word/Line/ruby/Above geometry, exclusions, fo
    const verify=(active,label)=>{for(const [i,g] of groups.entries()){
     const d=Math.abs(i-active);if(d===0)continue;
     if(d<=4)check(g.classList.contains('ContextMuted')&&prop(g,'--jel-context-opacity')===expected[d-1]&&prop(g,'--jel-context-hover-opacity')===offValues[0][0]&&prop(g,'--jel-context-filter')===offValues[0][1]&&!g.inert,label+' distance '+d+' slot '+i+' '+prop(g,'--jel-context-opacity'));
-    else check(!g.classList.contains('ContextMuted')&&g.inert&&g.getAttribute('aria-hidden')==='true'&&!prop(g,'--jel-context-opacity'),label+' beyond fade slot '+i);
+    else check(!g.classList.contains('ContextMuted')&&g.inert&&!g.hasAttribute('aria-hidden')&&!prop(g,'--jel-context-opacity'),label+' beyond fade slot '+i);
    }};
    const snapshot=()=>groups.map((g,i)=>g.classList.contains('ContextMuted')+':'+prop(g,'--jel-context-opacity'));
    if(view==='FullLyrics')verify(10,'fade on');

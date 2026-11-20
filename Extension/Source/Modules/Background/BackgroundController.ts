@@ -26,6 +26,7 @@ export default class BackgroundController implements Giveable {
 	private Lost = false
 	private Failed = false
 	private Destroyed = false
+	private OnScreen = true
 
 	constructor(private readonly Element: HTMLElement, private readonly Options: { view: PresentationView; surface: Surface }) {
 		this.Profile = PresentationSettings.getBackground(Options.view)
@@ -48,7 +49,15 @@ export default class BackgroundController implements Giveable {
 	}
 
 	private IsAnimating() {
-		return this.Profile.mode === "animated" && (this.Profile.paused === "animate" || IsPlaying)
+		return this.OnScreen && this.Profile.mode === "animated" && (this.Profile.paused === "animate" || IsPlaying)
+	}
+
+	public SetOnScreen(onScreen: boolean) {
+		if (this.Options.surface !== "Card" || this.Destroyed || this.OnScreen === onScreen) return
+		this.OnScreen = onScreen
+		if (!onScreen) this.Stop()
+		// Retain the renderer and any dirty resize/artwork state while clipped.
+		else if (this.Dirty || this.IsAnimating()) this.RequestDraw()
 	}
 
 	private Activate() {
@@ -182,12 +191,12 @@ export default class BackgroundController implements Giveable {
 	private RequestDraw() {
 		if (!this.Renderer || this.Lost || this.Destroyed) return
 		this.Dirty = true
-		if (this.Frame === undefined) this.Frame = requestAnimationFrame(now => this.Draw(now))
+		if (this.OnScreen && this.Frame === undefined) this.Frame = requestAnimationFrame(now => this.Draw(now))
 	}
 
 	private Draw(now: number) {
 		this.Frame = undefined
-		if (!this.Renderer || !this.Uniforms || this.Lost || this.Destroyed) return
+		if (!this.OnScreen || !this.Renderer || !this.Uniforms || this.Lost || this.Destroyed) return
 		const animated = this.IsAnimating()
 		const capDue = animated && ShouldDraw(now, this.LastDraw, this.Profile.fps)
 		if (this.Dirty || capDue) {

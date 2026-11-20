@@ -1,6 +1,6 @@
 # Just Enough Lyrics local build notes
 
-Current local build is **5.1.0-local.42**. See [VALIDATION.md](VALIDATION.md) for
+Current local build is **5.1.0-local.43**. See [VALIDATION.md](VALIDATION.md) for
 build and installation evidence.
 
 ## Where things are

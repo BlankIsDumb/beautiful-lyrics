@@ -39,6 +39,7 @@ import "../Stylings/Lyrics.scss"
 export default class LyricsRenderer implements Giveable {
 	// Private Properties
 	private Maid: Maid = new Maid()
+	public readonly SetOnScreen: (visible: boolean) => void
 
 	// Constructor
 	constructor(
@@ -66,6 +67,7 @@ export default class LyricsRenderer implements Giveable {
 		const lyricsContainer = this.Maid.Give(document.createElement("div"))
 		lyricsContainer.classList.add("Lyrics")
         const surface=options.surface ?? (view === "NowPlaying" ? "Card" : "Contained")
+        let onScreen = true
         lyricsContainer.dataset.horizontalSurface=surface
 		scrollContainer.appendChild(lyricsContainer)
 
@@ -119,6 +121,9 @@ export default class LyricsRenderer implements Giveable {
                 groupStarts.push(row.StartTime)
             } else {
                 const group = lyricDocument.groups[sourceGroupIndex++]
+                // Context uses inert for focus and accessibility. Clear any
+                // inherited row markup once, outside the playback update path.
+                if (groupContainer.hasAttribute("aria-hidden")) groupContainer.removeAttribute("aria-hidden")
                 sourceSlots.push({ element: groupContainer, owners: group.voices.map(voice => voice.id) })
                 logicalElements.set(groupContainer,sourceGroupIndex-1)
                 if (group.oppositeAligned) groupContainer.classList.add("AlignedOpposite")
@@ -151,7 +156,7 @@ export default class LyricsRenderer implements Giveable {
         this.Maid.Give(RegisterTypography(view,lyricsContainer,surface))
         const scroller = this.Maid.Give(new LyricsScroller(scrollContainer, lyricsContainer, vocalGroups,
             lyricDocument.type !== "Static", rendering.blur, counters, { profile: layout,
-                browsing: () => { updateContext(); scheduler.update(contextTime, 0) }, measured: TypographyMeasured, surface, reservation: options.reservation,
+                browsing: () => refreshContext(), measured: TypographyMeasured, surface, reservation: options.reservation,
                 spacing:()=>PresentationSettings.getEffectiveHorizontalSpacing(surface),
                 followLead:()=>AutoLeadActive(view, PresentationSettings.getLayout(view)) ? 1 : 0,
                 navigationTargets:()=> { const [start,end]=context.getNavigationSpan();return sourceSlots.slice(start,end+1).map(slot=>slot.element) } }))
@@ -162,7 +167,7 @@ export default class LyricsRenderer implements Giveable {
             lyricDocument.groups.flatMap((group,index)=>group.voices.map(voice=>({index,start:voice.start,end:voice.end}))))
         let activeLogical: readonly number[] = [], contextTime = lyricTime(), contextSeek = true, contextKey = ""
         const updateContext = () => {
-            if (lyricDocument.type === "Static") return
+            if (!onScreen || lyricDocument.type === "Static") return
             const [start,end] = context.select(activeLogical,contextTime,contextSeek,layout,scroller.IsBrowsing())
             contextSeek = false
             // Segment boundaries normally retain the same source span. Do no
@@ -192,8 +197,6 @@ export default class LyricsRenderer implements Giveable {
                 const wasMuted=slot.element.classList.contains("ContextMuted")
                 if(wasMuted!==paintedMuted)slot.element.classList.toggle("ContextMuted",paintedMuted)
                 if(slot.element.inert===interactive)slot.element.inert=!interactive
-                if(interactive) { if(slot.element.hasAttribute("aria-hidden"))slot.element.removeAttribute("aria-hidden") }
-                else if(slot.element.getAttribute("aria-hidden")!=="true")slot.element.setAttribute("aria-hidden","true")
                 // Values live on each excluded group, never on an inherited root
                 // that would invalidate every timed glyph on source transitions.
                 if(paintedMuted || wasMuted) {
@@ -242,9 +245,39 @@ export default class LyricsRenderer implements Giveable {
         })
         let clickTarget: number | undefined
         let clickPendingAt = 0
+        const refreshContext = () => {
+            if (!onScreen) return
+            updateContext(); scheduler.update(contextTime, 0)
+        }
+        let subscribeClock: (() => void) | undefined
+        let snapClock: (() => void) | undefined
+        const pendingVisualUpdates = new Set<() => void>()
+        const updateVisuals = (apply: () => void) => {
+            if (onScreen) apply()
+            else pendingVisualUpdates.add(apply)
+        }
+        this.SetOnScreen = (visible: boolean) => {
+            if (surface !== "Card" || visible === onScreen || this.Maid.IsDestroyed()) return
+            if (!visible) {
+                onScreen = false
+                this.Maid.Clean("Clock")
+                this.Maid.Clean("InitialClockUpdate")
+                scroller.SetOnScreen(false)
+            } else {
+                // Subscribing seeds an idle player clock before applying the
+                // latest settings. Keep context/scroll parked until the snap.
+                subscribeClock?.()
+                for (const apply of pendingVisualUpdates) apply()
+                pendingVisualUpdates.clear()
+                onScreen = true
+                scroller.SetOnScreen(true)
+                snapClock?.()
+            }
+        }
         if (lyricDocument.type !== "Static") {
             let previousTime: number | undefined
-            const update = (deltaTime: number, skipped?: true) => {
+            const update = (deltaTime: number, skipped?: true, revealed?: true) => {
+                if (!onScreen) return
                 const timestamp = lyricTime()
                 const clickAcknowledged=clickTarget!==undefined&&Math.abs(timestamp-clickTarget)<.1
                 // Spotify's seek returns before its interpolated Timestamp
@@ -259,19 +292,22 @@ export default class LyricsRenderer implements Giveable {
                 previousTime = timestamp
                 scroller.SetLyricsEnded(timestamp >= lyricDocument.end)
                 if (immediate) {
-                    if (!clickAcknowledged) scroller.ForceToActive()
+                    if (revealed || !clickAcknowledged) scroller.ForceToActive(undefined, revealed)
                 }
             }
-            this.Maid.Give(clock.subscribe(update))
+            subscribeClock = () => this.Maid.Give(clock.subscribe(update), "Clock")
+            subscribeClock()
+            snapClock = () => update(0, true, true)
             this.Maid.Give(TimingSettings.subscribe(scopes => {
                 if (!scopes.includes("Shared") && !scopes.includes(view)) return
                 const nextOffset = TimingSettings.get("Shared") + TimingSettings.get(view)
                 if (nextOffset === effectiveOffset) return
                 effectiveOffset = nextOffset; update(0, true)
             }))
-            this.Maid.Give(OnPreRender(() => update(1 / 60, true)))
+            this.Maid.Give(OnPreRender(() => update(1 / 60, true)), "InitialClockUpdate")
             for (const [index, group] of vocalGroups.entries()) {
                 const navigate = () => {
+                    if (!onScreen) return
                     clickTarget = groupStarts[index]
                     clickPendingAt=performance.now()
                     clock.seek(TransportTime(groupStarts[index], ...offsets(), clock.duration()))
@@ -292,7 +328,7 @@ export default class LyricsRenderer implements Giveable {
         this.Maid.Give(PresentationSettings.subscribeContextAppearance(changedView=>{
             if(changedView!==view)return
             contextAppearance=PresentationSettings.getContextAppearance(view)
-            contextKey="";updateContext();scheduler.update(contextTime,0)
+            contextKey="";refreshContext()
         }))
         this.Maid.Give(PresentationSettings.subscribeLayout((changedView,fields) => {
             if(changedView!==view)return
@@ -303,7 +339,7 @@ export default class LyricsRenderer implements Giveable {
             // lead-affecting edits, even when paused with no further clock tick.
             const followLeadChanged = view === "NowPlaying" && fields.some(field=>["cardHeight","anchor","before"].includes(field))
             if(followLeadChanged || fields.some(field=>["primaryRatio","backingRatio","leadWeight","backingWeight","leading","groupGap"].includes(field))) scroller.RefreshLayout()
-            if(followLeadChanged || fields.some(field=>["before","after","follow"].includes(field))) { contextKey="";updateContext();scheduler.update(contextTime,0) }
+            if(followLeadChanged || fields.some(field=>["before","after","follow"].includes(field))) { contextKey="";refreshContext() }
         }))
         this.Maid.Give(PresentationSettings.subscribeHorizontalSpacing(changedSurface=> {
             if(changedSurface===surface)scroller.RefreshLayout()
@@ -311,14 +347,11 @@ export default class LyricsRenderer implements Giveable {
         this.Maid.Give(PresentationSettings.subscribeFontFamily(() => {
             ApplyLayoutStyle(lyricsContainer,layout,PresentationSettings.getFontFamily());scroller.RefreshLayout()
         }))
-        const focusChanged=()=>queueMicrotask(()=>{if(this.Maid.IsDestroyed())return;contextKey="";updateContext();scheduler.update(contextTime,0)})
+        const focusChanged=()=>queueMicrotask(()=>{if(this.Maid.IsDestroyed())return;contextKey="";refreshContext()})
         scrollContainer.addEventListener("focusout",focusChanged)
         this.Maid.Give(()=>scrollContainer.removeEventListener("focusout",focusChanged))
-        this.Maid.Give(PresentationSettings.subscribeRendering((changedView, changedCase, fields) => {
-            if (!sourceCase || changedView !== view) return
+        const applyRendering = () => {
             const isAnimationField = (field: keyof RenderingProfile) => AnimationFields.some(animation => animation === field)
-            const activeCase = sourceCase === "Word" && rendering.detail === "line" ? "Line" : sourceCase
-            if (changedCase !== activeCase && !(changedCase === sourceCase && fields.includes("detail"))) return
             const next = readRendering()
             const effectiveChanges = (Object.keys(next) as (keyof RenderingProfile)[]).filter(field => field !== "preset" && rendering[field] !== next[field])
             rendering = next
@@ -329,20 +362,29 @@ export default class LyricsRenderer implements Giveable {
             if (effectiveChanges.some(field => !isAnimationField(field)) && vocals.some(vocal => vocal.HasAnnotations())) scroller.RefreshAnnotationLayout()
             scroller.SetBlurEnabled(vocals.some(vocal => vocal.HasBlur()))
             scheduler.refresh()
+        }
+        this.Maid.Give(PresentationSettings.subscribeRendering((changedView, changedCase, fields) => {
+            if (!sourceCase || changedView !== view) return
+            const activeCase = sourceCase === "Word" && rendering.detail === "line" ? "Line" : sourceCase
+            if (changedCase !== activeCase && !(changedCase === sourceCase && fields.includes("detail"))) return
+            updateVisuals(applyRendering)
         }))
 
-        this.Maid.Give(PresentationSettings.subscribeCues((changedView) => {
-            if (changedView !== view || lyricDocument.type === "Static") return
+        const applyCues = () => {
             cueSettings = PresentationSettings.getCues(view)
             const time = clickTarget ?? lyricTime()
             let intervalsChanged = false
             for (const { visual } of cues) if (visual.SetSettings(cueSettings, time)) intervalsChanged = true
             if (intervalsChanged) {
                 scheduler.replaceIntervals(timelineIntervals())
-                scheduler.update(time, 0)
+                if (onScreen) scheduler.update(time, 0)
             }
             scroller.RefreshCueLayout()
             scheduler.refresh()
+        }
+        this.Maid.Give(PresentationSettings.subscribeCues((changedView) => {
+            if (changedView !== view || lyricDocument.type === "Static") return
+            updateVisuals(applyCues)
         }))
 
         const leases = new Map<string, { key: string; release: () => void; result?: ReadonlyMap<string, readonly DisplayRun[]> }>()
@@ -378,7 +420,7 @@ export default class LyricsRenderer implements Giveable {
                 if (conversion) require(language, conversion.form);
             }
             const key = JSON.stringify([...demand].sort().map(([form, languages]) => [form, [...languages].sort()]))
-            if (key === requestKey) { applyAnnotations(); return }
+            if (key === requestKey) { updateVisuals(applyAnnotations); return }
             requestKey = key
             // Reconcile language/form leases independently. A mixed-song language
             // toggle must not cancel another language's unchanged pending job.
@@ -391,10 +433,10 @@ export default class LyricsRenderer implements Giveable {
                 leases.set(form, entry)
                 void lease.promise.then(result => {
                     if (leases.get(form) !== entry || this.Maid.IsDestroyed()) return
-                    entry.result = result; applyAnnotations()
+                    entry.result = result; updateVisuals(applyAnnotations)
                 })
             }
-            applyAnnotations()
+            updateVisuals(applyAnnotations)
         }
         this.Maid.Give(() => { for (const lease of leases.values()) lease.release(); leases.clear() })
         this.Maid.Give(PresentationSettings.subscribe((changedView, languages) => {

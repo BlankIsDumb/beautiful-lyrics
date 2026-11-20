@@ -1,5 +1,49 @@
 # Validation
 
+## Pass 10 performance fixes — 5.1.0-local.43, 2026-11-20
+
+706 of 707 tests passed. The one failure, the horizontal-spacing browser test
+"AL02 final wrapped row follows outer alignment", fails the same way on the
+unchanged local.42 code; it is not caused by these changes. The four production
+bundles passed syntax and dictionary checks. They match the three Windows
+install copies at SHA-256
+`088FE7B965A8366925A6C2ACC829A05BB0DB28A662AB0E55302C619B1FF7D4AA`.
+
+Measured in Spotify 1.2.99 on Windows (RTX 3070 Ti, 240 Hz frame clock), 2
+samples per case. "Busy" is main-thread task time per second; 1000 means
+saturated. Each case is listed as before, then after:
+
+- Fullscreen with Minimal effects, playing: busy 998 to 119 ms/s, renderer
+  136% to 20% of a core. The time label and the timeline bar were rewritten on
+  every clock tick. The label is now written only when its text changes, and
+  the bar only when it moves by half a device pixel. Seeks, song changes and
+  drags still write at once.
+- Nothing listens to the player clock (no lyrics view, a paused view, or a
+  hidden card): 240 frames per second requested to none. Home with no lyrics
+  view goes from 216 to 9 ms/s paused and from 226 to 34 ms/s playing. A paused
+  card goes from 257 to 18 ms/s. The clock runs per frame only while a view
+  listens and the song plays. A paused view gets a position check every 0.1 s,
+  so seeks while paused still show within that time. The scrolling song titles
+  in fullscreen run their loop only while text moves.
+- Line changes no longer restyle the whole page: one forced restyle of
+  5,000-6,500 elements (106-168 ms) per line change, down to 1-12 ms over at
+  most 37 elements. Context rows no longer toggle `aria-hidden` (they stay
+  `inert`, which already hides them from assistive technology). No JEL `:has()`
+  selector watches a class that changes during playback; a test guards this.
+- Collapsing the right sidebar keeps the Now Playing card mounted off-screen.
+  It used to keep animating there at full cost: busy 998 to 25 ms/s, renderer
+  126% to 19%, renderer IPC 5.8 to 0.5 MB/s. The card now pauses its lyrics
+  and background while less than half of its width is on screen. On reveal it
+  snaps, with no catch-up animation, to the current line and scroll position.
+  In Spotify the reveal showed the active line in view.
+- Fullscreen with the default or a custom effects preset now draws about 194
+  frames per second where the timeline writes held it near 45-50. It looks
+  smoother but uses more GPU time (GPU process 16% to 80%).
+
+The paused-seek timing, the timeline label against the playing position, the
+collapsed-sidebar reveal, and the frame requests in each state were checked in
+Spotify with a debugging harness. macOS and Linux are untested.
+
 ## Song cache clear, distance fade and card glow — 5.1.0-local.42, 2026-11-17
 
 All 699 tests passed. The four production bundles passed syntax and dictionary

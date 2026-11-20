@@ -10,16 +10,40 @@ const ScrollPauseDuration = 2.5
 const ScrollPixelSpeed = 15
 const MinimumScrollDuration = 0.5 // Otherwise, it's too insignificant so we shouldn't bother
 
-// Global Animation Loop
-const ActiveAnimations = new Map<HTMLDivElement, () => void>()
-{
-	const CallAnimations = () => {
-		for (const [_, animation] of ActiveAnimations) {
-			animation()
-		}
-		requestAnimationFrame(CallAnimations)
+// Keep one shared wakeup. A zero timestamp means the animation needs frames;
+// a future timestamp lets all waiting animations share a single timer.
+const ActiveAnimations = new Map<HTMLDivElement, { NextUpdateAt: number; Update: (now: number) => number }>()
+let animationFrame: number | undefined
+let animationTimer: number | undefined
+const ScheduleAnimations = (nextUpdateAt: number) => {
+	if (nextUpdateAt === Infinity) return
+	const delay = nextUpdateAt - performance.now()
+	if (delay <= 0) {
+		animationFrame = requestAnimationFrame(CallAnimations)
+	} else {
+		animationTimer = globalThis.setTimeout(() => {
+			animationTimer = undefined
+			animationFrame = requestAnimationFrame(CallAnimations)
+		}, delay)
 	}
-	requestAnimationFrame(CallAnimations)
+}
+const CallAnimations = () => {
+	animationFrame = undefined
+	const now = performance.now()
+	let nextUpdateAt = Infinity
+	for (const animation of ActiveAnimations.values()) {
+		if (animation.NextUpdateAt <= now) animation.NextUpdateAt = animation.Update(now)
+		nextUpdateAt = Math.min(nextUpdateAt, animation.NextUpdateAt)
+	}
+	ScheduleAnimations(nextUpdateAt)
+}
+const RearmAnimations = () => {
+	if (animationFrame !== undefined) cancelAnimationFrame(animationFrame)
+	if (animationTimer !== undefined) clearTimeout(animationTimer)
+	animationFrame = animationTimer = undefined
+	let nextUpdateAt = Infinity
+	for (const animation of ActiveAnimations.values()) nextUpdateAt = Math.min(nextUpdateAt, animation.NextUpdateAt)
+	ScheduleAnimations(nextUpdateAt)
 }
 
 // Class
@@ -69,13 +93,8 @@ export default class TextScroller implements Giveable {
 
 				ActiveAnimations.set(
 					textContainer,
-					() => {
-						const timeNow = performance.now()
-						if (timeNow < startTimestamp) {
-							return
-						}
-
-						let progress: (number | undefined)
+					{ NextUpdateAt: startTimestamp, Update: timeNow => {
+						let progress: number
 						if (timeNow <= endTimestamp) {
 							progress = ((timeNow - startTimestamp) / (endTimestamp - startTimestamp))
 						} else if (timeNow >= resetTimestamp) {
@@ -85,26 +104,30 @@ export default class TextScroller implements Giveable {
 							endTimestamp = (startTimestamp + (scrollDuration * 1000))
 							returnTimestamp = (endTimestamp + (ScrollPauseDuration * 1000))
 							resetTimestamp = (returnTimestamp + (scrollDuration * 1000))
+							return startTimestamp
 						} else if (timeNow > returnTimestamp) {
 							progress = (1 - ((timeNow - returnTimestamp) / (resetTimestamp - returnTimestamp)))
 						} else {
-							return
+							return returnTimestamp
 						}
 
-						if (progress !== undefined) {
-							textContainer.style.setProperty(
-								"--TextScrollShift",
-								`${
-									(excessWidth + extraShift)
-									* (-(Math.cos(Math.PI * progress) - 1) / 2)
-								}px`
-							)
-						}
-					}
+						textContainer.style.setProperty(
+							"--TextScrollShift",
+							`${
+								(excessWidth + extraShift)
+								* (-(Math.cos(Math.PI * progress) - 1) / 2)
+							}px`
+						)
+						return 0
+					} }
 				)
+				RearmAnimations()
 
 				if (this.Maid.Has("Animation") === false) {
-					this.Maid.Give(() => ActiveAnimations.delete(textContainer), "Animation")
+					this.Maid.Give(() => {
+						ActiveAnimations.delete(textContainer)
+						RearmAnimations()
+					}, "Animation")
 				}
 			} else {
 				this.Maid.Clean("Animation")

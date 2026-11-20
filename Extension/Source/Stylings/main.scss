@@ -1,4 +1,4 @@
-body:has(.SliderBar.Active) {
+body.JEL-SliderActive {
 	cursor: pointer;
 }
 
@@ -6,9 +6,9 @@ body:has(.SliderBar.Active) {
 // Extension styles must not recolor its cards, buttons, or artwork.
 
 // Improves scroll-bar
-.os-host:has(.BeautifulLyricsPage.BeautifulLyricsBackground),
+.os-host:has(.BeautifulLyricsPage),
 #lyrics-cinema,
-.Root__main-view:has(.BeautifulLyricsPage.BeautifulLyricsBackground) {
+.Root__main-view:has(.BeautifulLyricsPage) {
 	.os-scrollbar {
 		padding: 5px;
 

@@ -581,7 +581,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 									position: absolute;
 								}
 
-								.Cover:has(.Added.Active) img {
+								.Cover.HasAddedTrack img {
 									filter: brightness(0.65);
 								}
 								.Cover img {
@@ -753,7 +753,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 
 							z-index: 2;
 						}
-						&:has(.Loading.Full), &:has(.Loading.Outline) {
+						&.HeartLoading {
 							.Filled {
 								visibility: hidden;
 							}
@@ -790,7 +790,7 @@ body:has(.BeautifulLyricsPage.Fullscreen) {
 							opacity: var(--Opacity);
 						}
 	
-						.Filled.Active, .Filled:has(.Animating), .Filled.Animating,
+						.Filled.Active, .Filled.PiecesAnimating, .Filled.Animating,
 						.Outline.Animating, .Outline.Active {
 							display: unset;
 						}

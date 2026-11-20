@@ -66,6 +66,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
     private LastManualAt = 0
     private ExplicitClick = false
     private ForceInstant = false
+    private OnScreen = true
     private GeometryValid = false
     private Destination?: number
     private NavigationPending = false
@@ -169,7 +170,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         this.QueueLayoutMeasure()
     }
     private QueueLayoutMeasure() {
-        if (this.LayoutQueued) return
+        if (!this.OnScreen || this.LayoutQueued) return
         this.LayoutQueued = true
         this.Maid.Give(OnPreRender(() => {
             this.LayoutQueued = false
@@ -181,6 +182,23 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         }), "MeasureLyrics")
     }
     public RefreshLayout() { this.CancelProgrammaticScroll(); this.PreserveManualGrace = true; this.QueueLayoutMeasure() }
+    public SetOnScreen(onScreen: boolean) {
+        if (this.OnScreen === onScreen) return
+        this.OnScreen = onScreen
+        if (onScreen) {
+            // The host may have clipped or resized us while geometry was idle.
+            this.QueueLayoutMeasure()
+        } else {
+            this.CancelProgrammaticScroll()
+            this.MoveGeneration++; this.MoveQueued = false
+            this.LayoutQueued = this.GeometryValid = false
+            this.NavigationPending = this.ExplicitClick = this.ForceInstant = false
+            this.Maid.Clean("MeasureLyrics")
+            this.Maid.Clean("WaitForUserToStopScrolling")
+            this.Maid.Clean("ForceToActiveCSS")
+            this.ScrollContainer.classList.remove("InstantScroll")
+        }
+    }
     public IsBrowsing() { return this.AutoScrollBlocked }
     public SetProfile(profile: LayoutProfile) {
         const old = this.Profile
@@ -236,13 +254,14 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
         this.Maid.Clean("WaitForUserToStopScrolling")
         this.PendingResume=false
         this.ManualDeadline=this.LastManualAt+this.Profile.resumeDelay*1000
-        if(!this.Profile.follow)return
+        if(!this.OnScreen || !this.Profile.follow)return
         const remaining=Math.max(0,(this.ManualDeadline-performance.now())/1000)
         this.Maid.Give(Timeout(remaining,()=>this.FinishManualScrollGrace()),"WaitForUserToStopScrolling")
     }
 
 	private WatchAutoScrollBlocking() {
         const manual = () => {
+            if (!this.OnScreen) return
             this.MoveGeneration++;this.MoveQueued=false
             this.NavigationPending=false;this.ExplicitClick=false;this.ForceInstant=false
             this.PreserveManualGrace=true
@@ -253,6 +272,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
             this.ArmManualResume()
         }
         const callback = () => {
+            if (!this.OnScreen) return
             if (this.AutoScrolling) this.ArmProgrammaticEnd()
             else {
                 // Native keyboard focus may scroll a visible muted button into
@@ -310,7 +330,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	}
 
 	private QueueActiveMove() {
-		if (this.MoveQueued) return
+		if (!this.OnScreen || this.MoveQueued) return
 		this.MoveQueued = true
         const generation=++this.MoveGeneration
 		// ActivityChanged fires during the animator's loop. Wait until every
@@ -486,7 +506,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 	}
 
     private MoveToActiveLyrics(redetermineBlur?: true) {
-        if (!this.LyricsAreSynced) return
+        if (!this.OnScreen || !this.LyricsAreSynced) return
         if (redetermineBlur) this.DetermineLyricBlur()
         if ((!this.Profile.follow && !this.ExplicitClick) || !this.GeometryValid || this.LayoutQueued) return
         const groups=this.VocalGroups as VocalGroups<SyncedVocals>
@@ -565,6 +585,7 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
     }
 
 	private ScrollTo(yPosition: number) {
+        if (!this.OnScreen) return
         if(!this.ExplicitClick && Math.abs(yPosition-(this.Destination??this.ScrollerObject.scrollTop))<=.5)return
         this.Destination=yPosition
 		this.AutoScrolling = true
@@ -578,19 +599,19 @@ export class LyricsScroller<V extends (BaseVocals | SyncedVocals)> implements Gi
 		this.LyricsEnded = ended
 	}
 
-	public ForceToActive(skippedByVocal?: true) {
-		if (this.LyricsAreSynced === false) {
+	public ForceToActive(skippedByVocal?: true, revealed?: true) {
+		if (!this.OnScreen || this.LyricsAreSynced === false) {
 			return
 		}
         if (!this.Profile.follow && !skippedByVocal) return
-        if (!skippedByVocal && this.AutoScrollBlocked && this.Profile.resume === "delay") return
+        if (!skippedByVocal && !revealed && this.AutoScrollBlocked && this.Profile.resume === "delay") return
         // This explicit move also consumes activity already queued by the same
         // seek/click. A second microtask must not replace its chosen transition.
         this.MoveGeneration++;this.MoveQueued=false
         this.NavigationPending=true
         if(this.HoldingExtra)this.QueueLayoutMeasure()
         this.ExplicitClick = !!skippedByVocal
-        this.ForceInstant = !skippedByVocal && this.Profile.transition === "classic"
+        this.ForceInstant = !!revealed || !skippedByVocal && this.Profile.transition === "classic"
 
 		this.ToggleAutoScrollBlock(false)
 

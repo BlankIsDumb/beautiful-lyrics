@@ -40,7 +40,7 @@ test('actual renderer/context/Simplebar obey Off, clicks, trusted smooth cancell
     const off=writes.length;tick(81.5,true);await frame();check(writes.length===off,'Off external seek remains stationary');
     set({follow:true,before:1});await frame();check(JSON.stringify(shown())===JSON.stringify([19,20,21]),'explicit On resumes finite active span');
     const coords=locals(),height=scroll.scrollHeight,position=scroll.scrollTop;set({before:0,after:0});await frame();check(JSON.stringify(shown())==='[20]','source groups only counts');check(scroll.scrollHeight===height&&locals().every((top,index)=>Math.abs(top-coords[index])<.1),'context preserves extent and coordinates');check(Math.abs(scroll.scrollTop-position)<.1,'context preserves viewport');
-    const hidden=groups()[0];check(hidden.inert&&hidden.getAttribute('aria-hidden')==='true'&&getComputedStyle(hidden).visibility==='hidden','hidden context is inert and inaccessible');
+    const hidden=groups()[0];check(hidden.inert&&!hidden.hasAttribute('aria-hidden')&&getComputedStyle(hidden).visibility==='hidden','hidden context uses inert for accessibility');
     set({transition:'smooth'});tick(141.5,true);await wait(40);return this.wheelPoint();
    },
    wheelPoint(){const rect=scroll.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+Math.min(100,rect.height/2)}},

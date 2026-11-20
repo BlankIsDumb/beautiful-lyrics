@@ -136,7 +136,7 @@ export const LikedAnimationState: AnimationStates<AnimationMetadata> = {
 		],
 		OnCompletion: (metadata) => (
 			metadata.Maid.Give(
-				Timeout(metadata.LikeStateUpdateShimmerAppearsAfter, () => metadata.Loading.classList.toggle("Full", true)),
+				Timeout(metadata.LikeStateUpdateShimmerAppearsAfter, () => metadata.ShowLoading("Full")),
 				"LikeStateLoading"
 			)
 		)

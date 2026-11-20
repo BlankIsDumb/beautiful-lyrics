@@ -87,6 +87,40 @@ test('continuous resize cannot advance the cap clock or delay normal 30 fps anim
   } finally {controller.Destroy()}
 }));
 
+test('clipped card cancels frames, retains WebGL and redraws current state on reveal',()=>environment(m=>{
+  const {BackgroundController,host,set,flush,frames,THREE,artwork,setPlaying,observers}=m;
+  set({mode:'animated'});
+  setPlaying(true);
+  const controller=new BackgroundController(host,{view:'NowPlaying',surface:'Card'});
+  const renderer=THREE.stats.renderers[0],uniforms=THREE.stats.materials[0].uniforms;
+  flush(0);flush(40);
+  const phase=uniforms.Time.value,draws=renderer.draws;
+  controller.SetOnScreen(false);
+  controller.SetOnScreen(false);
+  artwork.change();host.clientWidth++;for(const observer of observers)observer.fn();
+  setPlaying(false);setPlaying(true);
+  assert.equal(frames.size,0);
+  assert.equal(renderer.draws,draws);
+  assert.equal(renderer.disposed,undefined);
+  assert.equal(artwork.consumers,1);
+  controller.SetOnScreen(true);controller.SetOnScreen(true);
+  assert.equal(frames.size,1);
+  flush(20000);
+  assert.equal(renderer.draws,draws+1);
+  assert.equal(uniforms.Time.value,phase,'hidden time does not advance the shader');
+  assert.equal(THREE.stats.renderers.length,1);
+  controller.SetOnScreen(false);
+  set({mode:'static'});
+  assert.equal(frames.size,0);
+  controller.SetOnScreen(true);flush(21000);
+  assert.equal(frames.size,0,'a dirty static card redraws only once');
+  controller.SetOnScreen(false);
+  controller.Destroy();
+  controller.SetOnScreen(true);
+  assert.equal(frames.size,0);
+  assert.equal(renderer.disposed,true);
+}));
+
 test('Contained and Fullscreen share a live profile and preserve their permanent layout class in Off',()=>environment(m=>{
   const {BackgroundController,host,set,flush,THREE,artwork}=m;
   const fullscreen=new globalThis.Element();

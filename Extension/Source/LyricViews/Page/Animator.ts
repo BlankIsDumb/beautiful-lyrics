@@ -5,6 +5,7 @@ import { OnPreRender } from "@Universal/Modules/Scheduler.ts";
 // Raw Types
 type Target = {
 	Element: Element & { style: HTMLElement["style"] };
+	AnimationGroup?: Element;
 	PropertyValues: {[property: string]: number};
 }
 export type Targets = {[TargetName: string]: Target}
@@ -134,14 +135,19 @@ export const RunAnimation = <Metadata>(
 	const totalTasks = tasks.length
 
 	// Go through our all our tasks and mark each target as being animated
+	const animationGroups = new Set<Element>()
 	for(const task of tasks) {
-		targets[task.Target].Element.classList.toggle("Animating", true)
+		const target = targets[task.Target]
+		target.Element.classList.toggle("Animating", true)
+		if (target.AnimationGroup) animationGroups.add(target.AnimationGroup)
 	}
+	for(const group of animationGroups) group.classList.add("PiecesAnimating")
 	animationMaid.Give(
 		() => {
 			for(const task of tasks) {
 				targets[task.Target].Element.classList.toggle("Animating", false)
 			}
+			for(const group of animationGroups) group.classList.remove("PiecesAnimating")
 		}
 	)
 

@@ -7,8 +7,8 @@ export interface LyricClock {
   subscribe(consume: (deltaTime: number, skipped?: true) => void): () => void;
 }
 
-// Consumer boundary only. Keep the inherited Spotify interpolation, local/Connect
-// synchronization and pause behavior intact until transport demand is profiled.
+// Subscriptions keep Spotify's clock running during playback or watching for
+// paused seeks. With no consumers, the player stops its frame and sync work.
 export const PlayerLyricClock: LyricClock = {
   now: () => Timestamp,
   duration: () => Song && Song.Type !== "DJ" ? Song.Duration : 0,

@@ -33,7 +33,7 @@ export async function buildVocalFixture(baselineRoot, includeScroller = false, r
         b.onResolve({filter:/BackgroundController\.ts$/},()=>({path:'background',namespace:'card-host'}));
         b.onLoad({filter:/.*/,namespace:'card-host'},args=>({contents:args.path==='player'
           ? 'export let SongLyrics;export const Song=undefined,SongContext=undefined;export function SetSong(lyrics){SongLyrics=lyrics}'
-          : args.path==='background' ? 'export default class BackgroundController{Destroy(){}}'
+          : args.path==='background' ? 'export default class BackgroundController{SetOnScreen(){} Destroy(){}}'
           : 'export const GetInstantStore=(key,version,defaults)=>({Items:JSON.parse(localStorage.getItem(key)||"null")?.Items||defaults,SaveChanges(){throw Error("Unexpected legacy store write")}});'}));
       }
       b.onResolve({ filter: /^@|^npm:/ }, args => {
